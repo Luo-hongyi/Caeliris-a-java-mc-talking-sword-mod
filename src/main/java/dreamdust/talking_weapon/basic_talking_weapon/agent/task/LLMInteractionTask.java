@@ -61,7 +61,9 @@ public class LLMInteractionTask extends AgentTask {
 
             UserMessage message;
             String screenshotBase64 = ctx.getScreenshotBase64();
-            String userPrompt = TalkingWeaponConfig.PROMPT.get();
+            // 从 extras 读取触发器专属 prompt，若不存在则使用通用默认值
+            String userPrompt = ctx.getExtras().getOrDefault("user_prompt",
+                    "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
 
             if (screenshotBase64 != null) {
                 message = UserMessage.from(

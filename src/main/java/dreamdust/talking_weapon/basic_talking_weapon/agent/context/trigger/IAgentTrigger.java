@@ -35,4 +35,17 @@ public interface IAgentTrigger {
      * 通过采集好的 Context 生成对应的 AgentTask。
      */
     AgentTask createTask(AgentContext context);
+
+    /**
+     * 返回此触发器专属的 user prompt。
+     * <p>
+     * 由 {@code AgentSensor} 在 fireTrigger 时写入
+     * {@code AgentContext.extras["user_prompt"]}，
+     * 供 {@code LLMInteractionTask} 读取。
+     *
+     * @return 用户提示词文本
+     */
+    default String getUserPrompt() {
+        return "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。";
+    }
 }

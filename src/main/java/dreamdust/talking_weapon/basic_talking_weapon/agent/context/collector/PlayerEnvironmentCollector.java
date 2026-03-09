@@ -1,7 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
-import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -34,7 +33,6 @@ public class PlayerEnvironmentCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (!TalkingWeaponConfig.ENABLE_PLAYER_ENVIRONMENT.get()) return;
         if (player == null || level == null) return;
 
         // ── 维度 ──────────────────────────────────────────

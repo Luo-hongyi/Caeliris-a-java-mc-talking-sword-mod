@@ -1,7 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
-import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -28,8 +27,6 @@ public class BaseContextCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (!TalkingWeaponConfig.ENABLE_BASE_COLLECTOR.get()) return;
-
         if (player != null) {
             builder.health(player.getHealth())
                    .maxHealth(player.getMaxHealth())

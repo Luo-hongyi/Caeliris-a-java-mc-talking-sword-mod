@@ -85,6 +85,9 @@ public class AgentSensor {
             }
         }
 
+        // 3. 将触发器专属的 user prompt 写入 extras
+        builder.extra("user_prompt", trigger.getUserPrompt());
+
         AgentContext context = builder.build();
 
         // 3. 显示触发提示（仅对需要防抖的交互式触发器）

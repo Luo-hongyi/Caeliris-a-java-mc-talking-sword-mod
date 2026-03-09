@@ -8,7 +8,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.Pla
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ScreenshotCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMInteractionTask;
+import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -31,16 +33,21 @@ public class RightClickTrigger implements IAgentTrigger {
 
     @Override
     public List<IContextCollector> getCollectors() {
-        return List.of(
-                new BaseContextCollector(), // 基础状态（生命、坐标、时间等）
-                new ScreenshotCollector(), // 视觉输入（当前视角截图）
-                new NearbyEntitiesCollector(), // 附近实体（怪物、动物、NPC）
-                new PlayerEnvironmentCollector() // 环境信息（天气、光照、声音等）
-        );
+        List<IContextCollector> list = new ArrayList<>();
+        if (TalkingWeaponConfig.RC_ENABLE_BASE.get())              list.add(new BaseContextCollector());
+        if (TalkingWeaponConfig.RC_ENABLE_SCREENSHOT.get())        list.add(new ScreenshotCollector());
+        if (TalkingWeaponConfig.RC_ENABLE_NEARBY_ENTITIES.get())   list.add(new NearbyEntitiesCollector());
+        if (TalkingWeaponConfig.RC_ENABLE_PLAYER_ENVIRONMENT.get()) list.add(new PlayerEnvironmentCollector());
+        return list;
     }
 
     @Override
     public AgentTask createTask(AgentContext context) {
         return new LLMInteractionTask(context);
+    }
+
+    @Override
+    public String getUserPrompt() {
+        return TalkingWeaponConfig.RIGHT_CLICK_PROMPT.get();
     }
 }

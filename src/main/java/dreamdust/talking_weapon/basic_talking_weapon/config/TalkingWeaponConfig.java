@@ -18,16 +18,16 @@ public final class TalkingWeaponConfig {
     // ═══════════════════════════════════════════════════════════════
 
     public static final List<String> AVAILABLE_PROVIDERS = List.of(
-            "OpenAI", "Qwen (通义千问)", "DeepSeek", "Custom"
+            "OpenAI", "Qwen (通义千问)", "DeepSeek(无视觉)", "Custom"
     );
 
     public static final Map<String, List<String>> MODELS_BY_PROVIDER;
 
     static {
         MODELS_BY_PROVIDER = new LinkedHashMap<>();
-        MODELS_BY_PROVIDER.put("OpenAI", List.of("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"));
-        MODELS_BY_PROVIDER.put("Qwen (通义千问)", List.of("qwen-vl-max", "qwen-vl-plus", "qwen-turbo"));
-        MODELS_BY_PROVIDER.put("DeepSeek", List.of("deepseek-chat", "deepseek-reasoner"));
+        MODELS_BY_PROVIDER.put("OpenAI", List.of("gpt-4o", "gpt-4o-mini", "gpt-5.2"));
+        MODELS_BY_PROVIDER.put("Qwen (通义千问)", List.of("qwen3.5-plus", "qwen3.5-flash"));
+        MODELS_BY_PROVIDER.put("DeepSeek(无视觉)", List.of("deepseek-v3.2"));
         MODELS_BY_PROVIDER.put("Custom", List.of("custom-model"));
     }
 
@@ -51,15 +51,23 @@ public final class TalkingWeaponConfig {
 
     // —— 文本 ——
     public static final ForgeConfigSpec.ConfigValue<String> WEAPON_NAME;
-    public static final ForgeConfigSpec.ConfigValue<String> PROMPT;
+    public static final ForgeConfigSpec.ConfigValue<String> RIGHT_CLICK_PROMPT;
+    public static final ForgeConfigSpec.ConfigValue<String> BIOME_CHANGE_PROMPT;
     public static final ForgeConfigSpec.ConfigValue<String> TRIGGER_SPEECH;
     public static final ForgeConfigSpec.ConfigValue<String> CANCEL_SPEECH;
     public static final ForgeConfigSpec.ConfigValue<String> SYSTEM_IDENTITY;
 
-    // —— 采集器开关 ——
-    public static final ForgeConfigSpec.BooleanValue ENABLE_BASE_COLLECTOR;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_NEARBY_ENTITIES;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_PLAYER_ENVIRONMENT;
+    // —— 右键触发 · 采集器 ——
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_BASE;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_SCREENSHOT;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_ENTITIES;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_PLAYER_ENVIRONMENT;
+
+    // —— 群系变化 · 采集器 ——
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_BASE;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_SCREENSHOT;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_ENTITIES;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_PLAYER_ENVIRONMENT;
 
     // —— Agent 行为 ——
     public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
@@ -105,9 +113,13 @@ public final class TalkingWeaponConfig {
         WEAPON_NAME = builder
                 .comment("武器显示名称")
                 .define("weaponName", "灵魂之剑");
-        PROMPT = builder
-                .comment("发送给 LLM 的 user prompt")
-                .define("prompt", "请根据你看到的画面和当前状态，以武器灵魂的身份发表评论。");
+        RIGHT_CLICK_PROMPT = builder
+                .comment("右键触发时发送给 LLM 的 user prompt")
+                .define("rightClickPrompt", "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
+        BIOME_CHANGE_PROMPT = builder
+                .comment("群系变化触发时发送给 LLM 的 user prompt（可用 {old_biome} 和 {new_biome} 占位符）")
+                .define("biomeChangePrompt",
+                        "你发现主人刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。");
         TRIGGER_SPEECH = builder
                 .comment("右键触发时的 ActionBar 提示")
                 .define("triggerSpeech", "你感受到一丝灵魂的悸动……");
@@ -121,18 +133,38 @@ public final class TalkingWeaponConfig {
                         + "你会根据玩家看到的画面和游戏状态做出评论，语言简洁有趣，不超过两句话。");
         builder.pop();
 
-        // ── 采集器开关 ─────────────────────────────────────────
-        builder.push("collectors");
-        ENABLE_BASE_COLLECTOR = builder
-                .comment("启用基础状态采集（生命值、坐标、群系、天气等）")
-                .define("enableBaseCollector", true);
-        ENABLE_NEARBY_ENTITIES = builder
-                .comment("启用附近实体采集（扫描周围生物并分组计数）")
+        // ── 右键触发 · 采集器 ─────────────────────────────────
+        builder.push("trigger").push("right_click");
+        RC_ENABLE_BASE = builder
+                .comment("右键触发：启用基础状态采集")
+                .define("enableBase", true);
+        RC_ENABLE_SCREENSHOT = builder
+                .comment("右键触发：启用截图采集")
+                .define("enableScreenshot", true);
+        RC_ENABLE_NEARBY_ENTITIES = builder
+                .comment("右键触发：启用附近实体采集")
                 .define("enableNearbyEntities", true);
-        ENABLE_PLAYER_ENVIRONMENT = builder
-                .comment("启用玩家环境采集（维度、光照、持有物品、盔甲、准星目标等）")
+        RC_ENABLE_PLAYER_ENVIRONMENT = builder
+                .comment("右键触发：启用玩家环境采集")
                 .define("enablePlayerEnvironment", true);
-        builder.pop();
+        builder.pop(); // right_click
+
+        // ── 群系变化 · 采集器 ─────────────────────────────────
+        builder.push("biome_change");
+        BC_ENABLE_BASE = builder
+                .comment("群系变化：启用基础状态采集")
+                .define("enableBase", true);
+        BC_ENABLE_SCREENSHOT = builder
+                .comment("群系变化：启用截图采集")
+                .define("enableScreenshot", false);
+        BC_ENABLE_NEARBY_ENTITIES = builder
+                .comment("群系变化：启用附近实体采集")
+                .define("enableNearbyEntities", true);
+        BC_ENABLE_PLAYER_ENVIRONMENT = builder
+                .comment("群系变化：启用玩家环境采集")
+                .define("enablePlayerEnvironment", true);
+        builder.pop(); // biome_change
+        builder.pop(); // trigger
 
         // ── Agent 行为 ─────────────────────────────────────────
         builder.push("agent");

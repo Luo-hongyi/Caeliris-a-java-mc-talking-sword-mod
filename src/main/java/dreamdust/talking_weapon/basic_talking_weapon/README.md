@@ -6,15 +6,16 @@
 
 - **多模态 AI 交互**：右键持剑即可截图并发送给 LLM，获得基于画面的个性化回复
 - **Embodied Agent 架构**：感知 → 记忆 → 决策 → 动作 的完整智能体流水线
-- **Trigger / Collector 策略模式**：触发器声明所需采集器，采集器可独立开关、自由组合
+- **Trigger / Collector 策略模式**：触发器声明所需采集器列表，采集器按需动态组合
+- **Per-Trigger 独立配置**：每种触发器独立配置自己的采集器开关和专属 User Prompt
 - **三层记忆系统**：Identity 人格 / Short-term 对话窗口 / Long-term 语义摘要
 - **显式状态机**：情绪（Mood）、熟悉度、当前目标，注入到 LLM prompt 中
-- **主动感知**：进入新群系时自动触发评论（可关闭）
+- **主动感知**：进入新群系时自动调用 LLM 发表评论（可关闭）
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
-- **多厂商支持**：支持 OpenAI / Qwen / DeepSeek / Custom（通过 OpenAI 兼容接口）
+- **多厂商支持**：支持 OpenAI / Qwen / DeepSeek(无视觉) / Custom（通过 OpenAI 兼容接口）
 - **左键打断**：思考过程中可随时左键中断请求
-- **游戏内配置界面**：采集器开关 / Agent 行为 / 厂商模型 / 截图分辨率，全部可在游戏内调整
-- **完全可自定义**：触发 / 打断 / 系统 Prompt / 输出长度 / 武器名称均可配置
+- **游戏内配置界面**：可滚动列表，per-trigger 采集器开关 / Agent 行为 / 厂商模型 / 截图分辨率
+- **完全可自定义**：触发 / 打断 / 系统 Prompt / Per-Trigger Prompt / 输出长度 / 武器名称
 
 ## 📁 模块结构
 
@@ -22,18 +23,18 @@
 agent/
 ├── context/                        ← 感知 & 上下文
 │   ├── AgentContext.java            — 不可变游戏状态快照 (Builder 模式 + extras Map)
-│   ├── AgentSensor.java             — 唯一事件入口：防抖 + 遍历采集器 + 提交任务 + 取消
-│   ├── collector/                   ← 采集器（Strategy 模式，每种可独立开关）
+│   ├── AgentSensor.java             — 唯一事件入口：防抖 + 遍历采集器 + 写入 user_prompt + 提交任务
+│   ├── collector/                   ← 采集器（Strategy 模式，纯数据采集，无开关逻辑）
 │   │   ├── IContextCollector.java    — 采集器接口：getName() + collect(Builder, Player, Level)
 │   │   ├── BaseContextCollector.java — HP / 饥饿值 / 坐标 / 群系 / 天气 / 时间
-│   │   ├── ScreenshotCollector.java  — 截图 → Base64（受 ENABLE_SCREENSHOT 控制）
+│   │   ├── ScreenshotCollector.java  — 截图 → Base64（受全局 ENABLE_SCREENSHOT 控制）
 │   │   ├── NearbyEntitiesCollector.java — 附近实体扫描（16格内，按类型分组）
 │   │   ├── PlayerEnvironmentCollector.java — 维度 / 光照 / 持有物品 / 盔甲 / 准星目标
 │   │   └── README.md                — 采集器开发指南
-│   └── trigger/                     ← 触发器（定义事件 → 采集器列表 → 任务类型）
-│       ├── IAgentTrigger.java        — 触发器接口：getSourceName / requiresDebounce / getCollectors / createTask
-│       ├── RightClickTrigger.java    — 右键触发（全量采集 → LLMInteractionTask）
-│       ├── BiomeChangeTrigger.java   — 群系变化触发（仅基础采集 → AgentStateUpdateTask）
+│   └── trigger/                     ← 触发器（定义事件 → 动态采集器列表 → 专属 prompt → 任务类型）
+│       ├── IAgentTrigger.java        — 触发器接口 + default getUserPrompt()
+│       ├── RightClickTrigger.java    — 右键触发（按 RC_* 配置动态组合采集器 → LLMInteractionTask）
+│       ├── BiomeChangeTrigger.java   — 群系变化触发（按 BC_* 配置动态组合 → LLMInteractionTask）
 │       ├── TickEventWatcher.java     — Forge ClientTickEvent 监听器（周期检测，调度被动触发）
 │       └── README.md                — 触发器开发指南
 ├── state/                          ← 显式状态
@@ -43,7 +44,7 @@ agent/
 │   └── AgentMemory.java             — 三层记忆：Identity / Short-term / Long-term
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
-│   ├── LLMInteractionTask.java      — LLM 交互：构建 prompt → 调 LLM → SpeechAction → 更新记忆
+│   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆
 │   ├── MemoryUpdateTask.java        — 零网络开销的本地记忆更新
 │   ├── AgentStateUpdateTask.java    — 零网络开销的状态更新（含 description）
 │   └── ReflectionTask.java          — 后台记忆压缩/反思
@@ -58,8 +59,8 @@ agent/
     └── LLMAgentService.java         — 纯工具类：buildModel()
 
 config/
-├── TalkingWeaponConfig.java         — Forge 客户端配置（含采集器独立开关）
-└── TalkingWeaponConfigScreen.java   — 游戏内配置界面（双栏布局：采集器 + Agent 行为）
+├── TalkingWeaponConfig.java         — Forge 客户端配置（per-trigger 采集器开关 + per-trigger prompt）
+└── TalkingWeaponConfigScreen.java   — 游戏内可滚动配置界面
 
 TalkingSword.java                    — 剑物品：右键 → fireTrigger(RightClickTrigger)
 ClientEventHandler.java              — 左键打断 → AgentSensor.triggerCancel()
@@ -76,17 +77,19 @@ TalkingSword.use()
   └→ AgentSensor.fireTrigger(new RightClickTrigger(), player)
        ├─ 防抖检查 (canTrigger / requiresDebounce)
        ├─ 忙检查 (isRuntimeBusy)
-       ├─ 遍历 trigger.getCollectors()
-       │    ├─ BaseContextCollector.collect()     ← 受 ENABLE_BASE_COLLECTOR 控制
-       │    ├─ ScreenshotCollector.collect()      ← 受 ENABLE_SCREENSHOT 控制
-       │    ├─ NearbyEntitiesCollector.collect()  ← 受 ENABLE_NEARBY_ENTITIES 控制
-       │    └─ PlayerEnvironmentCollector.collect() ← 受 ENABLE_PLAYER_ENVIRONMENT 控制
+       ├─ 遍历 trigger.getCollectors()         ← 根据 [trigger.right_click] 配置动态构建
+       │    ├─ BaseContextCollector.collect()     ← RC_ENABLE_BASE
+       │    ├─ ScreenshotCollector.collect()      ← RC_ENABLE_SCREENSHOT
+       │    ├─ NearbyEntitiesCollector.collect()  ← RC_ENABLE_NEARBY_ENTITIES
+       │    └─ PlayerEnvironmentCollector.collect() ← RC_ENABLE_PLAYER_ENVIRONMENT
+       ├─ 写入 extras["user_prompt"] ← trigger.getUserPrompt()
        ├─ 构建不可变 AgentContext（core 字段 + extras Map）
        ├─ 显示触发提示
        └─ AgentRuntime.submit(trigger.createTask(context))
               ↓ worker 线程 (PriorityBlockingQueue)
          LLMInteractionTask.execute()
               ├─ buildSystemPrompt(memory + state + context + extras)
+              ├─ userPrompt = ctx.extras["user_prompt"]   ← 触发器专属 prompt
               ├─ LLMAgentService.buildModel()
               ├─ model.generate(systemMsg, userMsg)
               ├─ SpeechAction("剑：" + reply).perform()
@@ -100,10 +103,28 @@ TalkingSword.use()
 TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
   ├─ 检查 ENABLE_PROACTIVE_TRIGGERS
   ├─ 检查 ENABLE_BIOME_DETECTION
-  ├─ 检测群系变化 → fireTrigger(new BiomeChangeTrigger(newBiome))
-  │    └─ 仅用 BaseContextCollector → AgentStateUpdateTask
+  ├─ 检测群系变化 → fireTrigger(new BiomeChangeTrigger(oldBiome, newBiome))
+  │    ├─ 根据 [trigger.biome_change] 配置动态组合采集器
+  │    ├─ getUserPrompt() 将 {old_biome}/{new_biome} 替换为实际群系名
+  │    └─ → LLMInteractionTask（调用 LLM 对新群系发表评论）
   └─ （可扩展：低血量、日夜交替、长时间挂机等）
 ```
+
+### Prompt 流转机制
+
+```
+IAgentTrigger.getUserPrompt()          ← 每种触发器返回各自专属 prompt
+       ↓
+AgentSensor → builder.extra("user_prompt", ...)
+       ↓
+AgentContext.extras["user_prompt"]      ← 随 context 传递
+       ↓
+LLMInteractionTask → 作为 UserMessage 发送给 LLM
+```
+
+- **RightClickTrigger** → 读取 `RIGHT_CLICK_PROMPT` 配置
+- **BiomeChangeTrigger** → 读取 `BIOME_CHANGE_PROMPT` 配置，替换 `{old_biome}` / `{new_biome}` 占位符
+- 新增触发器只需覆写 `getUserPrompt()` 即可拥有独立 prompt
 
 ### 显示机制
 - 所有剑的发言在**快捷栏上方（Action Bar）**显示
@@ -116,19 +137,23 @@ TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
 ### 方式一：游戏内配置界面
 1. 进入 "Mods" 列表，找到 "Talking Weapon"
 2. 点击 "Config" 按钮
-3. 可设置：
-   - **厂商选择**：OpenAI / Qwen (通义千问) / DeepSeek / Custom
-   - **模型选择**：根据厂商动态显示可用模型
-   - **截图分辨率**：宽度 × 高度（像素）
-   - **采集器开关**（左栏）：
-     - 基础状态（HP、坐标、群系…）
-     - 截图（关闭后 LLM 仅接收文本）
-     - 附近实体
-     - 玩家环境（光照、持有物品…）
-   - **Agent 行为开关**（右栏）：
+3. 可滚动列表中可设置：
+   - **LLM 设置**：厂商选择 / 模型选择
+   - **截图设置**：宽度 × 高度（像素）
+   - **右键触发 · 采集器**（4 个独立开关）：
+     - 基础状态采集
+     - 截图采集
+     - 附近实体采集
+     - 玩家环境采集
+   - **群系变化 · 采集器**（4 个独立开关）：
+     - 基础状态采集
+     - 截图采集（默认关闭）
+     - 附近实体采集
+     - 玩家环境采集
+   - **Agent 行为**：
      - 主动触发（总开关）
-     - 群系检测
-4. 点击 "打开配置文件(.toml)" 按钮编辑文本配置
+     - 群系变化检测
+4. 点击 "打开配置文件(.toml)" 按钮编辑文本配置（包括 prompt、API Key 等长文本字段）
 
 ### 方式二：直接编辑配置文件
 编辑 `config/talking_weapon-client.toml`（首次启动后自动生成）：
@@ -148,13 +173,21 @@ TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
 
 [text]
   weaponName = "灵魂之剑"
-  prompt = "请根据你看到的画面和当前状态，以武器灵魂的身份发表评论。"
+  rightClickPrompt = "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。"
+  biomeChangePrompt = "你发现主人刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。"
   triggerSpeech = "你感受到一丝灵魂的悸动……"
   cancelSpeech = "剑：沉默不语……"
   systemIdentity = "你是一把会说话的剑中的灵魂..."
 
-[collectors]
-  enableBaseCollector = true
+[trigger.right_click]
+  enableBase = true
+  enableScreenshot = true
+  enableNearbyEntities = true
+  enablePlayerEnvironment = true
+
+[trigger.biome_change]
+  enableBase = true
+  enableScreenshot = false
   enableNearbyEntities = true
   enablePlayerEnvironment = true
 
@@ -167,12 +200,12 @@ TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
 
 | 厂商 | 可用模型（游戏内可切换） | Base URL |
 |------|--------------------------|----------|
-| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo | `https://api.openai.com/v1/` |
-| **Qwen (通义千问)** | qwen-vl-max, qwen-vl-plus, qwen-turbo | `https://dashscope.aliyuncs.com/compatible-mode/v1/` |
-| **DeepSeek** | deepseek-chat, deepseek-reasoner | `https://api.deepseek.com/v1/` |
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.2 | `https://api.openai.com/v1/` |
+| **Qwen (通义千问)** | qwen3.5-plus, qwen3.5-flash | `https://dashscope.aliyuncs.com/compatible-mode/v1/` |
+| **DeepSeek(无视觉)** | deepseek-v3.2 | `https://api.deepseek.com/v1/` |
 | **Custom** | custom-model（自行填写） | 自定义 |
 
-> **注**：所有厂商均通过 OpenAI 兼容接口调用。
+> **注**：所有厂商均通过 OpenAI 兼容接口调用。DeepSeek 标注"无视觉"表示不支持图片输入。
 
 ## 🏗️ Agent 架构
 
@@ -183,7 +216,7 @@ TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
 | 能力 | 实现 |
 |------|------|
 | **感知** | `AgentSensor` + `IContextCollector` — 模块化采集器组合 → 不可变 `AgentContext` |
-| **触发** | `IAgentTrigger` — 声明所需采集器 + 任务类型，支持被动/主动两种模式 |
+| **触发** | `IAgentTrigger` — 声明采集器列表 + 专属 prompt + 任务类型，支持被动/主动两种模式 |
 | **记忆** | `AgentMemory` — 三层：Identity(人格) / Short-term(滑动窗口) / Long-term(语义摘要) |
 | **状态** | `AgentState` — 情绪(8种Mood) + 熟悉度(0-100) + 当前目标 |
 | **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理 |
@@ -196,7 +229,8 @@ TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
 IAgentTrigger (触发器)
 ├── getSourceName()      → "right_click" | "biome_change" | ...
 ├── requiresDebounce()   → 是否需要防抖
-├── getCollectors()      → [BaseCollector, ScreenshotCollector, ...]
+├── getCollectors()      → 根据各自的 per-trigger config 动态构建列表
+├── getUserPrompt()      → 返回触发器专属 user prompt（default 方法）
 └── createTask(context)  → LLMInteractionTask | AgentStateUpdateTask
 
 IContextCollector (采集器)
@@ -204,9 +238,9 @@ IContextCollector (采集器)
 └── collect(builder, player, level) → 写入 AgentContext 核心字段或 extras
 ```
 
-- **触发器**决定"什么事件 → 采集哪些数据 → 创建什么任务"
-- **采集器**独立于触发器，可复用、可独立开关
-- 新增触发器只需实现 `IAgentTrigger`，组合已有采集器
+- **触发器**决定"什么事件 → 动态组合哪些采集器 → 用什么 prompt → 创建什么任务"
+- **采集器**为纯数据采集逻辑，不含开关判断（是否启用由触发器层根据配置决定）
+- 新增触发器只需实现 `IAgentTrigger`，在 config 中添加同名 `[trigger.xxx]` 段
 - 新增采集器只需实现 `IContextCollector`，然后加入触发器的 `getCollectors()`
 
 > 详细指南见 `collector/README.md` 和 `trigger/README.md`
@@ -241,11 +275,13 @@ IContextCollector (采集器)
 ## 🎯 使用技巧
 
 1. **调整截图分辨率**：更大分辨率 = 更准确但更慢 / 更贵；推荐 `320×180`
-2. **关闭不需要的采集器**：减少 prompt token 消耗，加快响应速度
-3. **自定义人格**：修改 `systemIdentity` 字段，可以让剑变成毒舌 / 傲娇 / 冷漠等任意风格
-4. **多模型切换**：在游戏内配置界面快速切换不同厂商和模型
-5. **打断长时请求**：如果 LLM 响应过慢，直接左键即可中断等待
-6. **关闭主动触发**：不希望武器主动说话时，关闭"主动触发"开关
+2. **精细控制采集器**：每种触发器可独立开关采集器，按场景优化 token 消耗
+3. **自定义 per-trigger prompt**：在 toml 中修改 `rightClickPrompt` / `biomeChangePrompt`，针对不同触发场景写不同提示词
+4. **群系 prompt 占位符**：`biomeChangePrompt` 支持 `{old_biome}` / `{new_biome}` 占位符
+5. **自定义人格**：修改 `systemIdentity` 字段，可以让剑变成毒舌 / 傲娇 / 冷漠等任意风格
+6. **多模型切换**：在游戏内配置界面快速切换不同厂商和模型
+7. **打断长时请求**：如果 LLM 响应过慢，直接左键即可中断等待
+8. **关闭主动触发**：不希望武器主动说话时，关闭"主动触发"开关
 
 ## 🐛 常见问题
 
@@ -260,6 +296,9 @@ A: 每行停留时间自动计算（基于字符数），如需调整请修改 `
 
 **Q: 想要更长的回复？**  
 A: 修改配置文件中的 `maxTokens` 值（建议不超过 500，避免 Action Bar 轮播过久）。
+
+**Q: 如何为新触发器添加专属 prompt？**  
+A: 在 config 中新增对应配置字段，在触发器中覆写 `getUserPrompt()` 读取即可。prompt 通过 `extras["user_prompt"]` 自动传递给 `LLMInteractionTask`。
 
 **Q: 如何扩展新的采集器或触发器？**  
 A: 参见 `agent/context/collector/README.md` 和 `agent/context/trigger/README.md`。

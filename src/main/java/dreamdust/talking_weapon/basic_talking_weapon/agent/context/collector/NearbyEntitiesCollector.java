@@ -1,7 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
-import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -38,7 +37,6 @@ public class NearbyEntitiesCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (!TalkingWeaponConfig.ENABLE_NEARBY_ENTITIES.get()) return;
         if (player == null || level == null) return;
 
         AABB area = player.getBoundingBox().inflate(radius);
