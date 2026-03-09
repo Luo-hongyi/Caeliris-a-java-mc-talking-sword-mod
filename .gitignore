@@ -28,4 +28,5 @@ forge*changelog.txt
 *.jar
 *.zip
 
-
+# ds_store
+.DS_Store

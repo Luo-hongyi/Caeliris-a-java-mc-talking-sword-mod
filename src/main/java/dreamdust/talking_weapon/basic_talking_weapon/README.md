@@ -1,81 +1,108 @@
 # talking_weapon — 会说话的武器
 
-一个 Minecraft Forge 1.20.1 模组，让你的铁剑拥有视觉和语言——它会"看到"你的游戏画面并用 LLM 生成的文字回应你。采用 Embodied Agent 架构，具备感知、记忆、状态和动作系统。
+一个 Minecraft Forge 1.20.1 模组，让你的铁剑拥有视觉和语言——它会"看到"你的游戏画面并用 LLM 生成的文字回应你。采用 Embodied Agent 架构，具备感知、记忆、状态和动作系统，支持模块化的触发器和采集器扩展。
 
 ## ✨ 核心特性
 
 - **多模态 AI 交互**：右键持剑即可截图并发送给 LLM，获得基于画面的个性化回复
 - **Embodied Agent 架构**：感知 → 记忆 → 决策 → 动作 的完整智能体流水线
+- **Trigger / Collector 策略模式**：触发器声明所需采集器，采集器可独立开关、自由组合
 - **三层记忆系统**：Identity 人格 / Short-term 对话窗口 / Long-term 语义摘要
 - **显式状态机**：情绪（Mood）、熟悉度、当前目标，注入到 LLM prompt 中
+- **主动感知**：进入新群系时自动触发评论（可关闭）
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
-- **多厂商支持**：支持 OpenAI / Qwen / Gemini（通过 OpenAI 兼容接口）
+- **多厂商支持**：支持 OpenAI / Qwen / DeepSeek / Custom（通过 OpenAI 兼容接口）
 - **左键打断**：思考过程中可随时左键中断请求
-- **游戏内配置界面**：从模组列表直接打开配置，或点击按钮编辑 `.toml` 文件
+- **游戏内配置界面**：采集器开关 / Agent 行为 / 厂商模型 / 截图分辨率，全部可在游戏内调整
 - **完全可自定义**：触发 / 打断 / 系统 Prompt / 输出长度 / 武器名称均可配置
 
 ## 📁 模块结构
 
 ```
 agent/
-├── context/                  ← 感知 & 上下文
-│   ├── AgentContext.java      — 不可变游戏状态快照 (Builder 模式)
-│   └── AgentSensor.java       — 唯一事件入口：防抖 + 采集 + 提交任务 + 取消
-├── state/                    ← 显式状态
-│   └── AgentState.java        — 情绪 Mood 枚举 + 熟悉度 + 当前目标
-├── memory/                   ← 记忆系统
-│   ├── AgentMsg.java          — 不可变消息 (Role/Content/Image/Metadata)
-│   └── AgentMemory.java       — 三层记忆：Identity / Short-term / Long-term
-├── task/                     ← 任务调度
-│   ├── AgentTask.java         — 抽象基类 (taskId/priority/cancel/Comparable)
-│   ├── LLMInteractionTask.java — LLM 交互任务：构建 prompt → 调 LLM → SpeechAction → 更新记忆
-│   ├── MemoryUpdateTask.java  — 零网络开销的本地记忆更新
-│   ├── AgentStateUpdateTask.java — 零网络开销的状态更新
-│   └── ReflectionTask.java    — 后台记忆压缩/反思
-├── action/                   ← 动作执行
-│   ├── AgentAction.java       — 抽象基类 (perform/estimatedDuration)
-│   ├── SpeechAction.java      — ActionBar 逐行文字展示
-│   ├── SoundAction.java       — 音效播放
-│   └── EmoteAction.java       — 粒子表情
-├── runtime/                  ← Agent 运行时
-│   └── AgentRuntime.java      — 单 worker + PriorityBlockingQueue + 全局 Memory/State
-└── llm_service/              ← LLM 工具
-    └── LLMAgentService.java   — 纯工具类：buildModel()
+├── context/                        ← 感知 & 上下文
+│   ├── AgentContext.java            — 不可变游戏状态快照 (Builder 模式 + extras Map)
+│   ├── AgentSensor.java             — 唯一事件入口：防抖 + 遍历采集器 + 提交任务 + 取消
+│   ├── collector/                   ← 采集器（Strategy 模式，每种可独立开关）
+│   │   ├── IContextCollector.java    — 采集器接口：getName() + collect(Builder, Player, Level)
+│   │   ├── BaseContextCollector.java — HP / 饥饿值 / 坐标 / 群系 / 天气 / 时间
+│   │   ├── ScreenshotCollector.java  — 截图 → Base64（受 ENABLE_SCREENSHOT 控制）
+│   │   ├── NearbyEntitiesCollector.java — 附近实体扫描（16格内，按类型分组）
+│   │   ├── PlayerEnvironmentCollector.java — 维度 / 光照 / 持有物品 / 盔甲 / 准星目标
+│   │   └── README.md                — 采集器开发指南
+│   └── trigger/                     ← 触发器（定义事件 → 采集器列表 → 任务类型）
+│       ├── IAgentTrigger.java        — 触发器接口：getSourceName / requiresDebounce / getCollectors / createTask
+│       ├── RightClickTrigger.java    — 右键触发（全量采集 → LLMInteractionTask）
+│       ├── BiomeChangeTrigger.java   — 群系变化触发（仅基础采集 → AgentStateUpdateTask）
+│       ├── TickEventWatcher.java     — Forge ClientTickEvent 监听器（周期检测，调度被动触发）
+│       └── README.md                — 触发器开发指南
+├── state/                          ← 显式状态
+│   └── AgentState.java              — 情绪 Mood 枚举 + 熟悉度 + 当前目标
+├── memory/                         ← 记忆系统
+│   ├── AgentMsg.java                — 不可变消息 (Role/Content/Image/Metadata)
+│   └── AgentMemory.java             — 三层记忆：Identity / Short-term / Long-term
+├── task/                           ← 任务调度
+│   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
+│   ├── LLMInteractionTask.java      — LLM 交互：构建 prompt → 调 LLM → SpeechAction → 更新记忆
+│   ├── MemoryUpdateTask.java        — 零网络开销的本地记忆更新
+│   ├── AgentStateUpdateTask.java    — 零网络开销的状态更新（含 description）
+│   └── ReflectionTask.java          — 后台记忆压缩/反思
+├── action/                         ← 动作执行
+│   ├── AgentAction.java             — 抽象基类 (perform/estimatedDuration)
+│   ├── SpeechAction.java            — ActionBar 逐行文字展示
+│   ├── SoundAction.java             — 音效播放
+│   └── EmoteAction.java             — 粒子表情
+├── runtime/                        ← Agent 运行时
+│   └── AgentRuntime.java            — 单 worker + PriorityBlockingQueue + 全局 Memory/State
+└── llm_service/                    ← LLM 工具
+    └── LLMAgentService.java         — 纯工具类：buildModel()
 
 config/
-├── TalkingWeaponConfig.java   — Forge 客户端配置
-└── TalkingWeaponConfigScreen.java — 游戏内配置界面
+├── TalkingWeaponConfig.java         — Forge 客户端配置（含采集器独立开关）
+└── TalkingWeaponConfigScreen.java   — 游戏内配置界面（双栏布局：采集器 + Agent 行为）
 
-TalkingSword.java              — 剑物品：右键委托给 AgentSensor
-ClientEventHandler.java        — 左键打断委托给 AgentSensor
-ScreenshotHelper.java          — 截图 + 缩放 + Base64 编码
-basic_talking_weapon.java      — Forge 主类
+TalkingSword.java                    — 剑物品：右键 → fireTrigger(RightClickTrigger)
+ClientEventHandler.java              — 左键打断 → AgentSensor.triggerCancel()
+ScreenshotHelper.java                — 截图 + 缩放 + Base64 编码
+basic_talking_weapon.java            — Forge 主类（注册 TickEventWatcher + ConfigScreen）
 ```
 
 ## 🎮 使用流程
 
-### 数据流
+### 数据流（Trigger → Collector → Task）
 
 ```
-TalkingSword.use() ──→ AgentSensor.triggerRightClick(player)
-                         ├─ 防抖检查 (canTrigger)
-                         ├─ capture("right_click", withScreenshot=true)
-                         │    └─ 主线程采集：HP / 饥饿值 / 生物群系 / 坐标 / 天气 / 截图
-                         ├─ 显示触发提示
-                         └─ AgentRuntime.submit(new LLMInteractionTask(context))
-                                ↓ worker 线程 (PriorityBlockingQueue)
-                           LLMInteractionTask.execute()
-                                ├─ buildSystemPrompt(memory + state + context)
-                                ├─ LLMAgentService.buildModel()
-                                ├─ model.generate(systemMsg, userMsg)
-                                ├─ SpeechAction("剑：" + reply).perform()
-                                │    └─ 逐行提交到主线程 ActionBar
-                                └─ memory.addShortTerm(user + assistant)
+TalkingSword.use()
+  └→ AgentSensor.fireTrigger(new RightClickTrigger(), player)
+       ├─ 防抖检查 (canTrigger / requiresDebounce)
+       ├─ 忙检查 (isRuntimeBusy)
+       ├─ 遍历 trigger.getCollectors()
+       │    ├─ BaseContextCollector.collect()     ← 受 ENABLE_BASE_COLLECTOR 控制
+       │    ├─ ScreenshotCollector.collect()      ← 受 ENABLE_SCREENSHOT 控制
+       │    ├─ NearbyEntitiesCollector.collect()  ← 受 ENABLE_NEARBY_ENTITIES 控制
+       │    └─ PlayerEnvironmentCollector.collect() ← 受 ENABLE_PLAYER_ENVIRONMENT 控制
+       ├─ 构建不可变 AgentContext（core 字段 + extras Map）
+       ├─ 显示触发提示
+       └─ AgentRuntime.submit(trigger.createTask(context))
+              ↓ worker 线程 (PriorityBlockingQueue)
+         LLMInteractionTask.execute()
+              ├─ buildSystemPrompt(memory + state + context + extras)
+              ├─ LLMAgentService.buildModel()
+              ├─ model.generate(systemMsg, userMsg)
+              ├─ SpeechAction("剑：" + reply).perform()
+              │    └─ 逐行提交到主线程 ActionBar
+              └─ memory.addShortTerm(user + assistant)
+```
 
-ClientEventHandler ──→ AgentSensor.triggerCancel(player)
-                         ├─ AgentRuntime.cancelCurrentAndClearQueue()
-                         │    └─ queue.clear() + currentTask.cancel() + interrupt
-                         └─ 显示取消提示
+### 被动触发（TickEventWatcher）
+
+```
+TickEventWatcher.onClientTick()  ← 每 100 tick (5 秒) 检测
+  ├─ 检查 ENABLE_PROACTIVE_TRIGGERS
+  ├─ 检查 ENABLE_BIOME_DETECTION
+  ├─ 检测群系变化 → fireTrigger(new BiomeChangeTrigger(newBiome))
+  │    └─ 仅用 BaseContextCollector → AgentStateUpdateTask
+  └─ （可扩展：低血量、日夜交替、长时间挂机等）
 ```
 
 ### 显示机制
@@ -87,60 +114,65 @@ ClientEventHandler ──→ AgentSensor.triggerCancel(player)
 ## ⚙️ 配置
 
 ### 方式一：游戏内配置界面
-1. 进入"Mods"列表，找到"Talking Weapon"
-2. 点击"Config"按钮
+1. 进入 "Mods" 列表，找到 "Talking Weapon"
+2. 点击 "Config" 按钮
 3. 可设置：
-   - **厂商选择**：OpenAI / Qwen / Gemini
+   - **厂商选择**：OpenAI / Qwen (通义千问) / DeepSeek / Custom
    - **模型选择**：根据厂商动态显示可用模型
    - **截图分辨率**：宽度 × 高度（像素）
-4. 点击"打开配置文件(.toml)"按钮编辑文本配置
+   - **采集器开关**（左栏）：
+     - 基础状态（HP、坐标、群系…）
+     - 截图（关闭后 LLM 仅接收文本）
+     - 附近实体
+     - 玩家环境（光照、持有物品…）
+   - **Agent 行为开关**（右栏）：
+     - 主动触发（总开关）
+     - 群系检测
+4. 点击 "打开配置文件(.toml)" 按钮编辑文本配置
 
 ### 方式二：直接编辑配置文件
 编辑 `config/talking_weapon-client.toml`（首次启动后自动生成）：
 
 ```toml
 [llm]
-  # 厂商：OpenAI | Qwen | Gemini
   provider = "OpenAI"
-  
-  # API Key（必填）
-  api_key = "sk-..."
-  
-  # OpenAI 兼容接口地址
-  base_url = "https://api.openai.com/v1/"
-  
-  # 模型名称
-  model_name = "gpt-4o"
-  
-  # 最大输出 token（默认 300）
-  max_tokens = 300
-  
-  # 触发时的发言
-  trigger_speech = "你感受到一丝灵魂的悸动……"
-  
-  # 打断时的发言
-  cancel_speech = "剑：沉默不语……"
-  
-  # 系统 Prompt（剑的人格设定）
-  prompt = "你是一把充满个性的会说话的剑..."
+  apiKey = "sk-..."
+  baseUrl = "https://api.openai.com/v1/"
+  modelName = "gpt-4o"
+  maxTokens = 256
 
 [screenshot]
-  width = 512
-  height = 288
+  enableScreenshot = true
+  width = 320
+  height = 180
 
-[item]
-  weapon_name = "会说话的铁剑"
+[text]
+  weaponName = "灵魂之剑"
+  prompt = "请根据你看到的画面和当前状态，以武器灵魂的身份发表评论。"
+  triggerSpeech = "你感受到一丝灵魂的悸动……"
+  cancelSpeech = "剑：沉默不语……"
+  systemIdentity = "你是一把会说话的剑中的灵魂..."
+
+[collectors]
+  enableBaseCollector = true
+  enableNearbyEntities = true
+  enablePlayerEnvironment = true
+
+[agent]
+  enableProactiveTriggers = true
+  enableBiomeDetection = true
 ```
 
 ## 🔌 支持的厂商与模型
 
 | 厂商 | 可用模型（游戏内可切换） | Base URL |
 |------|--------------------------|----------|
-| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.2 | `https://api.openai.com/v1/` |
-| **Qwen** | qwen3.5-plus, qwen3.5-flash, qwen3-vl-plus, qwen3-vl-flash | `https://dashscope.aliyuncs.com/compatible-mode/v1/` |
-| **Gemini** | gemini-3.1-flash-lite-preview, gemini-3-flash-preview | 需第三方 OpenAI 兼容代理 |
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo | `https://api.openai.com/v1/` |
+| **Qwen (通义千问)** | qwen-vl-max, qwen-vl-plus, qwen-turbo | `https://dashscope.aliyuncs.com/compatible-mode/v1/` |
+| **DeepSeek** | deepseek-chat, deepseek-reasoner | `https://api.deepseek.com/v1/` |
+| **Custom** | custom-model（自行填写） | 自定义 |
 
-> **注**：当前所有厂商均通过 OpenAI 兼容接口调用。如需原生 Claude API 支持，需额外添加 `langchain4j-anthropic` 依赖。
+> **注**：所有厂商均通过 OpenAI 兼容接口调用。
 
 ## 🏗️ Agent 架构
 
@@ -150,12 +182,34 @@ ClientEventHandler ──→ AgentSensor.triggerCancel(player)
 
 | 能力 | 实现 |
 |------|------|
-| **感知** | `AgentSensor` — 采集玩家状态、环境、截图 → 不可变 `AgentContext` |
+| **感知** | `AgentSensor` + `IContextCollector` — 模块化采集器组合 → 不可变 `AgentContext` |
+| **触发** | `IAgentTrigger` — 声明所需采集器 + 任务类型，支持被动/主动两种模式 |
 | **记忆** | `AgentMemory` — 三层：Identity(人格) / Short-term(滑动窗口) / Long-term(语义摘要) |
 | **状态** | `AgentState` — 情绪(8种Mood) + 熟悉度(0-100) + 当前目标 |
-| **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文的 prompt → LLM 推理 |
+| **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理 |
 | **行动** | `SpeechAction` / `SoundAction` / `EmoteAction` — 主线程执行 |
 | **调度** | `AgentRuntime` — 单 worker + 优先级队列，串行避免并发 |
+
+### Trigger / Collector 模式
+
+```
+IAgentTrigger (触发器)
+├── getSourceName()      → "right_click" | "biome_change" | ...
+├── requiresDebounce()   → 是否需要防抖
+├── getCollectors()      → [BaseCollector, ScreenshotCollector, ...]
+└── createTask(context)  → LLMInteractionTask | AgentStateUpdateTask
+
+IContextCollector (采集器)
+├── getName()            → "base" | "screenshot" | "nearby_entities" | ...
+└── collect(builder, player, level) → 写入 AgentContext 核心字段或 extras
+```
+
+- **触发器**决定"什么事件 → 采集哪些数据 → 创建什么任务"
+- **采集器**独立于触发器，可复用、可独立开关
+- 新增触发器只需实现 `IAgentTrigger`，组合已有采集器
+- 新增采集器只需实现 `IContextCollector`，然后加入触发器的 `getCollectors()`
+
+> 详细指南见 `collector/README.md` 和 `trigger/README.md`
 
 ### 任务优先级
 
@@ -186,25 +240,29 @@ ClientEventHandler ──→ AgentSensor.triggerCancel(player)
 
 ## 🎯 使用技巧
 
-1. **调整截图分辨率**：更大分辨率 = 更准确但更慢 / 更贵；推荐 `512×288`
-2. **自定义人格**：修改 `prompt` 字段，可以让剑变成毒舌 / 傲娇 / 冷漠等任意风格
-3. **多模型切换**：在游戏内配置界面快速切换不同厂商和模型
-4. **打断长时请求**：如果 LLM 响应过慢，直接左键即可中断等待
-5. **自定义武器名称**：在配置文件中修改 `weapon_name`
+1. **调整截图分辨率**：更大分辨率 = 更准确但更慢 / 更贵；推荐 `320×180`
+2. **关闭不需要的采集器**：减少 prompt token 消耗，加快响应速度
+3. **自定义人格**：修改 `systemIdentity` 字段，可以让剑变成毒舌 / 傲娇 / 冷漠等任意风格
+4. **多模型切换**：在游戏内配置界面快速切换不同厂商和模型
+5. **打断长时请求**：如果 LLM 响应过慢，直接左键即可中断等待
+6. **关闭主动触发**：不希望武器主动说话时，关闭"主动触发"开关
 
 ## 🐛 常见问题
 
 **Q: 剑不说话？**  
-A: 检查配置文件中的 `api_key` 是否正确填写，且不含"填写"等占位符。
+A: 检查配置文件中的 `apiKey` 是否正确填写，且不含"填写"等占位符。
 
-**Q: 如何使用 Qwen / Gemini？**  
-A: 在游戏内配置界面选择对应厂商，然后编辑配置文件填写正确的 `base_url` 和 `api_key`。
+**Q: 如何使用 Qwen / DeepSeek？**  
+A: 在游戏内配置界面选择对应厂商，然后编辑配置文件填写正确的 `baseUrl` 和 `apiKey`。
 
 **Q: Action Bar 显示太快？**  
 A: 每行停留时间自动计算（基于字符数），如需调整请修改 `SpeechAction.calculateLineDisplayMillis()` 方法。
 
 **Q: 想要更长的回复？**  
-A: 修改配置文件中的 `max_tokens` 值（建议不超过 500，避免 Action Bar 轮播过久）。
+A: 修改配置文件中的 `maxTokens` 值（建议不超过 500，避免 Action Bar 轮播过久）。
+
+**Q: 如何扩展新的采集器或触发器？**  
+A: 参见 `agent/context/collector/README.md` 和 `agent/context/trigger/README.md`。
 
 ## 📄 许可
 
