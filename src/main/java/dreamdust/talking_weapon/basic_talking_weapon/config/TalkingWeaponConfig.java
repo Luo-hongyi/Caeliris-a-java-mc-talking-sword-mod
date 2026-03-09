@@ -1,0 +1,158 @@
+package dreamdust.talking_weapon.basic_talking_weapon.config;
+
+import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.config.ModConfig;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 全局配置：基于 Forge Config 系统，对应 talking_weapon-client.toml。
+ */
+public final class TalkingWeaponConfig {
+
+    // ═══════════════════════════════════════════════════════════════
+    //  厂商 / 模型预设
+    // ═══════════════════════════════════════════════════════════════
+
+    public static final List<String> AVAILABLE_PROVIDERS = List.of(
+            "OpenAI", "Qwen (通义千问)", "DeepSeek", "Custom"
+    );
+
+    public static final Map<String, List<String>> MODELS_BY_PROVIDER;
+
+    static {
+        MODELS_BY_PROVIDER = new LinkedHashMap<>();
+        MODELS_BY_PROVIDER.put("OpenAI", List.of("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"));
+        MODELS_BY_PROVIDER.put("Qwen (通义千问)", List.of("qwen-vl-max", "qwen-vl-plus", "qwen-turbo"));
+        MODELS_BY_PROVIDER.put("DeepSeek", List.of("deepseek-chat", "deepseek-reasoner"));
+        MODELS_BY_PROVIDER.put("Custom", List.of("custom-model"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Config 值声明
+    // ═══════════════════════════════════════════════════════════════
+
+    public static final ForgeConfigSpec SPEC;
+
+    // —— LLM 连接 ——
+    public static final ForgeConfigSpec.ConfigValue<String> PROVIDER;
+    public static final ForgeConfigSpec.ConfigValue<String> OPENAI_API_KEY;
+    public static final ForgeConfigSpec.ConfigValue<String> BASE_URL;
+    public static final ForgeConfigSpec.ConfigValue<String> MODEL_NAME;
+    public static final ForgeConfigSpec.IntValue MAX_TOKENS;
+
+    // —— 截图 ——
+    public static final ForgeConfigSpec.BooleanValue ENABLE_SCREENSHOT;
+    public static final ForgeConfigSpec.IntValue SCREENSHOT_WIDTH;
+    public static final ForgeConfigSpec.IntValue SCREENSHOT_HEIGHT;
+
+    // —— 文本 ——
+    public static final ForgeConfigSpec.ConfigValue<String> WEAPON_NAME;
+    public static final ForgeConfigSpec.ConfigValue<String> PROMPT;
+    public static final ForgeConfigSpec.ConfigValue<String> TRIGGER_SPEECH;
+    public static final ForgeConfigSpec.ConfigValue<String> CANCEL_SPEECH;
+    public static final ForgeConfigSpec.ConfigValue<String> SYSTEM_IDENTITY;
+
+    // —— 采集器开关 ——
+    public static final ForgeConfigSpec.BooleanValue ENABLE_BASE_COLLECTOR;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_NEARBY_ENTITIES;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_PLAYER_ENVIRONMENT;
+
+    // —— Agent 行为 ——
+    public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_BIOME_DETECTION;
+
+    static {
+        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+
+        // ── LLM 连接 ──────────────────────────────────────────
+        builder.push("llm");
+        PROVIDER = builder
+                .comment("LLM 厂商名称")
+                .define("provider", "OpenAI");
+        OPENAI_API_KEY = builder
+                .comment("API Key（必须填写）")
+                .define("apiKey", "请填写你的API Key");
+        BASE_URL = builder
+                .comment("API Base URL（OpenAI 兼容接口地址）")
+                .define("baseUrl", "https://api.openai.com/v1/");
+        MODEL_NAME = builder
+                .comment("模型名称")
+                .define("modelName", "gpt-4o");
+        MAX_TOKENS = builder
+                .comment("最大生成 token 数")
+                .defineInRange("maxTokens", 256, 1, 4096);
+        builder.pop();
+
+        // ── 截图 ──────────────────────────────────────────────
+        builder.push("screenshot");
+        ENABLE_SCREENSHOT = builder
+                .comment("是否启用截图（禁用后 LLM 仅接收文本上下文）")
+                .define("enableScreenshot", true);
+        SCREENSHOT_WIDTH = builder
+                .comment("截图宽度（像素）")
+                .defineInRange("width", 320, 64, 1920);
+        SCREENSHOT_HEIGHT = builder
+                .comment("截图高度（像素）")
+                .defineInRange("height", 180, 36, 1080);
+        builder.pop();
+
+        // ── 文本 ──────────────────────────────────────────────
+        builder.push("text");
+        WEAPON_NAME = builder
+                .comment("武器显示名称")
+                .define("weaponName", "灵魂之剑");
+        PROMPT = builder
+                .comment("发送给 LLM 的 user prompt")
+                .define("prompt", "请根据你看到的画面和当前状态，以武器灵魂的身份发表评论。");
+        TRIGGER_SPEECH = builder
+                .comment("右键触发时的 ActionBar 提示")
+                .define("triggerSpeech", "你感受到一丝灵魂的悸动……");
+        CANCEL_SPEECH = builder
+                .comment("左键打断时的 ActionBar 提示")
+                .define("cancelSpeech", "剑：沉默不语……");
+        SYSTEM_IDENTITY = builder
+                .comment("武器灵魂的人格设定（system prompt 前缀）")
+                .define("systemIdentity",
+                        "你是一把会说话的剑中的灵魂。你性格直率、略带傲娇，偶尔毒舌。"
+                        + "你会根据玩家看到的画面和游戏状态做出评论，语言简洁有趣，不超过两句话。");
+        builder.pop();
+
+        // ── 采集器开关 ─────────────────────────────────────────
+        builder.push("collectors");
+        ENABLE_BASE_COLLECTOR = builder
+                .comment("启用基础状态采集（生命值、坐标、群系、天气等）")
+                .define("enableBaseCollector", true);
+        ENABLE_NEARBY_ENTITIES = builder
+                .comment("启用附近实体采集（扫描周围生物并分组计数）")
+                .define("enableNearbyEntities", true);
+        ENABLE_PLAYER_ENVIRONMENT = builder
+                .comment("启用玩家环境采集（维度、光照、持有物品、盔甲、准星目标等）")
+                .define("enablePlayerEnvironment", true);
+        builder.pop();
+
+        // ── Agent 行为 ─────────────────────────────────────────
+        builder.push("agent");
+        ENABLE_PROACTIVE_TRIGGERS = builder
+                .comment("启用主动触发器总开关")
+                .define("enableProactiveTriggers", true);
+        ENABLE_BIOME_DETECTION = builder
+                .comment("启用被动群系变化检测（玩家进入新群系时自动触发）")
+                .define("enableBiomeDetection", true);
+        builder.pop();
+
+        SPEC = builder.build();
+    }
+
+    private TalkingWeaponConfig() {}
+
+    /**
+     * 在 Mod 构造函数中调用，注册 client 配置文件。
+     */
+    public static void register() {
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC, "talking_weapon-client.toml");
+    }
+}
