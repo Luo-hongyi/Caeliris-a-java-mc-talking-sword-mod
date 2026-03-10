@@ -56,6 +56,8 @@ public class TalkingWeaponConfigScreen extends Screen {
 
     // ── 实体探查 ──
     private boolean entitiesOnlyCreatures;
+    private boolean entitiesLineOfSight;
+    private boolean entitiesFuzzyCount;
 
     // ── Agent 行为开关 ──
     private boolean enableProactiveTriggers;
@@ -101,6 +103,8 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.bcNearbyStructures = TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get();
 
         this.entitiesOnlyCreatures = TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.get();
+        this.entitiesLineOfSight = TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.get();
+        this.entitiesFuzzyCount = TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.get();
 
         this.enableProactiveTriggers = TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.get();
         this.enableBiomeDetection = TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get();
@@ -197,6 +201,8 @@ public class TalkingWeaponConfigScreen extends Screen {
         // ── 实体探查设置 ──
         configList.addEntry(new LabelEntry("§e▸ 实体探查设置"));
         configList.addEntry(new ToggleEntry("仅探查生物", left, rowWidth, entitiesOnlyCreatures, v -> entitiesOnlyCreatures = v));
+        configList.addEntry(new ToggleEntry("视线检测（仅生物）", left, rowWidth, entitiesLineOfSight, v -> entitiesLineOfSight = v));
+        configList.addEntry(new ToggleEntry("模糊数量报告", left, rowWidth, entitiesFuzzyCount, v -> entitiesFuzzyCount = v));
 
         // ── 右键触发 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 右键触发 · 采集器"));
@@ -296,6 +302,8 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.set(bcNearbyStructures);
 
         TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.set(entitiesOnlyCreatures);
+        TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.set(entitiesLineOfSight);
+        TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.set(entitiesFuzzyCount);
 
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);

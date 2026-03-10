@@ -59,6 +59,9 @@ public final class TalkingWeaponConfig {
 
     // —— 实体探查 ——
     public static final ForgeConfigSpec.BooleanValue ENTITIES_ONLY_CREATURES;
+    public static final ForgeConfigSpec.BooleanValue ENTITIES_LINE_OF_SIGHT;
+    public static final ForgeConfigSpec.IntValue ENTITIES_LOS_MAX_CHECK;
+    public static final ForgeConfigSpec.BooleanValue ENTITIES_FUZZY_COUNT;
 
     // —— 结构探查 ——
     public static final ForgeConfigSpec.IntValue STRUCTURE_SCAN_RADIUS;
@@ -147,6 +150,15 @@ public final class TalkingWeaponConfig {
         ENTITIES_ONLY_CREATURES = builder
                 .comment("仅探查生物（true=只报告生物，false=同时报告掉落物、展示框等非生物实体）")
                 .define("onlyCreatures", false);
+        ENTITIES_LINE_OF_SIGHT = builder
+                .comment("启用视线检测（射线检测遮挡，仅对生物生效，过滤被方块遮挡的生物）")
+                .define("lineOfSight", false);
+        ENTITIES_LOS_MAX_CHECK = builder
+                .comment("视线检测最大射线数量（性能保护，按距离排序后只检测最近的 N 个生物）")
+                .defineInRange("losMaxCheck", 64, 8, 256);
+        ENTITIES_FUZZY_COUNT = builder
+                .comment("模糊数量报告（true=用“一个/一些/大量”代替准确数字，false=报告准确数量）")
+                .define("fuzzyCount", false);
         builder.pop();
 
         // ── 结构探查 ──────────────────────────────────────────
