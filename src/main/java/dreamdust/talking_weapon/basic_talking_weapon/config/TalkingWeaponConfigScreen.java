@@ -31,6 +31,10 @@ public class TalkingWeaponConfigScreen extends Screen {
     private EditBox widthBox;
     private EditBox heightBox;
 
+    // 结构探查输入框
+    private EditBox structureRadiusBox;
+    private EditBox structureMaxResultsBox;
+
     // 厂商选择
     private int providerIndex;
     // 模型循环选择
@@ -41,12 +45,17 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean rcScreenshot;
     private boolean rcNearbyEntities;
     private boolean rcPlayerEnvironment;
+    private boolean rcNearbyStructures;
 
     // ── 群系变化 · 采集器开关 ──
     private boolean bcBase;
     private boolean bcScreenshot;
     private boolean bcNearbyEntities;
     private boolean bcPlayerEnvironment;
+    private boolean bcNearbyStructures;
+
+    // ── 实体探查 ──
+    private boolean entitiesOnlyCreatures;
 
     // ── Agent 行为开关 ──
     private boolean enableProactiveTriggers;
@@ -83,11 +92,15 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.rcScreenshot = TalkingWeaponConfig.RC_ENABLE_SCREENSHOT.get();
         this.rcNearbyEntities = TalkingWeaponConfig.RC_ENABLE_NEARBY_ENTITIES.get();
         this.rcPlayerEnvironment = TalkingWeaponConfig.RC_ENABLE_PLAYER_ENVIRONMENT.get();
+        this.rcNearbyStructures = TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.get();
 
         this.bcBase = TalkingWeaponConfig.BC_ENABLE_BASE.get();
         this.bcScreenshot = TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get();
         this.bcNearbyEntities = TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.get();
         this.bcPlayerEnvironment = TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.get();
+        this.bcNearbyStructures = TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get();
+
+        this.entitiesOnlyCreatures = TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.get();
 
         this.enableProactiveTriggers = TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.get();
         this.enableBiomeDetection = TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get();
@@ -166,6 +179,25 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         configList.addEntry(new TwoWidgetEntry("截图宽 × 高", left, rowWidth, widthBox, heightBox));
 
+        // ── 结构探查设置 ──
+        configList.addEntry(new LabelEntry("§e▸ 结构探查设置"));
+
+        structureRadiusBox = new EditBox(font, 0, 0, 80, 20, Component.literal("扫描半径"));
+        structureRadiusBox.setValue(String.valueOf(TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get()));
+        structureRadiusBox.setMaxLength(2);
+        structureRadiusBox.setCanLoseFocus(true);
+
+        structureMaxResultsBox = new EditBox(font, 0, 0, 80, 20, Component.literal("最大数量"));
+        structureMaxResultsBox.setValue(String.valueOf(TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
+        structureMaxResultsBox.setMaxLength(2);
+        structureMaxResultsBox.setCanLoseFocus(true);
+
+        configList.addEntry(new TwoWidgetEntry("半径(区块) / 数量上限", left, rowWidth, structureRadiusBox, structureMaxResultsBox));
+
+        // ── 实体探查设置 ──
+        configList.addEntry(new LabelEntry("§e▸ 实体探查设置"));
+        configList.addEntry(new ToggleEntry("仅探查生物", left, rowWidth, entitiesOnlyCreatures, v -> entitiesOnlyCreatures = v));
+
         // ── 右键触发 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 右键触发 · 采集器"));
 
@@ -173,6 +205,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("截图采集", left, rowWidth, rcScreenshot, v -> rcScreenshot = v));
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, rcNearbyEntities, v -> rcNearbyEntities = v));
         configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, rcPlayerEnvironment, v -> rcPlayerEnvironment = v));
+        configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, rcNearbyStructures, v -> rcNearbyStructures = v));
 
         // ── 群系变化 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 群系变化 · 采集器"));
@@ -181,6 +214,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("截图采集", left, rowWidth, bcScreenshot, v -> bcScreenshot = v));
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, bcNearbyEntities, v -> bcNearbyEntities = v));
         configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, bcPlayerEnvironment, v -> bcPlayerEnvironment = v));
+        configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, bcNearbyStructures, v -> bcNearbyStructures = v));
 
         // ── Agent 行为开关 ──
         configList.addEntry(new LabelEntry("§e▸ Agent 行为"));
@@ -242,15 +276,26 @@ public class TalkingWeaponConfigScreen extends Screen {
                 heightBox.getValue(), 36, 1080,
                 TalkingWeaponConfig.SCREENSHOT_HEIGHT.get());
 
+        trySetInt(TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS,
+                structureRadiusBox.getValue(), 1, 16,
+                TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get());
+        trySetInt(TalkingWeaponConfig.STRUCTURE_MAX_RESULTS,
+                structureMaxResultsBox.getValue(), 1, 32,
+                TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get());
+
         TalkingWeaponConfig.RC_ENABLE_BASE.set(rcBase);
         TalkingWeaponConfig.RC_ENABLE_SCREENSHOT.set(rcScreenshot);
         TalkingWeaponConfig.RC_ENABLE_NEARBY_ENTITIES.set(rcNearbyEntities);
         TalkingWeaponConfig.RC_ENABLE_PLAYER_ENVIRONMENT.set(rcPlayerEnvironment);
+        TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.set(rcNearbyStructures);
 
         TalkingWeaponConfig.BC_ENABLE_BASE.set(bcBase);
         TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.set(bcScreenshot);
         TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.set(bcNearbyEntities);
         TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.set(bcPlayerEnvironment);
+        TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.set(bcNearbyStructures);
+
+        TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.set(entitiesOnlyCreatures);
 
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);

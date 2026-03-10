@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.BaseContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.NearbyEntitiesCollector;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.NearbyStructureCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.PlayerEnvironmentCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ScreenshotCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
@@ -45,6 +46,9 @@ public class BiomeChangeTrigger implements IAgentTrigger {
         if (TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get())        list.add(new ScreenshotCollector());
         if (TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.get())   list.add(new NearbyEntitiesCollector());
         if (TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.get()) list.add(new PlayerEnvironmentCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get())   list.add(new NearbyStructureCollector(
+                TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
+                TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
         return list;
     }
 

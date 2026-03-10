@@ -57,17 +57,26 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.ConfigValue<String> CANCEL_SPEECH;
     public static final ForgeConfigSpec.ConfigValue<String> SYSTEM_IDENTITY;
 
+    // —— 实体探查 ——
+    public static final ForgeConfigSpec.BooleanValue ENTITIES_ONLY_CREATURES;
+
+    // —— 结构探查 ——
+    public static final ForgeConfigSpec.IntValue STRUCTURE_SCAN_RADIUS;
+    public static final ForgeConfigSpec.IntValue STRUCTURE_MAX_RESULTS;
+
     // —— 右键触发 · 采集器 ——
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_BASE;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_SCREENSHOT;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_PLAYER_ENVIRONMENT;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_STRUCTURES;
 
     // —— 群系变化 · 采集器 ——
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_BASE;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_SCREENSHOT;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_PLAYER_ENVIRONMENT;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_STRUCTURES;
 
     // —— Agent 行为 ——
     public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
@@ -133,6 +142,23 @@ public final class TalkingWeaponConfig {
                         + "你会根据玩家看到的画面和游戏状态做出评论，语言简洁有趣，不超过两句话。");
         builder.pop();
 
+        // ── 实体探查 ──────────────────────────────────────────
+        builder.push("entity");
+        ENTITIES_ONLY_CREATURES = builder
+                .comment("仅探查生物（true=只报告生物，false=同时报告掉落物、展示框等非生物实体）")
+                .define("onlyCreatures", false);
+        builder.pop();
+
+        // ── 结构探查 ──────────────────────────────────────────
+        builder.push("structure");
+        STRUCTURE_SCAN_RADIUS = builder
+                .comment("结构探查扫描半径（区块数，1区块=16格，默认5=80格）")
+                .defineInRange("scanRadiusChunks", 5, 1, 16);
+        STRUCTURE_MAX_RESULTS = builder
+                .comment("结构探查最多报告的结构数量")
+                .defineInRange("maxResults", 8, 1, 32);
+        builder.pop();
+
         // ── 右键触发 · 采集器 ─────────────────────────────────
         builder.push("trigger").push("right_click");
         RC_ENABLE_BASE = builder
@@ -147,6 +173,9 @@ public final class TalkingWeaponConfig {
         RC_ENABLE_PLAYER_ENVIRONMENT = builder
                 .comment("右键触发：启用玩家环境采集")
                 .define("enablePlayerEnvironment", true);
+        RC_ENABLE_NEARBY_STRUCTURES = builder
+                .comment("右键触发：启用结构探查采集")
+                .define("enableNearbyStructures", true);
         builder.pop(); // right_click
 
         // ── 群系变化 · 采集器 ─────────────────────────────────
@@ -163,6 +192,9 @@ public final class TalkingWeaponConfig {
         BC_ENABLE_PLAYER_ENVIRONMENT = builder
                 .comment("群系变化：启用玩家环境采集")
                 .define("enablePlayerEnvironment", true);
+        BC_ENABLE_NEARBY_STRUCTURES = builder
+                .comment("群系变化：启用结构探查采集")
+                .define("enableNearbyStructures", true);
         builder.pop(); // biome_change
         builder.pop(); // trigger
 
