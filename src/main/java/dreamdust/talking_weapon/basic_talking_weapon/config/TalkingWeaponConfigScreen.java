@@ -13,6 +13,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.fml.loading.FMLPaths;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
+
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -233,6 +235,20 @@ public class TalkingWeaponConfigScreen extends Screen {
         Button openToml = Button.builder(Component.literal("打开配置文件(.toml)"), btn -> openConfigFile())
                 .bounds(0, 0, 210, 20).build();
         configList.addEntry(new SingleWidgetEntry(left, rowWidth, openToml));
+
+        // ── 日志管理 ──
+        configList.addEntry(new LabelEntry("§e▸ 日志管理"));
+
+        Button openLogDir = Button.builder(Component.literal("打开日志目录"), btn -> {
+            Util.getPlatform().openUri(AgentLogger.getLogDir().toAbsolutePath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        Button clearLogs = Button.builder(Component.literal("§c清空所有日志"), btn -> {
+            int count = AgentLogger.clearAllLogs();
+            btn.setMessage(Component.literal("§a已清除 " + count + " 个日志"));
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, openLogDir, clearLogs));
 
         // ═══ 底部固定按钮 ═══
         int btnY = height - FOOTER_HEIGHT + 6;
@@ -532,5 +548,38 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override public List<? extends GuiEventListener> children() { return List.of(widget); }
         @Override public List<? extends NarratableEntry> narratables() { return List.of(widget); }
+    }
+
+    /** 双按钮行（左右并排） */
+    private class TwoButtonEntry extends ConfigList.Row {
+        private final int rowLeft;
+        private final int rowWidth;
+        private final AbstractWidget btn1, btn2;
+
+        TwoButtonEntry(int rowLeft, int rowWidth, AbstractWidget btn1, AbstractWidget btn2) {
+            this.rowLeft = rowLeft;
+            this.rowWidth = rowWidth;
+            this.btn1 = btn1;
+            this.btn2 = btn2;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int index, int top, int left,
+                           int width, int height, int mouseX, int mouseY,
+                           boolean hovering, float delta) {
+            int halfW = (rowWidth - 12) / 2;
+            btn1.setX(left + 4);
+            btn1.setY(top + 2);
+            btn1.setWidth(halfW);
+            btn1.render(g, mouseX, mouseY, delta);
+
+            btn2.setX(left + 4 + halfW + 4);
+            btn2.setY(top + 2);
+            btn2.setWidth(halfW);
+            btn2.render(g, mouseX, mouseY, delta);
+        }
+
+        @Override public List<? extends GuiEventListener> children() { return List.of(btn1, btn2); }
+        @Override public List<? extends NarratableEntry> narratables() { return List.of(btn1, btn2); }
     }
 }

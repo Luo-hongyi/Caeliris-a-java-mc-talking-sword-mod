@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
@@ -56,6 +57,9 @@ public class LLMInteractionTask extends AgentTask {
             // 2. 构建 system prompt：身份 + 状态 + 上下文
             String systemPrompt = buildSystemPrompt(memory, state, ctx);
 
+            // ── 日志：状态与记忆 ──
+            AgentLogger.logAgentState(memory, state);
+
             // 3. 构建 LLM 请求
             ChatLanguageModel model = LLMAgentService.buildModel();
 
@@ -76,6 +80,9 @@ public class LLMInteractionTask extends AgentTask {
 
             if (isCancelled()) return;
 
+            // ── 日志：提示词 ──
+            AgentLogger.logPrompts(systemPrompt, userPrompt, screenshotBase64 != null);
+
             // 4. 调用 LLM
             Response<AiMessage> response = model.generate(
                     dev.langchain4j.data.message.SystemMessage.from(systemPrompt),
@@ -88,13 +95,23 @@ public class LLMInteractionTask extends AgentTask {
             // 5. 执行 SpeechAction（在 worker 线程上逐行显示）
             new SpeechAction("剑：" + reply).perform();
 
+            // ── 日志：Agent 行动 ──
+            AgentLogger.logAction("speech", reply);
+
             // 6. 更新记忆
             memory.addShortTerm(AgentMsg.userWithImage(userPrompt, screenshotBase64));
             memory.addShortTerm(AgentMsg.assistant(reply));
 
+            // ── 日志结束 ──
+            AgentLogger.endSession();
+
         } catch (Exception e) {
             if (!isCancelled()) {
+                AgentLogger.logError("LLM 调用失败", e);
+                AgentLogger.endSession();
                 new SpeechAction("剑：我说不出话……" + e.getMessage()).perform();
+            } else {
+                AgentLogger.endSession();
             }
         }
     }

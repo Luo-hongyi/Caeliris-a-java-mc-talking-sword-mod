@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.IAgentTrigger;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
@@ -67,6 +68,9 @@ public class AgentSensor {
             markTriggered();
         }
 
+        // 0. 开始日志会话
+        AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserPrompt());
+
         // 1. 创建 Builder，设置基础元信息
         Minecraft mc = Minecraft.getInstance();
         Player p = mc.player;
@@ -90,6 +94,9 @@ public class AgentSensor {
 
         AgentContext context = builder.build();
 
+        // 2.5. 记录 Collector 采集结果
+        AgentLogger.logContext(context);
+
         // 3. 显示触发提示（仅对需要防抖的交互式触发器）
         if (trigger.requiresDebounce() && player != null) {
             String triggerSpeech = getConfigText(TalkingWeaponConfig.TRIGGER_SPEECH, "你感受到一丝灵魂的悸动……");
@@ -101,8 +108,12 @@ public class AgentSensor {
         if (task == null) return false;
 
         boolean accepted = runtime.submit(task);
-        if (!accepted && player != null) {
-            showActionBar(player, "剑：运行时不可用。请稍后再试。");
+        if (!accepted) {
+            AgentLogger.logError("任务提交失败：运行时不可用", null);
+            AgentLogger.endSession();
+            if (player != null) {
+                showActionBar(player, "剑：运行时不可用。请稍后再试。");
+            }
         }
 
         return accepted;
