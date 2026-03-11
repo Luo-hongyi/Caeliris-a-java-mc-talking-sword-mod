@@ -48,6 +48,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean rcNearbyEntities;
     private boolean rcPlayerEnvironment;
     private boolean rcNearbyStructures;
+    private boolean rcNearbyPoi;
     private boolean rcLookingAt;
     private boolean rcSurroundingBlocks;
     private boolean rcThinking;
@@ -58,6 +59,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean bcNearbyEntities;
     private boolean bcPlayerEnvironment;
     private boolean bcNearbyStructures;
+    private boolean bcNearbyPoi;
     private boolean bcLookingAt;
     private boolean bcSurroundingBlocks;
     private boolean bcThinking;
@@ -106,6 +108,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.rcNearbyEntities = TalkingWeaponConfig.RC_ENABLE_NEARBY_ENTITIES.get();
         this.rcPlayerEnvironment = TalkingWeaponConfig.RC_ENABLE_PLAYER_ENVIRONMENT.get();
         this.rcNearbyStructures = TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.get();
+        this.rcNearbyPoi = TalkingWeaponConfig.RC_ENABLE_NEARBY_POI.get();
         this.rcLookingAt = TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.get();
         this.rcSurroundingBlocks = TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.get();
         this.rcThinking = TalkingWeaponConfig.RC_ENABLE_THINKING.get();
@@ -115,6 +118,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.bcNearbyEntities = TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.get();
         this.bcPlayerEnvironment = TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.get();
         this.bcNearbyStructures = TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get();
+        this.bcNearbyPoi = TalkingWeaponConfig.BC_ENABLE_NEARBY_POI.get();
         this.bcLookingAt = TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.get();
         this.bcSurroundingBlocks = TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.get();
         this.bcThinking = TalkingWeaponConfig.BC_ENABLE_THINKING.get();
@@ -239,6 +243,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, rcNearbyEntities, v -> rcNearbyEntities = v));
         configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, rcPlayerEnvironment, v -> rcPlayerEnvironment = v));
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, rcNearbyStructures, v -> rcNearbyStructures = v));
+        configList.addEntry(new ToggleEntry("POI探查采集", left, rowWidth, rcNearbyPoi, v -> rcNearbyPoi = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, rcLookingAt, v -> rcLookingAt = v));
         configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, rcSurroundingBlocks, v -> rcSurroundingBlocks = v));
         configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, rcThinking, v -> rcThinking = v));
@@ -251,6 +256,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, bcNearbyEntities, v -> bcNearbyEntities = v));
         configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, bcPlayerEnvironment, v -> bcPlayerEnvironment = v));
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, bcNearbyStructures, v -> bcNearbyStructures = v));
+        configList.addEntry(new ToggleEntry("POI探查采集", left, rowWidth, bcNearbyPoi, v -> bcNearbyPoi = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, bcLookingAt, v -> bcLookingAt = v));
         configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, bcSurroundingBlocks, v -> bcSurroundingBlocks = v));
         configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, bcThinking, v -> bcThinking = v));
@@ -341,6 +347,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.RC_ENABLE_NEARBY_ENTITIES.set(rcNearbyEntities);
         TalkingWeaponConfig.RC_ENABLE_PLAYER_ENVIRONMENT.set(rcPlayerEnvironment);
         TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.set(rcNearbyStructures);
+        TalkingWeaponConfig.RC_ENABLE_NEARBY_POI.set(rcNearbyPoi);
         TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.set(rcLookingAt);
         TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.set(rcSurroundingBlocks);
         TalkingWeaponConfig.RC_ENABLE_THINKING.set(rcThinking);
@@ -350,6 +357,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.set(bcNearbyEntities);
         TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.set(bcPlayerEnvironment);
         TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.set(bcNearbyStructures);
+        TalkingWeaponConfig.BC_ENABLE_NEARBY_POI.set(bcNearbyPoi);
         TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.set(bcLookingAt);
         TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.set(bcSurroundingBlocks);
         TalkingWeaponConfig.BC_ENABLE_THINKING.set(bcThinking);

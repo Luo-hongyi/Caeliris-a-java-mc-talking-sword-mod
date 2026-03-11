@@ -74,6 +74,7 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_PLAYER_ENVIRONMENT;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_STRUCTURES;
+        public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_POI;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_LOOKING_AT;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_SURROUNDING_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_THINKING;
@@ -84,6 +85,7 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_PLAYER_ENVIRONMENT;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_STRUCTURES;
+        public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_POI;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_LOOKING_AT;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_SURROUNDING_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_THINKING;
@@ -198,6 +200,9 @@ public final class TalkingWeaponConfig {
         RC_ENABLE_NEARBY_STRUCTURES = builder
                 .comment("右键触发：启用结构探查采集")
                 .define("enableNearbyStructures", true);
+        RC_ENABLE_NEARBY_POI = builder
+                .comment("右键触发：启用POI探查采集")
+                .define("enableNearbyPoi", true);
         RC_ENABLE_LOOKING_AT = builder
                 .comment("右键触发：启用注视目标采集")
                 .define("enableLookingAt", true);
@@ -226,6 +231,9 @@ public final class TalkingWeaponConfig {
         BC_ENABLE_NEARBY_STRUCTURES = builder
                 .comment("群系变化：启用结构探查采集")
                 .define("enableNearbyStructures", true);
+        BC_ENABLE_NEARBY_POI = builder
+                .comment("群系变化：启用POI探查采集")
+                .define("enableNearbyPoi", true);
         BC_ENABLE_LOOKING_AT = builder
                 .comment("群系变化：启用注视目标采集")
                 .define("enableLookingAt", false);
