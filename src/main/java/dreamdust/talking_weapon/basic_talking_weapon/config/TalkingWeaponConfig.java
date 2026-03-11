@@ -128,7 +128,7 @@ public final class TalkingWeaponConfig {
         builder.push("text");
         WEAPON_NAME = builder
                 .comment("武器显示名称")
-                .define("weaponName", "灵魂之剑");
+                .define("weaponName", "塞勒瑞斯");
         RIGHT_CLICK_PROMPT = builder
                 .comment("右键触发时发送给 LLM 的 user prompt")
                 .define("rightClickPrompt", "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。");

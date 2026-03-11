@@ -172,7 +172,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
   height = 180
 
 [text]
-  weaponName = "灵魂之剑"
+  weaponName = "塞了瑞思"
   rightClickPrompt = "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。"
   biomeChangePrompt = "你发现主人刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。"
   triggerSpeech = "你感受到一丝灵魂的悸动……"
