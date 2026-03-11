@@ -73,6 +73,8 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_PLAYER_ENVIRONMENT;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_STRUCTURES;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_LOOKING_AT;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_SURROUNDING_BLOCKS;
 
     // —— 群系变化 · 采集器 ——
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_BASE;
@@ -80,6 +82,8 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_PLAYER_ENVIRONMENT;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_STRUCTURES;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_LOOKING_AT;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_SURROUNDING_BLOCKS;
 
     // —— Agent 行为 ——
     public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
@@ -188,6 +192,12 @@ public final class TalkingWeaponConfig {
         RC_ENABLE_NEARBY_STRUCTURES = builder
                 .comment("右键触发：启用结构探查采集")
                 .define("enableNearbyStructures", true);
+        RC_ENABLE_LOOKING_AT = builder
+                .comment("右键触发：启用注视目标采集")
+                .define("enableLookingAt", true);
+        RC_ENABLE_SURROUNDING_BLOCKS = builder
+                .comment("右键触发：启用周围方块/地形采集")
+                .define("enableSurroundingBlocks", true);
         builder.pop(); // right_click
 
         // ── 群系变化 · 采集器 ─────────────────────────────────
@@ -207,6 +217,12 @@ public final class TalkingWeaponConfig {
         BC_ENABLE_NEARBY_STRUCTURES = builder
                 .comment("群系变化：启用结构探查采集")
                 .define("enableNearbyStructures", true);
+        BC_ENABLE_LOOKING_AT = builder
+                .comment("群系变化：启用注视目标采集")
+                .define("enableLookingAt", false);
+        BC_ENABLE_SURROUNDING_BLOCKS = builder
+                .comment("群系变化：启用周围方块/地形采集")
+                .define("enableSurroundingBlocks", true);
         builder.pop(); // biome_change
         builder.pop(); // trigger
 

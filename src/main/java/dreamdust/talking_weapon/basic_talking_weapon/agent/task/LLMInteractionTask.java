@@ -54,6 +54,12 @@ public class LLMInteractionTask extends AgentTask {
 
             if (isCancelled()) return;
 
+            // 1.5. 从配置读取人格身份写入记忆
+            String configIdentity = TalkingWeaponConfig.SYSTEM_IDENTITY.get();
+            if (configIdentity != null && !configIdentity.isBlank()) {
+                memory.setIdentity(configIdentity);
+            }
+
             // 2. 构建 system prompt：身份 + 状态 + 上下文
             String systemPrompt = buildSystemPrompt(memory, state, ctx);
 
@@ -148,12 +154,14 @@ public class LLMInteractionTask extends AgentTask {
         // 当前上下文
         sb.append("[Context] ").append(ctx.toString()).append("\n");
 
-        // 扩展上下文（由各 Collector 采集）
+        // 扩展上下文（由各 Collector 采集，排除 user_prompt 避免重复）
         if (!ctx.getExtras().isEmpty()) {
             sb.append("[Extra Context]\n");
-            ctx.getExtras().forEach((key, value) ->
-                    sb.append("- ").append(key).append(": ").append(value).append("\n")
-            );
+            ctx.getExtras().forEach((key, value) -> {
+                if (!"user_prompt".equals(key)) {
+                    sb.append("- ").append(key).append(": ").append(value).append("\n");
+                }
+            });
         }
 
         return sb.toString();

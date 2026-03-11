@@ -3,10 +3,12 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.BaseContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.LookingAtCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.NearbyEntitiesCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.NearbyStructureCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.PlayerEnvironmentCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ScreenshotCollector;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.SurroundingBlocksCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMInteractionTask;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
@@ -42,6 +44,8 @@ public class RightClickTrigger implements IAgentTrigger {
         if (TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.get())   list.add(new NearbyStructureCollector(
                 TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
                 TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
+        if (TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.get())          list.add(new LookingAtCollector());
+        if (TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.get())  list.add(new SurroundingBlocksCollector());
         return list;
     }
 

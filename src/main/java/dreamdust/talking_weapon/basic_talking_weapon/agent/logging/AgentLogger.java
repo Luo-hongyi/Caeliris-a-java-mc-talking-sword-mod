@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Agent 调试日志：每次触发生成一个独立的可读 log 文件。
@@ -38,8 +39,8 @@ public final class AgentLogger {
     private static final DateTimeFormatter DISPLAY_TIME_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
-    /** 当前触发会话的日志写入器（线程局部，每次触发单独一个） */
-    private static final ThreadLocal<LogSession> CURRENT_SESSION = new ThreadLocal<>();
+    /** 当前触发会话的日志写入器（全局唯一，因运行时是单工作线程顺序执行） */
+    private static final AtomicReference<LogSession> CURRENT_SESSION = new AtomicReference<>();
 
     private AgentLogger() {}
 
@@ -251,7 +252,7 @@ public final class AgentLogger {
         w.println("═══════════════════════════════════════════════════════════════");
         w.flush();
         w.close();
-        CURRENT_SESSION.remove();
+        CURRENT_SESSION.set(null);
     }
 
     // ═══════════════════════════════════════════════════════════════
