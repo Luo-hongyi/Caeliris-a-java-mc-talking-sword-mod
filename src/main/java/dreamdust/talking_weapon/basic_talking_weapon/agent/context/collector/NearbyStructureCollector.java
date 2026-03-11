@@ -1,10 +1,13 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -66,39 +69,13 @@ public class NearbyStructureCollector implements IContextCollector {
         if (player == null || level == null) return;
 
         BlockPos playerPos = player.blockPosition();
-        int centerCX = SectionPos.blockToSectionCoord(playerPos.getX());
-        int centerCZ = SectionPos.blockToSectionCoord(playerPos.getZ());
+        Map<String, Double> structureDistances = collectStructureDistances(level, playerPos);
 
-        // 结构名称 → 最近距离（方块）
-        Map<String, Double> structureDistances = new LinkedHashMap<>();
-
-        for (int dx = -scanRadiusChunks; dx <= scanRadiusChunks; dx++) {
-            for (int dz = -scanRadiusChunks; dz <= scanRadiusChunks; dz++) {
-                int cx = centerCX + dx;
-                int cz = centerCZ + dz;
-
-                // 仅读取已加载的区块，不触发新区块生成
-                ChunkAccess chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
-                if (chunk == null) continue;
-
-                Map<Structure, StructureStart> starts = chunk.getAllStarts();
-                if (starts == null || starts.isEmpty()) continue;
-
-                for (Map.Entry<Structure, StructureStart> entry : starts.entrySet()) {
-                    StructureStart start = entry.getValue();
-                    if (start == null || !start.isValid()) continue;
-
-                    // 从注册表获取结构的可读名称
-                    String name = resolveStructureName(level, entry.getKey());
-
-                    // 计算玩家到结构包围盒中心的距离
-                    BoundingBox bb = start.getBoundingBox();
-                    BlockPos center = bb.getCenter();
-                    double dist = Math.sqrt(playerPos.distSqr(center));
-
-                    // 同一结构可能横跨多个区块，保留最近的距离
-                    structureDistances.merge(name, dist, Math::min);
-                }
+        // 客户端世界下可能拿不到完整结构起点，单机时回退到集成服务端再扫一次
+        if (structureDistances.isEmpty() && level.isClientSide) {
+            ServerLevel serverLevel = resolveIntegratedServerLevel(level);
+            if (serverLevel != null) {
+                structureDistances = collectStructureDistances(serverLevel, playerPos);
             }
         }
 
@@ -122,6 +99,51 @@ public class NearbyStructureCollector implements IContextCollector {
         }
 
         builder.extra("nearby_structures", sb.toString());
+    }
+
+    private Map<String, Double> collectStructureDistances(Level level, BlockPos playerPos) {
+        int centerCX = SectionPos.blockToSectionCoord(playerPos.getX());
+        int centerCZ = SectionPos.blockToSectionCoord(playerPos.getZ());
+
+        Map<String, Double> structureDistances = new LinkedHashMap<>();
+
+        for (int dx = -scanRadiusChunks; dx <= scanRadiusChunks; dx++) {
+            for (int dz = -scanRadiusChunks; dz <= scanRadiusChunks; dz++) {
+                int cx = centerCX + dx;
+                int cz = centerCZ + dz;
+
+                ChunkAccess chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.STRUCTURE_STARTS, false);
+                if (chunk == null) continue;
+
+                Map<Structure, StructureStart> starts = chunk.getAllStarts();
+                if (starts == null || starts.isEmpty()) continue;
+
+                for (Map.Entry<Structure, StructureStart> entry : starts.entrySet()) {
+                    StructureStart start = entry.getValue();
+                    if (start == null || !start.isValid()) continue;
+
+                    String name = resolveStructureName(level, entry.getKey());
+                    BoundingBox bb = start.getBoundingBox();
+                    BlockPos center = bb.getCenter();
+                    double dist = Math.sqrt(playerPos.distSqr(center));
+
+                    structureDistances.merge(name, dist, Math::min);
+                }
+            }
+        }
+
+        return structureDistances;
+    }
+
+    private ServerLevel resolveIntegratedServerLevel(Level level) {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            MinecraftServer server = minecraft.getSingleplayerServer();
+            if (server == null) return null;
+            return server.getLevel(level.dimension());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

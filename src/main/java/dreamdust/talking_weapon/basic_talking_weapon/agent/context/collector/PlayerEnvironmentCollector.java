@@ -53,8 +53,6 @@ public class PlayerEnvironmentCollector implements IContextCollector {
             builder.extra("held_item", "空手");
         }
 
-        // ── 盔甲值 ──────────────────────────────────────
-        builder.extra("armor_value", String.valueOf(player.getArmorValue()));
 
         // ── 经验等级 ──────────────────────────────────────
         builder.extra("xp_level", String.valueOf(player.experienceLevel));
