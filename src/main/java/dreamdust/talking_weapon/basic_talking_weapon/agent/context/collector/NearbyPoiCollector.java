@@ -1,11 +1,13 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.ai.village.poi.PoiTypes;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -18,6 +20,9 @@ import java.util.Map;
 /**
  * POI 探查采集器：扫描玩家附近已加载区域中的 POI 方块（床、钟、职业方块等），
  * 按距离排序后写入 extras["nearby_poi"]。
+ * <p>
+ * 优化：仅使用 {@link PoiManager} 进行探查（单机/集成服务端），性能极高。
+ * 不再提供基于方块状态扫描的回退方案，以避免不可控的性能损耗。
  */
 public class NearbyPoiCollector implements IContextCollector {
 
@@ -43,63 +48,76 @@ public class NearbyPoiCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         BlockPos playerPos = player.blockPosition();
         int radiusBlocks = scanRadiusChunks * 16;
-
-        int minY = Math.max(level.getMinBuildHeight(), playerPos.getY() - 12);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, playerPos.getY() + 12);
-
         Map<String, Double> poiDistances = new LinkedHashMap<>();
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
-        for (int x = playerPos.getX() - radiusBlocks; x <= playerPos.getX() + radiusBlocks; x++) {
-            int chunkX = x >> 4;
-            for (int z = playerPos.getZ() - radiusBlocks; z <= playerPos.getZ() + radiusBlocks; z++) {
-                int chunkZ = z >> 4;
-                if (!level.hasChunk(chunkX, chunkZ)) continue;
-
-                for (int y = minY; y <= maxY; y++) {
-                    cursor.set(x, y, z);
-                    BlockState state = level.getBlockState(cursor);
-                    if (PoiTypes.forState(state).isEmpty()) continue;
-
-                    String name = resolvePoiName(level, state);
-                    double dist = Math.sqrt(playerPos.distSqr(cursor));
-                    poiDistances.merge(name, dist, Math::min);
-                }
-            }
+        // 仅使用 PoiManager (在单机/集成服务端有效，性能极高)
+        ServerLevel serverLevel = resolveIntegratedServerLevel(level);
+        if (serverLevel == null) {
+            // 在远程服务器上，如果不扫描方块则无法获取 POI，
+            // 按照需求删除回退逻辑，此处直接跳过采集。
+            return;
         }
+
+        PoiManager poiManager = serverLevel.getPoiManager();
+        poiManager.findAll(holder -> true, p -> true, playerPos, radiusBlocks, PoiManager.Occupancy.ANY)
+                .forEach(pos -> {
+                    // 即使在服务端，我们也从传入的 level 读状态以保证一致性
+                    BlockState state = level.getBlockState(pos);
+                    String name = resolvePoiName(level, state);
+                    double dist = Math.sqrt(playerPos.distSqr(pos));
+                    poiDistances.merge(name, dist, Math::min);
+                });
 
         if (poiDistances.isEmpty()) {
             builder.extra("nearby_poi", "附近没有发现POI");
             return;
         }
 
+        // 结果汇总
         List<Map.Entry<String, Double>> sorted = new ArrayList<>(poiDistances.entrySet());
         sorted.sort(Map.Entry.comparingByValue());
 
         StringBuilder sb = new StringBuilder();
         int count = 0;
         for (Map.Entry<String, Double> entry : sorted) {
-            if (count >= maxResults) break;
-            if (sb.length() > 0) sb.append(", ");
+            if (count >= maxResults)
+                break;
+            if (sb.length() > 0)
+                sb.append(", ");
             sb.append(prettifyName(entry.getKey()))
-              .append("(约").append((int) entry.getValue().doubleValue()).append("格)");
+                    .append("(约").append((int) entry.getValue().doubleValue()).append("格)");
             count++;
         }
 
         builder.extra("nearby_poi", sb.toString());
     }
 
+    private ServerLevel resolveIntegratedServerLevel(Level level) {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            MinecraftServer server = minecraft.getSingleplayerServer();
+            if (server == null)
+                return null;
+            return server.getLevel(level.dimension());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private String resolvePoiName(Level level, BlockState state) {
         try {
             ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-            if (blockId == null) return state.getBlock().toString();
+            if (blockId == null)
+                return state.getBlock().toString();
 
             String path = blockId.getPath();
-            if (path.endsWith("_bed")) return "bed";
+            if (path.endsWith("_bed"))
+                return "bed";
             return blockId.toString();
         } catch (Exception e) {
             return state.getBlock().toString();
