@@ -43,7 +43,6 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.ConfigValue<String> BASE_URL;
     public static final ForgeConfigSpec.ConfigValue<String> MODEL_NAME;
     public static final ForgeConfigSpec.IntValue MAX_TOKENS;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_THINKING;
     public static final ForgeConfigSpec.IntValue THINKING_MAX_LENGTH;
 
     // —— 截图 ——
@@ -77,6 +76,7 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_NEARBY_STRUCTURES;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_LOOKING_AT;
     public static final ForgeConfigSpec.BooleanValue RC_ENABLE_SURROUNDING_BLOCKS;
+    public static final ForgeConfigSpec.BooleanValue RC_ENABLE_THINKING;
 
     // —— 群系变化 · 采集器 ——
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_BASE;
@@ -86,6 +86,7 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_NEARBY_STRUCTURES;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_LOOKING_AT;
     public static final ForgeConfigSpec.BooleanValue BC_ENABLE_SURROUNDING_BLOCKS;
+    public static final ForgeConfigSpec.BooleanValue BC_ENABLE_THINKING;
 
     // —— Agent 行为 ——
     public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
@@ -111,9 +112,6 @@ public final class TalkingWeaponConfig {
         MAX_TOKENS = builder
                 .comment("最大生成 token 数")
                 .defineInRange("maxTokens", 256, 1, 4096);
-        ENABLE_THINKING = builder
-                .comment("启用思考模式（LLM 先输出思考过程再回复，思考内容仅保留在日志中，对玩家不可见）")
-                .define("enableThinking", false);
         THINKING_MAX_LENGTH = builder
                 .comment("思考内容最大字符数（0=不限制，超出部分会在日志中截断）")
                 .defineInRange("thinkingMaxLength", 300, 0, 10000);
@@ -206,6 +204,9 @@ public final class TalkingWeaponConfig {
         RC_ENABLE_SURROUNDING_BLOCKS = builder
                 .comment("右键触发：启用周围方块/地形采集")
                 .define("enableSurroundingBlocks", true);
+        RC_ENABLE_THINKING = builder
+                .comment("右键触发：启用思考模式（LLM 先思考再回复，思考内容仅保留在日志中）")
+                .define("enableThinking", false);
         builder.pop(); // right_click
 
         // ── 群系变化 · 采集器 ─────────────────────────────────
@@ -231,6 +232,9 @@ public final class TalkingWeaponConfig {
         BC_ENABLE_SURROUNDING_BLOCKS = builder
                 .comment("群系变化：启用周围方块/地形采集")
                 .define("enableSurroundingBlocks", true);
+        BC_ENABLE_THINKING = builder
+                .comment("群系变化：启用思考模式（LLM 先思考再回复，思考内容仅保留在日志中）")
+                .define("enableThinking", false);
         builder.pop(); // biome_change
         builder.pop(); // trigger
 

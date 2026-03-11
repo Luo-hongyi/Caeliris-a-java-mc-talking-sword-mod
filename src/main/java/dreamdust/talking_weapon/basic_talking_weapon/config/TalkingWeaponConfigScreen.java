@@ -50,6 +50,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean rcNearbyStructures;
     private boolean rcLookingAt;
     private boolean rcSurroundingBlocks;
+    private boolean rcThinking;
 
     // ── 群系变化 · 采集器开关 ──
     private boolean bcBase;
@@ -59,6 +60,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean bcNearbyStructures;
     private boolean bcLookingAt;
     private boolean bcSurroundingBlocks;
+    private boolean bcThinking;
 
     // ── 实体探查 ──
     private boolean entitiesOnlyCreatures;
@@ -66,7 +68,6 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean entitiesFuzzyCount;
 
     // ── LLM 思考模式 ──
-    private boolean enableThinking;
     private EditBox thinkingMaxLenBox;
 
     // ── Agent 行为开关 ──
@@ -107,6 +108,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.rcNearbyStructures = TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.get();
         this.rcLookingAt = TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.get();
         this.rcSurroundingBlocks = TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.get();
+        this.rcThinking = TalkingWeaponConfig.RC_ENABLE_THINKING.get();
 
         this.bcBase = TalkingWeaponConfig.BC_ENABLE_BASE.get();
         this.bcScreenshot = TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get();
@@ -115,12 +117,11 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.bcNearbyStructures = TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get();
         this.bcLookingAt = TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.get();
         this.bcSurroundingBlocks = TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.get();
+        this.bcThinking = TalkingWeaponConfig.BC_ENABLE_THINKING.get();
 
         this.entitiesOnlyCreatures = TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.get();
         this.entitiesLineOfSight = TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.get();
         this.entitiesFuzzyCount = TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.get();
-
-        this.enableThinking = TalkingWeaponConfig.ENABLE_THINKING.get();
 
         this.enableProactiveTriggers = TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.get();
         this.enableBiomeDetection = TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get();
@@ -184,15 +185,12 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         configList.addEntry(new WidgetRowEntry("模型选择", left, rowWidth, prevModel, modelBtn, nextModel));
 
-        // ── 截图宽高 ──
-        configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, enableThinking, v -> enableThinking = v));
-
+        // ── 思考字数上限（全局） ──
         thinkingMaxLenBox = new EditBox(font, 0, 0, 80, 20, Component.literal("思考上限"));
         thinkingMaxLenBox.setValue(String.valueOf(TalkingWeaponConfig.THINKING_MAX_LENGTH.get()));
         thinkingMaxLenBox.setMaxLength(5);
         thinkingMaxLenBox.setCanLoseFocus(true);
 
-        // 用一个虚拟的 label EditBox 做标签效果
         EditBox thinkingLabel = new EditBox(font, 0, 0, 80, 20, Component.literal(""));
         thinkingLabel.setValue("0=不限");
         thinkingLabel.setEditable(false);
@@ -243,6 +241,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, rcNearbyStructures, v -> rcNearbyStructures = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, rcLookingAt, v -> rcLookingAt = v));
         configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, rcSurroundingBlocks, v -> rcSurroundingBlocks = v));
+        configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, rcThinking, v -> rcThinking = v));
 
         // ── 群系变化 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 群系变化 · 采集器"));
@@ -254,6 +253,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, bcNearbyStructures, v -> bcNearbyStructures = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, bcLookingAt, v -> bcLookingAt = v));
         configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, bcSurroundingBlocks, v -> bcSurroundingBlocks = v));
+        configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, bcThinking, v -> bcThinking = v));
 
         // ── Agent 行为开关 ──
         configList.addEntry(new LabelEntry("§e▸ Agent 行为"));
@@ -343,6 +343,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.RC_ENABLE_NEARBY_STRUCTURES.set(rcNearbyStructures);
         TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.set(rcLookingAt);
         TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.set(rcSurroundingBlocks);
+        TalkingWeaponConfig.RC_ENABLE_THINKING.set(rcThinking);
 
         TalkingWeaponConfig.BC_ENABLE_BASE.set(bcBase);
         TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.set(bcScreenshot);
@@ -351,12 +352,12 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.set(bcNearbyStructures);
         TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.set(bcLookingAt);
         TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.set(bcSurroundingBlocks);
+        TalkingWeaponConfig.BC_ENABLE_THINKING.set(bcThinking);
 
         TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.set(entitiesOnlyCreatures);
         TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.set(entitiesLineOfSight);
         TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.set(entitiesFuzzyCount);
 
-        TalkingWeaponConfig.ENABLE_THINKING.set(enableThinking);
         trySetInt(TalkingWeaponConfig.THINKING_MAX_LENGTH,
                 thinkingMaxLenBox.getValue(), 0, 10000,
                 TalkingWeaponConfig.THINKING_MAX_LENGTH.get());

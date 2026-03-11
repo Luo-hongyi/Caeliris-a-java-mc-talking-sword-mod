@@ -105,8 +105,8 @@ public class LLMInteractionTask extends AgentTask {
 
             if (isCancelled()) return;
 
-            // 4.5. 解析思考内容（如果启用了思考模式）
-            boolean thinkingEnabled = TalkingWeaponConfig.ENABLE_THINKING.get();
+            // 4.5. 解析思考内容（根据触发器类型决定是否启用思考）
+            boolean thinkingEnabled = isThinkingEnabled(ctx.getTriggerSource());
             String thinking = null;
             String reply = rawReply;
 
@@ -200,8 +200,8 @@ public class LLMInteractionTask extends AgentTask {
             });
         }
 
-        // 思考模式指令
-        if (TalkingWeaponConfig.ENABLE_THINKING.get()) {
+        // 思考模式指令（根据触发器类型决定）
+        if (isThinkingEnabled(ctx.getTriggerSource())) {
             int maxLen = TalkingWeaponConfig.THINKING_MAX_LENGTH.get();
             sb.append("\n[Thinking Mode]\n");
             sb.append("请先在 <think> 标签中写下你的思考过程（分析当前情境、玩家状态等），");
@@ -215,5 +215,17 @@ public class LLMInteractionTask extends AgentTask {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 根据触发源判断是否启用思考模式。
+     */
+    private static boolean isThinkingEnabled(String triggerSource) {
+        if ("right_click".equals(triggerSource)) {
+            return TalkingWeaponConfig.RC_ENABLE_THINKING.get();
+        } else if ("biome_change".equals(triggerSource)) {
+            return TalkingWeaponConfig.BC_ENABLE_THINKING.get();
+        }
+        return false;
     }
 }
