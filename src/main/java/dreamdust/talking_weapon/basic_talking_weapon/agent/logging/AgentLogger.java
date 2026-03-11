@@ -200,6 +200,23 @@ public final class AgentLogger {
     }
 
     /**
+     * 记录 LLM 的思考内容（对玩家不可见，仅保留在日志中）。
+     */
+    public static void logThinking(String thinkingContent) {
+        LogSession session = CURRENT_SESSION.get();
+        if (session == null) return;
+        PrintWriter w = session.writer;
+
+        writeSectionHeader(w, "4.5 LLM 思考过程（对玩家不可见）");
+        w.println("┌──────────────────────────────────────────────────────────────");
+        for (String line : thinkingContent.split("\n")) {
+            w.println("│ " + line);
+        }
+        w.println("└──────────────────────────────────────────────────────────────");
+        w.println();
+    }
+
+    /**
      * 记录 Agent 的行动结果。
      *
      * @param actionType 动作类型 (如 "speech")

@@ -17,6 +17,9 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * 需要调用 LLM 的交互任务。
  * <p>
@@ -26,6 +29,10 @@ public class LLMInteractionTask extends AgentTask {
 
     /** 默认优先级 */
     public static final int DEFAULT_PRIORITY = 10;
+
+    /** 匹配 &lt;think&gt;...&lt;/think&gt; 标签（支持跨行、贪婪匹配） */
+    private static final Pattern THINK_PATTERN =
+            Pattern.compile("<think>(.*?)</think>", Pattern.DOTALL);
 
     public LLMInteractionTask(AgentContext context) {
         super(DEFAULT_PRIORITY, context);
@@ -94,12 +101,41 @@ public class LLMInteractionTask extends AgentTask {
                     dev.langchain4j.data.message.SystemMessage.from(systemPrompt),
                     message
             );
-            String reply = response.content().text().trim();
+            String rawReply = response.content().text().trim();
 
             if (isCancelled()) return;
 
-            // 5. 执行 SpeechAction（在 worker 线程上逐行显示）
+            // 4.5. 解析思考内容（如果启用了思考模式）
+            boolean thinkingEnabled = TalkingWeaponConfig.ENABLE_THINKING.get();
+            String thinking = null;
+            String reply = rawReply;
+
+            if (thinkingEnabled) {
+                // 匹配 <think>...</think> 标签中的思考内容
+                Matcher m = THINK_PATTERN.matcher(rawReply);
+                if (m.find()) {
+                    thinking = m.group(1).trim();
+                    // 移除所有 <think>...</think> 块，取剩余部分作为回复
+                    reply = m.replaceAll("").trim();
+                }
+                // 如果解析后回复为空，使用原始回复
+                if (reply.isEmpty()) {
+                    reply = rawReply;
+                    thinking = null;
+                }
+            }
+
+            // 5. 执行 SpeechAction（在 worker 线程上逐行显示，仅显示回复部分）
             new SpeechAction("剑：" + reply).perform();
+
+            // ── 日志：思考内容（仅在启用思考且有思考时记录，超长截断） ──
+            if (thinking != null && !thinking.isEmpty()) {
+                int maxLen = TalkingWeaponConfig.THINKING_MAX_LENGTH.get();
+                if (maxLen > 0 && thinking.length() > maxLen) {
+                    thinking = thinking.substring(0, maxLen) + "…(已截断，原长" + (thinking.length()) + "字)";
+                }
+                AgentLogger.logThinking(thinking);
+            }
 
             // ── 日志：Agent 行动 ──
             AgentLogger.logAction("speech", reply);
@@ -162,6 +198,20 @@ public class LLMInteractionTask extends AgentTask {
                     sb.append("- ").append(key).append(": ").append(value).append("\n");
                 }
             });
+        }
+
+        // 思考模式指令
+        if (TalkingWeaponConfig.ENABLE_THINKING.get()) {
+            int maxLen = TalkingWeaponConfig.THINKING_MAX_LENGTH.get();
+            sb.append("\n[Thinking Mode]\n");
+            sb.append("请先在 <think> 标签中写下你的思考过程（分析当前情境、玩家状态等），");
+            sb.append("然后在标签外写下你的正式回复。\n");
+            if (maxLen > 0) {
+                sb.append("注意：思考内容请控制在 ").append(maxLen).append(" 字以内，保持简洁。\n");
+            }
+            sb.append("格式示例：\n");
+            sb.append("<think>这里是你的内心思考，对玩家不可见...</think>\n");
+            sb.append("这里是你对玩家说的话。\n");
         }
 
         return sb.toString();

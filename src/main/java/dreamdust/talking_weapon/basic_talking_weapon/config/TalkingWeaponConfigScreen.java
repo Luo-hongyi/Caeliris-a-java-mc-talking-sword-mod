@@ -65,6 +65,10 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean entitiesLineOfSight;
     private boolean entitiesFuzzyCount;
 
+    // ── LLM 思考模式 ──
+    private boolean enableThinking;
+    private EditBox thinkingMaxLenBox;
+
     // ── Agent 行为开关 ──
     private boolean enableProactiveTriggers;
     private boolean enableBiomeDetection;
@@ -115,6 +119,8 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.entitiesOnlyCreatures = TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.get();
         this.entitiesLineOfSight = TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.get();
         this.entitiesFuzzyCount = TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.get();
+
+        this.enableThinking = TalkingWeaponConfig.ENABLE_THINKING.get();
 
         this.enableProactiveTriggers = TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.get();
         this.enableBiomeDetection = TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get();
@@ -179,6 +185,19 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new WidgetRowEntry("模型选择", left, rowWidth, prevModel, modelBtn, nextModel));
 
         // ── 截图宽高 ──
+        configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, enableThinking, v -> enableThinking = v));
+
+        thinkingMaxLenBox = new EditBox(font, 0, 0, 80, 20, Component.literal("思考上限"));
+        thinkingMaxLenBox.setValue(String.valueOf(TalkingWeaponConfig.THINKING_MAX_LENGTH.get()));
+        thinkingMaxLenBox.setMaxLength(5);
+        thinkingMaxLenBox.setCanLoseFocus(true);
+
+        // 用一个虚拟的 label EditBox 做标签效果
+        EditBox thinkingLabel = new EditBox(font, 0, 0, 80, 20, Component.literal(""));
+        thinkingLabel.setValue("0=不限");
+        thinkingLabel.setEditable(false);
+        configList.addEntry(new TwoWidgetEntry("思考字数上限", left, rowWidth, thinkingMaxLenBox, thinkingLabel));
+
         configList.addEntry(new LabelEntry("§e▸ 截图设置"));
 
         widthBox = new EditBox(font, 0, 0, 80, 20, Component.literal("宽度"));
@@ -336,6 +355,11 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.set(entitiesOnlyCreatures);
         TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.set(entitiesLineOfSight);
         TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.set(entitiesFuzzyCount);
+
+        TalkingWeaponConfig.ENABLE_THINKING.set(enableThinking);
+        trySetInt(TalkingWeaponConfig.THINKING_MAX_LENGTH,
+                thinkingMaxLenBox.getValue(), 0, 10000,
+                TalkingWeaponConfig.THINKING_MAX_LENGTH.get());
 
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);

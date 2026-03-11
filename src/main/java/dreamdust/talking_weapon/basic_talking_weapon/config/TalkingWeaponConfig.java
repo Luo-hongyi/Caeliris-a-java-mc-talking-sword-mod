@@ -43,6 +43,8 @@ public final class TalkingWeaponConfig {
     public static final ForgeConfigSpec.ConfigValue<String> BASE_URL;
     public static final ForgeConfigSpec.ConfigValue<String> MODEL_NAME;
     public static final ForgeConfigSpec.IntValue MAX_TOKENS;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_THINKING;
+    public static final ForgeConfigSpec.IntValue THINKING_MAX_LENGTH;
 
     // —— 截图 ——
     public static final ForgeConfigSpec.BooleanValue ENABLE_SCREENSHOT;
@@ -109,6 +111,12 @@ public final class TalkingWeaponConfig {
         MAX_TOKENS = builder
                 .comment("最大生成 token 数")
                 .defineInRange("maxTokens", 256, 1, 4096);
+        ENABLE_THINKING = builder
+                .comment("启用思考模式（LLM 先输出思考过程再回复，思考内容仅保留在日志中，对玩家不可见）")
+                .define("enableThinking", false);
+        THINKING_MAX_LENGTH = builder
+                .comment("思考内容最大字符数（0=不限制，超出部分会在日志中截断）")
+                .defineInRange("thinkingMaxLength", 300, 0, 10000);
         builder.pop();
 
         // ── 截图 ──────────────────────────────────────────────
