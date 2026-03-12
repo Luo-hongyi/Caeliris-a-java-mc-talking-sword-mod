@@ -24,28 +24,27 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>
  * 日志内容分五段：
  * <ol>
- *   <li>触发器信息（类型、原因）</li>
- *   <li>Collector 采集结果</li>
- *   <li>Agent 状态与记忆</li>
- *   <li>人格提示词与合成后的完整提示词</li>
- *   <li>Agent 的行动（LLM 回复、执行动作）</li>
+ * <li>触发器信息（类型、原因）</li>
+ * <li>Collector 采集结果</li>
+ * <li>Agent 状态与记忆</li>
+ * <li>人格提示词与合成后的完整提示词</li>
+ * <li>Agent 的行动（LLM 回复、执行动作）</li>
  * </ol>
  */
 public final class AgentLogger {
 
     private static final String LOG_DIR = "talking_weapon_logs";
-    private static final DateTimeFormatter FILE_TIME_FMT =
-            DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
-    private static final DateTimeFormatter DISPLAY_TIME_FMT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter FILE_TIME_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
+    private static final DateTimeFormatter DISPLAY_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
     /** 当前触发会话的日志写入器（全局唯一，因运行时是单工作线程顺序执行） */
     private static final AtomicReference<LogSession> CURRENT_SESSION = new AtomicReference<>();
 
-    private AgentLogger() {}
+    private AgentLogger() {
+    }
 
     // ═══════════════════════════════════════════════════════════════
-    //  会话生命周期
+    // 会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -89,7 +88,8 @@ public final class AgentLogger {
      */
     public static void logContext(AgentContext context) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "2. Collector 采集结果");
@@ -97,7 +97,8 @@ public final class AgentLogger {
         w.println("基础信息:");
         w.println("  生命值:   " + context.getHealth() + " / " + context.getMaxHealth());
         w.println("  饥饿值:   " + context.getFoodLevel());
-        w.println("  坐标:     (" + (int) context.getPosX() + ", " + (int) context.getPosY() + ", " + (int) context.getPosZ() + ")");
+        w.println("  坐标:     (" + (int) context.getPosX() + ", " + (int) context.getPosY() + ", "
+                + (int) context.getPosZ() + ")");
         w.println("  群系:     " + context.getBiome());
         w.println("  时间:     " + context.getDayTime() + " tick");
         w.println("  雨天:     " + (context.isRaining() ? "是" : "否"));
@@ -127,7 +128,8 @@ public final class AgentLogger {
      */
     public static void logAgentState(AgentMemory memory, AgentState state) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "3. Agent 状态与记忆");
@@ -167,7 +169,8 @@ public final class AgentLogger {
             for (int i = 0; i < memory.getShortTerm().size(); i++) {
                 AgentMsg msg = memory.getShortTerm().get(i);
                 String content = msg.getContent();
-                if (content.length() > 120) content = content.substring(0, 120) + "...";
+                if (content.length() > 120)
+                    content = content.substring(0, 120) + "...";
                 w.println("    [" + i + "] " + msg.getRole() + ": " + content
                         + (msg.hasImage() ? " [+图片]" : ""));
             }
@@ -180,7 +183,8 @@ public final class AgentLogger {
      */
     public static void logPrompts(String systemPrompt, String userPrompt, boolean hasScreenshot) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "4. 提示词");
@@ -204,7 +208,8 @@ public final class AgentLogger {
      */
     public static void logThinking(String thinkingContent) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "4.5 LLM 思考过程（对玩家不可见）");
@@ -217,14 +222,33 @@ public final class AgentLogger {
     }
 
     /**
+     * 记录 LLM 输出的原内容（包括未解析前的思考部分和回复部分）。
+     */
+    public static void logRawResponse(String rawContent) {
+        LogSession session = CURRENT_SESSION.get();
+        if (session == null)
+            return;
+        PrintWriter w = session.writer;
+
+        writeSectionHeader(w, "4.6 LLM 原始响应内容 (Raw Response)");
+        w.println("┌──────────────────────────────────────────────────────────────");
+        for (String line : rawContent.split("\n")) {
+            w.println("│ " + line);
+        }
+        w.println("└──────────────────────────────────────────────────────────────");
+        w.println();
+    }
+
+    /**
      * 记录 Agent 的行动结果。
      *
-     * @param actionType 动作类型 (如 "speech")
+     * @param actionType   动作类型 (如 "speech")
      * @param actionDetail 动作内容 (如 LLM 回复文本)
      */
     public static void logAction(String actionType, String actionDetail) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "5. Agent 行动");
@@ -244,7 +268,8 @@ public final class AgentLogger {
      */
     public static void logError(String message, Throwable error) {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         writeSectionHeader(w, "ERROR");
@@ -261,7 +286,8 @@ public final class AgentLogger {
      */
     public static void endSession() {
         LogSession session = CURRENT_SESSION.get();
-        if (session == null) return;
+        if (session == null)
+            return;
         PrintWriter w = session.writer;
 
         w.println("═══════════════════════════════════════════════════════════════");
@@ -273,7 +299,7 @@ public final class AgentLogger {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  清空日志
+    // 清空日志
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -284,14 +310,17 @@ public final class AgentLogger {
     public static int clearAllLogs() {
         try {
             Path dir = getLogDir();
-            if (!Files.exists(dir)) return 0;
+            if (!Files.exists(dir))
+                return 0;
 
             File[] files = dir.toFile().listFiles((d, name) -> name.endsWith(".log"));
-            if (files == null) return 0;
+            if (files == null)
+                return 0;
 
             int count = 0;
             for (File f : files) {
-                if (f.delete()) count++;
+                if (f.delete())
+                    count++;
             }
             return count;
         } catch (Exception e) {
@@ -308,7 +337,7 @@ public final class AgentLogger {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  内部工具
+    // 内部工具
     // ═══════════════════════════════════════════════════════════════
 
     private static Path ensureLogDir() throws IOException {

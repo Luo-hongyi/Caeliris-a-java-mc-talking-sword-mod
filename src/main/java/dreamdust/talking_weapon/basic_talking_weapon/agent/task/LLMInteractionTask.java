@@ -31,8 +31,7 @@ public class LLMInteractionTask extends AgentTask {
     public static final int DEFAULT_PRIORITY = 10;
 
     /** 匹配 &lt;think&gt;...&lt;/think&gt; 标签（支持跨行、贪婪匹配） */
-    private static final Pattern THINK_PATTERN =
-            Pattern.compile("<think>(.*?)</think>", Pattern.DOTALL);
+    private static final Pattern THINK_PATTERN = Pattern.compile("<think>(.*?)</think>", Pattern.DOTALL);
 
     public LLMInteractionTask(AgentContext context) {
         super(DEFAULT_PRIORITY, context);
@@ -44,7 +43,8 @@ public class LLMInteractionTask extends AgentTask {
 
     @Override
     public void execute() {
-        if (isCancelled()) return;
+        if (isCancelled())
+            return;
 
         AgentRuntime runtime = AgentRuntime.getInstance();
         AgentMemory memory = runtime.getMemory();
@@ -59,7 +59,8 @@ public class LLMInteractionTask extends AgentTask {
                 return;
             }
 
-            if (isCancelled()) return;
+            if (isCancelled())
+                return;
 
             // 1.5. 从配置读取人格身份写入记忆
             String configIdentity = TalkingWeaponConfig.SYSTEM_IDENTITY.get();
@@ -85,13 +86,13 @@ public class LLMInteractionTask extends AgentTask {
             if (screenshotBase64 != null) {
                 message = UserMessage.from(
                         ImageContent.from(screenshotBase64, "image/png"),
-                        TextContent.from(userPrompt)
-                );
+                        TextContent.from(userPrompt));
             } else {
                 message = UserMessage.from(TextContent.from(userPrompt));
             }
 
-            if (isCancelled()) return;
+            if (isCancelled())
+                return;
 
             // ── 日志：提示词 ──
             AgentLogger.logPrompts(systemPrompt, userPrompt, screenshotBase64 != null);
@@ -99,11 +100,12 @@ public class LLMInteractionTask extends AgentTask {
             // 4. 调用 LLM
             Response<AiMessage> response = model.generate(
                     dev.langchain4j.data.message.SystemMessage.from(systemPrompt),
-                    message
-            );
+                    message);
             String rawReply = response.content().text().trim();
+            AgentLogger.logRawResponse(rawReply);
 
-            if (isCancelled()) return;
+            if (isCancelled())
+                return;
 
             // 4.5. 解析思考内容（根据触发器类型决定是否启用思考）
             boolean thinkingEnabled = isThinkingEnabled(ctx.getTriggerSource());
