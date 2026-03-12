@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
@@ -200,6 +201,20 @@ public class LLMInteractionTask extends AgentTask {
                     sb.append("- ").append(key).append(": ").append(value).append("\n");
                 }
             });
+        }
+
+        // 标签化上下文（由各 Collector 采集的结构化标签条目）
+        java.util.List<TaggedContextEntry> taggedEntries = ctx.getTaggedEntries();
+        if (!taggedEntries.isEmpty()) {
+            sb.append("[Tagged Context]\n");
+            for (TaggedContextEntry entry : taggedEntries) {
+                sb.append("- [").append(entry.getFocusTags()).append("] ");
+                sb.append(entry.getDescription());
+                if (!entry.getDetailTags().isEmpty()) {
+                    sb.append(" (tags: ").append(entry.getDetailTags()).append(")");
+                }
+                sb.append("\n");
+            }
         }
 
         // 思考模式指令（根据触发器类型决定）

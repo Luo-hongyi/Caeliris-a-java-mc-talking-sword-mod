@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.logging;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
@@ -120,6 +121,20 @@ public final class AgentLogger {
                 }
             }
         }
+
+        // ── 带标签的上下文条目 ──
+        java.util.List<TaggedContextEntry> entries = context.getTaggedEntries();
+        if (!entries.isEmpty()) {
+            w.println("标签化上下文 (Tagged Context, " + entries.size() + " 条):");
+            for (int i = 0; i < entries.size(); i++) {
+                TaggedContextEntry entry = entries.get(i);
+                w.println("  [" + i + "] importance=" + String.format("%.1f", entry.getBaseImportance()));
+                w.println("      focus:   " + entry.getFocusTags());
+                w.println("      details: " + entry.getDetailTags());
+                w.println("      desc:    " + entry.getDescription());
+            }
+        }
+
         w.println();
     }
 

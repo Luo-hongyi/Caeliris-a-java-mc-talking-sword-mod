@@ -1,9 +1,13 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -19,14 +23,14 @@ import java.util.*;
  * 将<b>生物</b>（{@link LivingEntity}）与<b>其他实体</b>（掉落物、展示框、矿车等）
  * 分开统计，按类型分组计数后分别写入：
  * <ul>
- *   <li>{@code extras["nearby_creatures"]} — 生物（怪物、动物、NPC 等）</li>
- *   <li>{@code extras["nearby_objects"]}   — 非生物实体（掉落物、展示框、船、矿车等）</li>
+ * <li>{@code extras["nearby_creatures"]} — 生物（怪物、动物、NPC 等）</li>
+ * <li>{@code extras["nearby_objects"]} — 非生物实体（掉落物、展示框、船、矿车等）</li>
  * </ul>
  *
  * <h3>可选功能（通过配置控制）</h3>
  * <ul>
- *   <li><b>视线检测</b> ({@code entity.lineOfSight}) — 仅对生物生效，过滤被方块遮挡的生物</li>
- *   <li><b>模糊数量</b> ({@code entity.fuzzyCount}) — 用"一个/一些/大量"代替精确数字</li>
+ * <li><b>视线检测</b> ({@code entity.lineOfSight}) — 仅对生物生效，过滤被方块遮挡的生物</li>
+ * <li><b>模糊数量</b> ({@code entity.fuzzyCount}) — 用"一个/一些/大量"代替精确数字</li>
  * </ul>
  *
  * 使用原版 {@link Level#getEntities(Entity, AABB)} API，无需任何外部依赖。
@@ -51,7 +55,8 @@ public class NearbyEntitiesCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         boolean lineOfSight = TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.get();
         int losMaxCheck = TalkingWeaponConfig.ENTITIES_LOS_MAX_CHECK.get();
@@ -72,7 +77,8 @@ public class NearbyEntitiesCollector implements IContextCollector {
             eyePos = player.getEyePosition(1.0F);
             List<Entity> creatures = new ArrayList<>();
             for (Entity e : entities) {
-                if (e instanceof LivingEntity) creatures.add(e);
+                if (e instanceof LivingEntity)
+                    creatures.add(e);
             }
             // 按距离排序
             final Vec3 pos = eyePos;
@@ -89,6 +95,8 @@ public class NearbyEntitiesCollector implements IContextCollector {
             // 超出检测上限的生物不做过滤（保守策略：假设可见）
         }
 
+        hostileNames.clear();
+
         for (Entity entity : entities) {
             // 视线检测仅过滤生物
             if (lineOfSight && entity instanceof LivingEntity && occludedIds.contains(entity.getId())) {
@@ -98,6 +106,10 @@ public class NearbyEntitiesCollector implements IContextCollector {
             String name = entity.getType().getDescription().getString();
             if (entity instanceof LivingEntity) {
                 creatureCounts.merge(name, 1, Integer::sum);
+                // 判断是否为敌对生物：Mob 且以玩家为攻击目标
+                if (entity instanceof Mob mob && mob.getTarget() == player) {
+                    hostileNames.add(name);
+                }
             } else {
                 objectCounts.merge(name, 1, Integer::sum);
             }
@@ -118,10 +130,46 @@ public class NearbyEntitiesCollector implements IContextCollector {
                 builder.extra("nearby_objects", formatCounts(objectCounts, fuzzy));
             }
         }
+
+        // ── 标签：为每种被检测到的生物类型生成标签条目 ──
+        int totalHostile = 0;
+        for (Map.Entry<String, Integer> entry : creatureCounts.entrySet()) {
+            String name = entry.getKey();
+            int count = entry.getValue();
+
+            // 尝试获取实体的 Registry ID——由于我们仅存储了显示名，这里用显示名做 description
+            // 检查是否为敌对生物（通过 entityTypeCountsHostile 字典）
+            boolean isHostile = hostileNames.contains(name);
+            if (isHostile)
+                totalHostile += count;
+
+            FocusTag focus = isHostile ? FocusTag.COMBAT : FocusTag.SOCIAL;
+            float imp = isHostile ? 0.6f : 0.2f;
+
+            TaggedContextEntry.Builder tagBuilder = TaggedContextEntry.builder()
+                    .focus(focus)
+                    .description((fuzzy ? fuzzyQuantity(count) : count + "只") + name)
+                    .importance(imp);
+
+            // 尝试用实体名称生成标签（纯文本形式，无法获得 Registry ID）
+            tagBuilder.detail(DetailTag.ENTITY, name);
+
+            builder.addTaggedEntry(tagBuilder.build());
+        }
+
+        // ── 标签：战斗烈度 ──
+        if (totalHostile >= 5) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.COMBAT, FocusTag.HAZARD)
+                    .detail(DetailTag.STATE, "combat_intense")
+                    .description("附近有大量敌对生物（" + totalHostile + "只），战斗激烈")
+                    .importance(0.9f)
+                    .build());
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  射线检测
+    // 射线检测
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -136,8 +184,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
                 entityCenter,
                 ClipContext.Block.COLLIDER,
                 ClipContext.Fluid.NONE,
-                null
-        );
+                null);
         BlockHitResult result = level.clip(context);
 
         if (result.getType() == HitResult.Type.MISS) {
@@ -149,7 +196,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  格式化
+    // 格式化
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -161,7 +208,8 @@ public class NearbyEntitiesCollector implements IContextCollector {
     private String formatCounts(Map<String, Integer> counts, boolean fuzzy) {
         StringBuilder sb = new StringBuilder();
         counts.forEach((name, count) -> {
-            if (sb.length() > 0) sb.append(", ");
+            if (sb.length() > 0)
+                sb.append(", ");
             if (fuzzy) {
                 sb.append(fuzzyQuantity(count)).append(name);
             } else {
@@ -174,14 +222,26 @@ public class NearbyEntitiesCollector implements IContextCollector {
     /**
      * 将精确数量转换为模糊描述词。
      * <ul>
-     *   <li>1       → "一个"</li>
-     *   <li>2–5     → "一些"</li>
-     *   <li>6+      → "大量"</li>
+     * <li>1 → "一个"</li>
+     * <li>2–5 → "一些"</li>
+     * <li>6+ → "大量"</li>
      * </ul>
      */
     private String fuzzyQuantity(int count) {
-        if (count <= 1) return "一个";
-        if (count <= 5) return "一些";
+        if (count <= 1)
+            return "一个";
+        if (count <= 5)
+            return "一些";
         return "大量";
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 敌对生物判定
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 记录本次采集中被判定为敌对生物的显示名集合。
+     * 在遍历实体时填充，用于后续给标签打注 FocusTag.COMBAT。
+     */
+    private final Set<String> hostileNames = new HashSet<>();
 }

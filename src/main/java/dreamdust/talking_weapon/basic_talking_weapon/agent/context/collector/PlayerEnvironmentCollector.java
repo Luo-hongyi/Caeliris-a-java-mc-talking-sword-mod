@@ -1,6 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -16,11 +19,11 @@ import net.minecraft.world.phys.HitResult;
 /**
  * 玩家环境采集器：采集与玩家直接相关的环境细节。
  * <ul>
- *   <li>维度（主世界 / 下界 / 末地）</li>
- *   <li>脚下光照等级</li>
- *   <li>主手持有物品</li>
- *   <li>盔甲值</li>
- *   <li>准星目标方块</li>
+ * <li>维度（主世界 / 下界 / 末地）</li>
+ * <li>脚下光照等级</li>
+ * <li>主手持有物品</li>
+ * <li>盔甲值</li>
+ * <li>准星目标方块</li>
  * </ul>
  * 使用原版 API，无外部依赖。
  */
@@ -33,7 +36,8 @@ public class PlayerEnvironmentCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         // ── 维度 ──────────────────────────────────────────
         ResourceKey<Level> dimKey = level.dimension();
@@ -45,14 +49,43 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
         builder.extra("light_level", "block=" + blockLight + ", sky=" + skyLight);
 
+        // ── 标签：维度 ──
+        String dimId = dimKey.location().toString();
+        builder.addTaggedEntry(TaggedContextEntry.builder()
+                .focus(FocusTag.LANDSCAPE)
+                .detail(DetailTag.DIM, dimId)
+                .description("当前维度: " + dimId)
+                .importance(0.3f)
+                .build());
+
+        // ── 标签：光照等级 ──
+        String lightState = blockLight < 7 ? "light_dark" : "light_bright";
+        float lightImportance = blockLight < 7 ? 0.5f : 0.1f;
+        builder.addTaggedEntry(TaggedContextEntry.builder()
+                .focus(blockLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
+                .detail(DetailTag.STATE, lightState)
+                .description("光照等级: block=" + blockLight + ", sky=" + skyLight)
+                .importance(lightImportance)
+                .build());
+
         // ── 主手物品 ──────────────────────────────────────
         ItemStack mainHand = player.getMainHandItem();
         if (!mainHand.isEmpty()) {
-            builder.extra("held_item", mainHand.getHoverName().getString());
+            String itemName = mainHand.getHoverName().getString();
+            builder.extra("held_item", itemName);
+
+            // ── 标签：主手物品 ──
+            String itemId = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                    .getKey(mainHand.getItem()).toString();
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.TOOL)
+                    .detail(DetailTag.ITEM, itemId)
+                    .description("主手持有: " + itemName)
+                    .importance(0.2f)
+                    .build());
         } else {
             builder.extra("held_item", "空手");
         }
-
 
         // ── 经验等级 ──────────────────────────────────────
         builder.extra("xp_level", String.valueOf(player.experienceLevel));
