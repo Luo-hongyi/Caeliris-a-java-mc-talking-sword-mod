@@ -5,6 +5,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponseParser;
@@ -73,7 +74,7 @@ public class LLMInteractionTask extends AgentTask {
                 return;
 
             // 1.5. 从配置读取人格身份写入记忆
-            String configIdentity = TalkingWeaponConfig.SYSTEM_IDENTITY.get();
+            String configIdentity = PromptRegistry.getInstance().getSystemIdentity();
             if (configIdentity != null && !configIdentity.isBlank()) {
                 memory.setIdentity(configIdentity);
             }

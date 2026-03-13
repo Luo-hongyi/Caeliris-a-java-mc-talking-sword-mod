@@ -13,6 +13,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.fml.loading.FMLPaths;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 
 import java.nio.file.Path;
@@ -286,6 +287,20 @@ public class TalkingWeaponConfigScreen extends Screen {
         Button openToml = Button.builder(Component.literal("打开配置文件(.toml)"), btn -> openConfigFile())
                 .bounds(0, 0, 210, 20).build();
         configList.addEntry(new SingleWidgetEntry(left, rowWidth, openToml));
+
+        // ── 提示词管理 ──
+        configList.addEntry(new LabelEntry("§e▸ 提示词管理 (prompts.json)"));
+
+        Button openPrompts = Button.builder(Component.literal("打开提示词文件"), btn -> {
+            Util.getPlatform().openUri(PromptRegistry.getConfigPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        Button reloadPrompts = Button.builder(Component.literal("§b热重载提示词"), btn -> {
+            PromptRegistry.reload();
+            btn.setMessage(Component.literal("§a已完成重载"));
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, openPrompts, reloadPrompts));
 
         // ── 日志管理 ──
         configList.addEntry(new LabelEntry("§e▸ 日志管理"));

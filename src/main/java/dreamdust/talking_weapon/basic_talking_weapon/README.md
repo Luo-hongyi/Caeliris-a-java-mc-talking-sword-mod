@@ -8,9 +8,9 @@
 - **Embodied Agent 架构**：感知 → 记忆 → 决策 → 动作 的完整智能体流水线
 - **Trigger / Collector 策略模式**：触发器声明所需采集器列表，采集器按需动态组合
 - **Per-Trigger 独立配置**：每种触发器独立配置自己的采集器开关和专属 User Prompt
-- **三层记忆系统**：Identity 人格 / Short-term 对话窗口 / Long-term 语义摘要
-- **显式状态机**：情绪（Mood）、熟悉度、当前目标，注入到 LLM prompt 中
-- **主动感知**：进入新群系时自动调用 LLM 发表评论（可关闭）
+- **感知系统增强**：进入新群系、穿越维度或完成长距离旅行时自动感知并发表评论
+- **智能动作流 (ActionBuffer)**：高频合并动作，支持 3 分钟滑动窗口自动过期与“阅后即焚”机制
+- **环境自适应摘要**：建造复杂房子时自动对 5 种以上方块动作进行聚类折叠，保护上下文长度
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
 - **多厂商支持**：支持 OpenAI / Qwen / DeepSeek(无视觉) / Custom（通过 OpenAI 兼容接口）
 - **左键打断**：思考过程中可随时左键中断请求
@@ -34,9 +34,10 @@ agent/
 │   └── trigger/                     ← 触发器（定义事件 → 动态采集器列表 → 专属 prompt → 任务类型）
 │       ├── IAgentTrigger.java        — 触发器接口 + default getUserPrompt()
 │       ├── RightClickTrigger.java    — 右键触发（按 RC_* 配置动态组合采集器 → LLMInteractionTask）
-│       ├── BiomeChangeTrigger.java   — 群系变化触发（按 BC_* 配置动态组合 → LLMInteractionTask）
-│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → ActionBuffer + 群系/旅行检测）
-│       ├── ReflectionTrigger.java    — 定时反思触发器（骨架）
+│       ├── BiomeChangeTrigger.java   — 群系变化触发（含 3 分钟平滑防抖/节流）
+│       ├── DimensionChangeTrigger.java — 维度切换触发（支持跨维度坐标重置）
+│       ├── TravelTrigger.java        — 长距离位移触发（默认横向 200 格或纵向 50 格）
+│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → ActionBuffer + 群系/维度/旅行检测）
 │       ├── CombatRecapTrigger.java   — 连杀回顾触发器（骨架）
 │       ├── BossKillTrigger.java      — Boss击杀触发器（骨架）
 │       └── README.md                — 触发器开发指南
@@ -45,10 +46,10 @@ agent/
 ├── memory/                         ← 记忆系统
 │   ├── AgentMsg.java                — 不可变消息 (Role/Content/Image/Metadata)
 │   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
-│   ├── ActionRecord.java            — 极轻量动作记录（尾部合并压缩）
-│   ├── ActionBuffer.java            — 环形动作缓冲区（线程安全，KILL覆盖ATTACK）
+│   ├── ActionRecord.java            — 极轻量动作记录（TTL 刷新 + 全缓冲区扫描合并）
+│   ├── ActionBuffer.java            — 环形动作缓冲区（3min 滑动窗口淘汰，支持 drainTo 已读池）
 │   ├── MemoryRecord.java            — 剑视角深度记忆切片（不可变，Builder模式）
-│   └── AgentMemory.java             — 三池记忆：ActionBuffer / ChatHistory / MemoryRecords
+│   └── AgentMemory.java             — 四池记忆：ActionBuffer(未读) / ConsumedActions(已读) / ChatHistory / MemoryRecords
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
 │   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆

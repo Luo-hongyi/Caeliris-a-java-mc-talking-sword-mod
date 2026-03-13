@@ -10,6 +10,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.Nea
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.PlayerEnvironmentCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ScreenshotCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.SurroundingBlocksCollector;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMInteractionTask;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
@@ -45,18 +46,26 @@ public class BiomeChangeTrigger implements IAgentTrigger {
     @Override
     public List<IContextCollector> getCollectors() {
         List<IContextCollector> list = new ArrayList<>();
-        if (TalkingWeaponConfig.BC_ENABLE_BASE.get())              list.add(new BaseContextCollector());
-        if (TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get())        list.add(new ScreenshotCollector());
-        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.get())   list.add(new NearbyEntitiesCollector());
-        if (TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.get()) list.add(new PlayerEnvironmentCollector());
-        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get())   list.add(new NearbyStructureCollector(
-                TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
-                TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
-        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_POI.get())          list.add(new NearbyPoiCollector(
-            TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
-            TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
-        if (TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.get())          list.add(new LookingAtCollector());
-        if (TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.get())  list.add(new SurroundingBlocksCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_BASE.get())
+            list.add(new BaseContextCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get())
+            list.add(new ScreenshotCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_ENTITIES.get())
+            list.add(new NearbyEntitiesCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_PLAYER_ENVIRONMENT.get())
+            list.add(new PlayerEnvironmentCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_STRUCTURES.get())
+            list.add(new NearbyStructureCollector(
+                    TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
+                    TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
+        if (TalkingWeaponConfig.BC_ENABLE_NEARBY_POI.get())
+            list.add(new NearbyPoiCollector(
+                    TalkingWeaponConfig.STRUCTURE_SCAN_RADIUS.get(),
+                    TalkingWeaponConfig.STRUCTURE_MAX_RESULTS.get()));
+        if (TalkingWeaponConfig.BC_ENABLE_LOOKING_AT.get())
+            list.add(new LookingAtCollector());
+        if (TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.get())
+            list.add(new SurroundingBlocksCollector());
         return list;
     }
 
@@ -67,7 +76,7 @@ public class BiomeChangeTrigger implements IAgentTrigger {
 
     @Override
     public String getUserPrompt() {
-        String template = TalkingWeaponConfig.BIOME_CHANGE_PROMPT.get();
+        String template = PromptRegistry.getInstance().getBiomeChangePrompt();
         return template
                 .replace("{old_biome}", oldBiome)
                 .replace("{new_biome}", newBiome);

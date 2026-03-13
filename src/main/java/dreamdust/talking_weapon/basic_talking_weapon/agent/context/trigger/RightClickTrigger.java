@@ -10,6 +10,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.Nea
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.PlayerEnvironmentCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ScreenshotCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.SurroundingBlocksCollector;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMInteractionTask;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
@@ -70,6 +71,6 @@ public class RightClickTrigger implements IAgentTrigger {
 
     @Override
     public String getUserPrompt() {
-        return TalkingWeaponConfig.RIGHT_CLICK_PROMPT.get();
+        return PromptRegistry.getInstance().getRightClickPrompt();
     }
 }

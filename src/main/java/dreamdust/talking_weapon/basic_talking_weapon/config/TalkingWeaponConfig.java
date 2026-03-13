@@ -51,11 +51,6 @@ public final class TalkingWeaponConfig {
 
         // —— 文本 ——
         public static final ForgeConfigSpec.ConfigValue<String> WEAPON_NAME;
-        public static final ForgeConfigSpec.ConfigValue<String> RIGHT_CLICK_PROMPT;
-        public static final ForgeConfigSpec.ConfigValue<String> BIOME_CHANGE_PROMPT;
-        public static final ForgeConfigSpec.ConfigValue<String> TRIGGER_SPEECH;
-        public static final ForgeConfigSpec.ConfigValue<String> CANCEL_SPEECH;
-        public static final ForgeConfigSpec.ConfigValue<String> SYSTEM_IDENTITY;
 
         // —— 实体探查 ——
         public static final ForgeConfigSpec.BooleanValue ENTITIES_ONLY_CREATURES;
@@ -137,24 +132,6 @@ public final class TalkingWeaponConfig {
                 WEAPON_NAME = builder
                                 .comment("武器显示名称")
                                 .define("weaponName", "塞勒瑞斯");
-                RIGHT_CLICK_PROMPT = builder
-                                .comment("右键触发时发送给 LLM 的 user prompt")
-                                .define("rightClickPrompt", "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
-                BIOME_CHANGE_PROMPT = builder
-                                .comment("群系变化触发时发送给 LLM 的 user prompt（可用 {old_biome} 和 {new_biome} 占位符）")
-                                .define("biomeChangePrompt",
-                                                "你发现主人刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。");
-                TRIGGER_SPEECH = builder
-                                .comment("右键触发时的 ActionBar 提示")
-                                .define("triggerSpeech", "你感受到一丝灵魂的悸动……");
-                CANCEL_SPEECH = builder
-                                .comment("左键打断时的 ActionBar 提示")
-                                .define("cancelSpeech", "剑：沉默不语……");
-                SYSTEM_IDENTITY = builder
-                                .comment("武器灵魂的人格设定（system prompt 前缀）")
-                                .define("systemIdentity",
-                                                "你是一把会说话的剑中的灵魂。你性格直率、略带傲娇，偶尔毒舌。"
-                                                                + "你会根据玩家看到的画面和游戏状态做出评论，语言简洁有趣，不超过两句话。");
                 builder.pop();
 
                 // ── 实体探查 ──────────────────────────────────────────

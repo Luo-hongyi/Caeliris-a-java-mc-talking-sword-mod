@@ -2,10 +2,10 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.IAgentTrigger;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
-import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
@@ -101,7 +101,7 @@ public class AgentSensor {
 
         // 3. 显示触发提示（仅对需要防抖的交互式触发器）
         if (trigger.requiresDebounce() && player != null) {
-            String triggerSpeech = getConfigText(TalkingWeaponConfig.TRIGGER_SPEECH, "你感受到一丝灵魂的悸动……");
+            String triggerSpeech = PromptRegistry.getInstance().getTriggerSpeech();
             showActionBar(player, triggerSpeech);
         }
 
@@ -137,7 +137,7 @@ public class AgentSensor {
             return;
 
         runtime.cancelCurrentAndClearQueue();
-        String cancelSpeech = getConfigText(TalkingWeaponConfig.CANCEL_SPEECH, "剑：沉默不语……");
+        String cancelSpeech = PromptRegistry.getInstance().getCancelSpeech();
         showActionBar(player, cancelSpeech);
     }
 
@@ -167,12 +167,6 @@ public class AgentSensor {
     /** 在 ActionBar 上显示一行文字（主线程安全） */
     private void showActionBar(Player player, String text) {
         player.displayClientMessage(Component.literal(text), true);
-    }
-
-    private String getConfigText(
-            net.minecraftforge.common.ForgeConfigSpec.ConfigValue<String> cfg, String fallback) {
-        String value = cfg.get();
-        return (value == null || value.isBlank()) ? fallback : value;
     }
 
     // ---- Configuration ----
