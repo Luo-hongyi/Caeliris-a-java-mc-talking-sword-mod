@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.logging;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
@@ -251,6 +252,22 @@ public final class AgentLogger {
             w.println("│ " + line);
         }
         w.println("└──────────────────────────────────────────────────────────────");
+        w.println();
+    }
+
+    /**
+     * 记录 JSON 解析后的结构化响应。
+     */
+    public static void logParsedResponse(AgentResponse response) {
+        LogSession session = CURRENT_SESSION.get();
+        if (session == null)
+            return;
+        PrintWriter w = session.writer;
+
+        writeSectionHeader(w, "4.7 解析后的结构化响应 (Parsed Response)");
+        w.println("thinking:        " + (response.hasThinking() ? "(有)" : "(无)"));
+        w.println("inner_monologue: " + (response.hasInnerMonologue() ? "(有，见 4.5)" : "(无)"));
+        w.println("speech:          " + (response.hasSpeech() ? response.getSpeech() : "(沉默)"));
         w.println();
     }
 

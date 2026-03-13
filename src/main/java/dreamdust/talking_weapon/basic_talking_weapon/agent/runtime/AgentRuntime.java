@@ -7,81 +7,180 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import java.util.concurrent.PriorityBlockingQueue;
 
 /**
- * 常驻 Agent Runtime：
- * 单 worker 线程 + 优先级任务队列，负责串行执行 {@link AgentTask}。
- * 同时持有全局共享的 {@link AgentMemory} 和 {@link AgentState}。
+ * 常驻 Agent Runtime：双队列 + 双 worker 线程架构。
+ * <p>
+ * <b>前台队列 (Foreground)</b>：处理玩家主动触发的交互事件（攻击、右键、受伤等）。
+ * 优先响应，不允许被后台抢占。
+ * <p>
+ * <b>后台队列 (Background)</b>：处理 Agent 内部的异步任务（碎碎念、记忆沉淀、
+ * 持有者画像更新、内心活动等）。后台 worker 完全独立，不阻塞前台交互。
+ * <p>
+ * 两个队列共享同一份 {@link AgentMemory} 和 {@link AgentState}（注意：任务内部
+ * 对共享状态的写操作需保证线程安全，当前以字段级 volatile 为基础防护）。
  */
 public final class AgentRuntime {
 
     private static final AgentRuntime INSTANCE = new AgentRuntime();
 
-    private final PriorityBlockingQueue<AgentTask> queue = new PriorityBlockingQueue<>();
-    private final Thread worker;
-    private volatile boolean running = true;
-    private volatile boolean busy = false;
-    private volatile AgentTask currentTask;
+    // ── 前台（Foreground）──
+    private final PriorityBlockingQueue<AgentTask> fgQueue = new PriorityBlockingQueue<>();
+    private final Thread fgWorker;
+    private volatile boolean fgBusy = false;
+    private volatile AgentTask fgCurrentTask;
 
-    /** 全局共享记忆 */
+    // ── 后台（Background）──
+    private final PriorityBlockingQueue<AgentTask> bgQueue = new PriorityBlockingQueue<>();
+    private final Thread bgWorker;
+    private volatile boolean bgBusy = false;
+    private volatile AgentTask bgCurrentTask;
+
+    private volatile boolean running = true;
+
+    /** 全局共享记忆（两个 worker 线程均可读写） */
     private final AgentMemory memory = new AgentMemory();
 
-    /** 全局共享状态 */
+    /** 全局共享状态（两个 worker 线程均可读写） */
     private final AgentState state = new AgentState();
 
     private AgentRuntime() {
-        this.worker = new Thread(this::runLoop, "TalkingWeapon-AgentRuntime");
-        this.worker.setDaemon(true);
-        this.worker.start();
+        this.fgWorker = new Thread(this::fgLoop, "TalkingWeapon-FG");
+        this.fgWorker.setDaemon(true);
+        this.fgWorker.start();
+
+        this.bgWorker = new Thread(this::bgLoop, "TalkingWeapon-BG");
+        this.bgWorker.setDaemon(true);
+        this.bgWorker.start();
     }
 
     public static AgentRuntime getInstance() {
         return INSTANCE;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // 前台队列 API（供 AgentSensor / IAgentTrigger 使用）
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * 提交一个 AgentTask 到优先级队列，由 worker 线程串行执行。
+     * 提交一个前台任务（玩家交互触发）。
+     *
+     * @return true 若成功入列
      */
     public boolean submit(AgentTask task) {
-        if (!running) return false;
-        return queue.offer(task);
+        if (!running)
+            return false;
+        return fgQueue.offer(task);
     }
 
     /**
-     * 取消当前正在执行的任务并清空队列。
+     * 取消当前前台任务并清空前台队列（玩家左键打断时调用）。
      */
     public void cancelCurrentAndClearQueue() {
-        queue.clear();
-        AgentTask t = currentTask;
-        if (t != null) t.cancel();
-        worker.interrupt();
+        fgQueue.clear();
+        AgentTask t = fgCurrentTask;
+        if (t != null)
+            t.cancel();
+        fgWorker.interrupt();
     }
 
+    /**
+     * 前台是否繁忙（队列非空或正在执行）。
+     */
     public boolean isBusy() {
-        return busy || !queue.isEmpty();
+        return fgBusy || !fgQueue.isEmpty();
     }
 
-    public AgentMemory getMemory() { return memory; }
-    public AgentState getState() { return state; }
+    // ═══════════════════════════════════════════════════════════════
+    // 后台队列 API（供后台异步任务使用）
+    // ═══════════════════════════════════════════════════════════════
 
-    private void runLoop() {
+    /**
+     * 提交一个后台任务（碎碎念 / 记忆沉淀 / 内心活动等）。
+     *
+     * @return true 若成功入列
+     */
+    public boolean submitBackground(AgentTask task) {
+        if (!running)
+            return false;
+        return bgQueue.offer(task);
+    }
+
+    /**
+     * 取消当前后台任务并清空后台队列。
+     */
+    public void cancelBackgroundAndClearQueue() {
+        bgQueue.clear();
+        AgentTask t = bgCurrentTask;
+        if (t != null)
+            t.cancel();
+        bgWorker.interrupt();
+    }
+
+    /**
+     * 后台是否繁忙（队列非空或正在执行）。
+     */
+    public boolean isBackgroundBusy() {
+        return bgBusy || !bgQueue.isEmpty();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 共享状态访问
+    // ═══════════════════════════════════════════════════════════════
+
+    public AgentMemory getMemory() {
+        return memory;
+    }
+
+    public AgentState getState() {
+        return state;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Worker 循环
+    // ═══════════════════════════════════════════════════════════════
+
+    /** 前台 worker 循环 */
+    private void fgLoop() {
         while (running) {
             AgentTask task;
             try {
-                task = queue.take();
+                task = fgQueue.take();
             } catch (InterruptedException e) {
                 Thread.interrupted();
                 continue;
             }
-
-            currentTask = task;
-            busy = true;
+            fgCurrentTask = task;
+            fgBusy = true;
             try {
-                if (!task.isCancelled()) {
+                if (!task.isCancelled())
                     task.execute();
-                }
             } catch (Throwable ignored) {
             } finally {
-                currentTask = null;
-                busy = false;
+                fgCurrentTask = null;
+                fgBusy = false;
+                Thread.interrupted();
+            }
+        }
+    }
+
+    /** 后台 worker 循环 */
+    private void bgLoop() {
+        while (running) {
+            AgentTask task;
+            try {
+                task = bgQueue.take();
+            } catch (InterruptedException e) {
+                Thread.interrupted();
+                continue;
+            }
+            bgCurrentTask = task;
+            bgBusy = true;
+            try {
+                if (!task.isCancelled())
+                    task.execute();
+            } catch (Throwable ignored) {
+            } finally {
+                bgCurrentTask = null;
+                bgBusy = false;
                 Thread.interrupted();
             }
         }

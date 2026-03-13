@@ -52,6 +52,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean rcLookingAt;
     private boolean rcSurroundingBlocks;
     private boolean rcThinking;
+    private boolean rcRecentActions;
 
     // ── 群系变化 · 采集器开关 ──
     private boolean bcBase;
@@ -96,12 +97,14 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         String curProvider = TalkingWeaponConfig.PROVIDER.get();
         this.providerIndex = PROVIDERS.indexOf(curProvider);
-        if (this.providerIndex < 0) this.providerIndex = 0;
+        if (this.providerIndex < 0)
+            this.providerIndex = 0;
 
         String curModel = TalkingWeaponConfig.MODEL_NAME.get();
         List<String> models = getModelsForCurrentProvider();
         this.modelIndex = models.indexOf(curModel);
-        if (this.modelIndex < 0) this.modelIndex = 0;
+        if (this.modelIndex < 0)
+            this.modelIndex = 0;
 
         this.rcBase = TalkingWeaponConfig.RC_ENABLE_BASE.get();
         this.rcScreenshot = TalkingWeaponConfig.RC_ENABLE_SCREENSHOT.get();
@@ -112,6 +115,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         this.rcLookingAt = TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.get();
         this.rcSurroundingBlocks = TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.get();
         this.rcThinking = TalkingWeaponConfig.RC_ENABLE_THINKING.get();
+        this.rcRecentActions = TalkingWeaponConfig.RC_ENABLE_RECENT_ACTIONS.get();
 
         this.bcBase = TalkingWeaponConfig.BC_ENABLE_BASE.get();
         this.bcScreenshot = TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.get();
@@ -227,12 +231,15 @@ public class TalkingWeaponConfigScreen extends Screen {
         structureMaxResultsBox.setMaxLength(2);
         structureMaxResultsBox.setCanLoseFocus(true);
 
-        configList.addEntry(new TwoWidgetEntry("半径(区块) / 数量上限", left, rowWidth, structureRadiusBox, structureMaxResultsBox));
+        configList.addEntry(
+                new TwoWidgetEntry("半径(区块) / 数量上限", left, rowWidth, structureRadiusBox, structureMaxResultsBox));
 
         // ── 实体探查设置 ──
         configList.addEntry(new LabelEntry("§e▸ 实体探查设置"));
-        configList.addEntry(new ToggleEntry("仅探查生物", left, rowWidth, entitiesOnlyCreatures, v -> entitiesOnlyCreatures = v));
-        configList.addEntry(new ToggleEntry("视线检测（仅生物）", left, rowWidth, entitiesLineOfSight, v -> entitiesLineOfSight = v));
+        configList.addEntry(
+                new ToggleEntry("仅探查生物", left, rowWidth, entitiesOnlyCreatures, v -> entitiesOnlyCreatures = v));
+        configList.addEntry(
+                new ToggleEntry("视线检测（仅生物）", left, rowWidth, entitiesLineOfSight, v -> entitiesLineOfSight = v));
         configList.addEntry(new ToggleEntry("模糊数量报告", left, rowWidth, entitiesFuzzyCount, v -> entitiesFuzzyCount = v));
 
         // ── 右键触发 · 采集器 ──
@@ -241,12 +248,15 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("基础状态采集", left, rowWidth, rcBase, v -> rcBase = v));
         configList.addEntry(new ToggleEntry("截图采集", left, rowWidth, rcScreenshot, v -> rcScreenshot = v));
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, rcNearbyEntities, v -> rcNearbyEntities = v));
-        configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, rcPlayerEnvironment, v -> rcPlayerEnvironment = v));
+        configList
+                .addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, rcPlayerEnvironment, v -> rcPlayerEnvironment = v));
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, rcNearbyStructures, v -> rcNearbyStructures = v));
         configList.addEntry(new ToggleEntry("POI探查采集", left, rowWidth, rcNearbyPoi, v -> rcNearbyPoi = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, rcLookingAt, v -> rcLookingAt = v));
-        configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, rcSurroundingBlocks, v -> rcSurroundingBlocks = v));
+        configList.addEntry(
+                new ToggleEntry("周围方块/地形采集", left, rowWidth, rcSurroundingBlocks, v -> rcSurroundingBlocks = v));
         configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, rcThinking, v -> rcThinking = v));
+        configList.addEntry(new ToggleEntry("近期动作流采集", left, rowWidth, rcRecentActions, v -> rcRecentActions = v));
 
         // ── 群系变化 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 群系变化 · 采集器"));
@@ -254,18 +264,22 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(new ToggleEntry("基础状态采集", left, rowWidth, bcBase, v -> bcBase = v));
         configList.addEntry(new ToggleEntry("截图采集", left, rowWidth, bcScreenshot, v -> bcScreenshot = v));
         configList.addEntry(new ToggleEntry("附近实体采集", left, rowWidth, bcNearbyEntities, v -> bcNearbyEntities = v));
-        configList.addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, bcPlayerEnvironment, v -> bcPlayerEnvironment = v));
+        configList
+                .addEntry(new ToggleEntry("玩家环境采集", left, rowWidth, bcPlayerEnvironment, v -> bcPlayerEnvironment = v));
         configList.addEntry(new ToggleEntry("结构探查采集", left, rowWidth, bcNearbyStructures, v -> bcNearbyStructures = v));
         configList.addEntry(new ToggleEntry("POI探查采集", left, rowWidth, bcNearbyPoi, v -> bcNearbyPoi = v));
         configList.addEntry(new ToggleEntry("注视目标采集", left, rowWidth, bcLookingAt, v -> bcLookingAt = v));
-        configList.addEntry(new ToggleEntry("周围方块/地形采集", left, rowWidth, bcSurroundingBlocks, v -> bcSurroundingBlocks = v));
+        configList.addEntry(
+                new ToggleEntry("周围方块/地形采集", left, rowWidth, bcSurroundingBlocks, v -> bcSurroundingBlocks = v));
         configList.addEntry(new ToggleEntry("启用思考模式", left, rowWidth, bcThinking, v -> bcThinking = v));
 
         // ── Agent 行为开关 ──
         configList.addEntry(new LabelEntry("§e▸ Agent 行为"));
 
-        configList.addEntry(new ToggleEntry("主动触发（总开关）", left, rowWidth, enableProactiveTriggers, v -> enableProactiveTriggers = v));
-        configList.addEntry(new ToggleEntry("群系变化检测", left, rowWidth, enableBiomeDetection, v -> enableBiomeDetection = v));
+        configList.addEntry(new ToggleEntry("主动触发（总开关）", left, rowWidth, enableProactiveTriggers,
+                v -> enableProactiveTriggers = v));
+        configList.addEntry(
+                new ToggleEntry("群系变化检测", left, rowWidth, enableBiomeDetection, v -> enableBiomeDetection = v));
 
         // ── 打开 toml ──
         configList.addEntry(new LabelEntry(""));
@@ -294,9 +308,8 @@ public class TalkingWeaponConfigScreen extends Screen {
             this.minecraft.setScreen(parent);
         }).bounds(width / 2 - 108, btnY, 100, 20).build());
 
-        addRenderableWidget(Button.builder(Component.literal("✘ 取消"), btn ->
-                this.minecraft.setScreen(parent)
-        ).bounds(width / 2 + 8, btnY, 100, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("✘ 取消"), btn -> this.minecraft.setScreen(parent))
+                .bounds(width / 2 + 8, btnY, 100, 20).build());
     }
 
     @Override
@@ -316,7 +329,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     }
 
     // ═══════════════════════════════════════════════════
-    //  辅助方法
+    // 辅助方法
     // ═══════════════════════════════════════════════════
 
     private List<String> getModelsForCurrentProvider() {
@@ -351,6 +364,7 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.RC_ENABLE_LOOKING_AT.set(rcLookingAt);
         TalkingWeaponConfig.RC_ENABLE_SURROUNDING_BLOCKS.set(rcSurroundingBlocks);
         TalkingWeaponConfig.RC_ENABLE_THINKING.set(rcThinking);
+        TalkingWeaponConfig.RC_ENABLE_RECENT_ACTIONS.set(rcRecentActions);
 
         TalkingWeaponConfig.BC_ENABLE_BASE.set(bcBase);
         TalkingWeaponConfig.BC_ENABLE_SCREENSHOT.set(bcScreenshot);
@@ -383,7 +397,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     }
 
     private void trySetInt(net.minecraftforge.common.ForgeConfigSpec.IntValue cfg,
-                           String raw, int min, int max, int fallback) {
+            String raw, int min, int max, int fallback) {
         try {
             int v = Integer.parseInt(raw.trim());
             cfg.set(Math.max(min, Math.min(max, v)));
@@ -402,7 +416,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     }
 
     // ═══════════════════════════════════════════════════
-    //  可滚动列表
+    // 可滚动列表
     // ═══════════════════════════════════════════════════
 
     private class ConfigList extends ContainerObjectSelectionList<ConfigList.Row> {
@@ -433,7 +447,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     }
 
     // ═══════════════════════════════════════════════════
-    //  行条目类型
+    // 行条目类型
     // ═══════════════════════════════════════════════════
 
     /** 纯文本标签行 */
@@ -446,13 +460,20 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             g.drawString(font, text, left + 4, top + 6, LABEL_COLOR);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return Collections.emptyList(); }
-        @Override public List<? extends NarratableEntry> narratables() { return Collections.emptyList(); }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return Collections.emptyList();
+        }
     }
 
     /** 三组件行：< [中间按钮] > （用于厂商/模型选择） */
@@ -471,8 +492,8 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
 
             int btnLeft = left + rowWidth / 2;
@@ -494,8 +515,15 @@ public class TalkingWeaponConfigScreen extends Screen {
             widgets.get(2).render(g, mouseX, mouseY, delta);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return widgets; }
-        @Override public List<? extends NarratableEntry> narratables() { return widgets; }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return widgets;
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return widgets;
+        }
     }
 
     /** 双组件行（用于截图宽高） */
@@ -515,8 +543,8 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
 
             int btnLeft = left + rowWidth / 2;
@@ -533,8 +561,15 @@ public class TalkingWeaponConfigScreen extends Screen {
             w2.render(g, mouseX, mouseY, delta);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return List.of(w1, w2); }
-        @Override public List<? extends NarratableEntry> narratables() { return List.of(w1, w2); }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(w1, w2);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(w1, w2);
+        }
     }
 
     /** 开关行 */
@@ -546,7 +581,8 @@ public class TalkingWeaponConfigScreen extends Screen {
         private final java.util.function.Consumer<Boolean> setter;
         private final Button button;
 
-        ToggleEntry(String label, int rowLeft, int rowWidth, boolean initial, java.util.function.Consumer<Boolean> setter) {
+        ToggleEntry(String label, int rowLeft, int rowWidth, boolean initial,
+                java.util.function.Consumer<Boolean> setter) {
             this.label = label;
             this.rowLeft = rowLeft;
             this.rowWidth = rowWidth;
@@ -561,8 +597,8 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             int btnW = Math.min(rowWidth - 8, 300);
             button.setX(left + 4);
             button.setY(top + 2);
@@ -570,8 +606,15 @@ public class TalkingWeaponConfigScreen extends Screen {
             button.render(g, mouseX, mouseY, delta);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return List.of(button); }
-        @Override public List<? extends NarratableEntry> narratables() { return List.of(button); }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(button);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(button);
+        }
     }
 
     /** 单按钮居中行 */
@@ -588,15 +631,22 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             widget.setX(left + 4);
             widget.setY(top + 2);
             widget.render(g, mouseX, mouseY, delta);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return List.of(widget); }
-        @Override public List<? extends NarratableEntry> narratables() { return List.of(widget); }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(widget);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(widget);
+        }
     }
 
     /** 双按钮行（左右并排） */
@@ -614,8 +664,8 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         @Override
         public void render(GuiGraphics g, int index, int top, int left,
-                           int width, int height, int mouseX, int mouseY,
-                           boolean hovering, float delta) {
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
             int halfW = (rowWidth - 12) / 2;
             btn1.setX(left + 4);
             btn1.setY(top + 2);
@@ -628,7 +678,14 @@ public class TalkingWeaponConfigScreen extends Screen {
             btn2.render(g, mouseX, mouseY, delta);
         }
 
-        @Override public List<? extends GuiEventListener> children() { return List.of(btn1, btn2); }
-        @Override public List<? extends NarratableEntry> narratables() { return List.of(btn1, btn2); }
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(btn1, btn2);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(btn1, btn2);
+        }
     }
 }

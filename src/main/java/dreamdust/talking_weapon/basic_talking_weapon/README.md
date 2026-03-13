@@ -35,13 +35,20 @@ agent/
 │       ├── IAgentTrigger.java        — 触发器接口 + default getUserPrompt()
 │       ├── RightClickTrigger.java    — 右键触发（按 RC_* 配置动态组合采集器 → LLMInteractionTask）
 │       ├── BiomeChangeTrigger.java   — 群系变化触发（按 BC_* 配置动态组合 → LLMInteractionTask）
-│       ├── TickEventWatcher.java     — Forge ClientTickEvent 监听器（周期检测，调度被动触发）
+│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → ActionBuffer + 群系/旅行检测）
+│       ├── ReflectionTrigger.java    — 定时反思触发器（骨架）
+│       ├── CombatRecapTrigger.java   — 连杀回顾触发器（骨架）
+│       ├── BossKillTrigger.java      — Boss击杀触发器（骨架）
 │       └── README.md                — 触发器开发指南
 ├── state/                          ← 显式状态
 │   └── AgentState.java              — 情绪 Mood 枚举 + 熟悉度 + 当前目标
 ├── memory/                         ← 记忆系统
 │   ├── AgentMsg.java                — 不可变消息 (Role/Content/Image/Metadata)
-│   └── AgentMemory.java             — 三层记忆：Identity / Short-term / Long-term
+│   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
+│   ├── ActionRecord.java            — 极轻量动作记录（尾部合并压缩）
+│   ├── ActionBuffer.java            — 环形动作缓冲区（线程安全，KILL覆盖ATTACK）
+│   ├── MemoryRecord.java            — 剑视角深度记忆切片（不可变，Builder模式）
+│   └── AgentMemory.java             — 三池记忆：ActionBuffer / ChatHistory / MemoryRecords
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
 │   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆
@@ -54,9 +61,14 @@ agent/
 │   ├── SoundAction.java             — 音效播放
 │   └── EmoteAction.java             — 粒子表情
 ├── runtime/                        ← Agent 运行时
-│   └── AgentRuntime.java            — 单 worker + PriorityBlockingQueue + 全局 Memory/State
+│   └── AgentRuntime.java            — 双队列双 worker（前台交互 + 后台反思）+ 全局 Memory/State
+├── dictionary/                     ← 配置字典
+│   ├── TagDescriptionDictionary.java — DetailTag → 自然语言描述（从 config JSON 加载）
+│   └── LocationRegistry.java        — 关键地点注册表（运行时增删 + 即时持久化）
 └── llm_service/                    ← LLM 工具
-    └── LLMAgentService.java         — 纯工具类：buildModel()
+    ├── LLMAgentService.java         — 纯工具类：buildModel()
+    ├── AgentResponse.java           — LLM JSON 响应结构（thinking/inner_monologue/speech）
+    └── AgentResponseParser.java     — 三级回退解析器（JSON → 代码块 → 纯文本）
 
 config/
 ├── TalkingWeaponConfig.java         — Forge 客户端配置（per-trigger 采集器开关 + per-trigger prompt）
@@ -217,11 +229,11 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 |------|------|
 | **感知** | `AgentSensor` + `IContextCollector` — 模块化采集器组合 → 不可变 `AgentContext` |
 | **触发** | `IAgentTrigger` — 声明采集器列表 + 专属 prompt + 任务类型，支持被动/主动两种模式 |
-| **记忆** | `AgentMemory` — 三层：Identity(人格) / Short-term(滑动窗口) / Long-term(语义摘要) |
+| **记忆** | `AgentMemory` — 三池：ActionBuffer(动作流) / ChatHistory(对话窗口) / MemoryRecords(深度记忆) |
 | **状态** | `AgentState` — 情绪(8种Mood) + 熟悉度(0-100) + 当前目标 |
-| **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理 |
+| **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理（JSON输出） |
 | **行动** | `SpeechAction` / `SoundAction` / `EmoteAction` — 主线程执行 |
-| **调度** | `AgentRuntime` — 单 worker + 优先级队列，串行避免并发 |
+| **调度** | `AgentRuntime` — 双队列（前台交互 + 后台反思），串行避免并发 |
 
 ### Trigger / Collector 模式
 

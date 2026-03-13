@@ -5,71 +5,152 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Agent 三层记忆系统：
+ * Agent 记忆系统：三池架构。
  * <ol>
- *   <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
- *   <li><b>Short-term</b> — 近期对话窗口，固定大小滑动窗口</li>
- *   <li><b>Long-term</b> — 语义长期记忆，由 ReflectionTask 压缩写入</li>
+ * <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
+ * <li><b>ActionBuffer</b> — 环形动作流，高频轻量，不触发 LLM</li>
+ * <li><b>ChatHistory</b> — 对话消息滑动窗口（保留 {@link AgentMsg}）</li>
+ * <li><b>MemoryRecords</b> — 剑视角的深度记忆切片列表</li>
  * </ol>
+ * <p>
+ * 线程安全说明：ActionBuffer 自身线程安全；chatHistory 和 memoryRecords
+ * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
 
-    /** 身份层：不可变的人格 system prompt */
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 0: Identity（永久）
+    // ═══════════════════════════════════════════════════════════════
+
     private String identity;
 
-    /** 短期记忆窗口：最近 N 条对话 */
-    private final List<AgentMsg> shortTerm;
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 1: ActionBuffer（环形动作流）
+    // ═══════════════════════════════════════════════════════════════
 
-    /** 短期记忆窗口最大容量 */
-    private int shortTermCapacity;
+    private final ActionBuffer actionBuffer;
 
-    /** 长期记忆：压缩后的语义摘要列表 */
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 2: ChatHistory（对话消息滑动窗口）
+    // ═══════════════════════════════════════════════════════════════
+
+    private final List<AgentMsg> chatHistory;
+    private int chatHistoryCapacity;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 3: MemoryRecords（记忆切片库）
+    // ═══════════════════════════════════════════════════════════════
+
+    private final List<MemoryRecord> memoryRecords;
+    private int memoryRecordsCapacity;
+
+    // ═══════════════════════════════════════════════════════════════
+    // 长期记忆（压缩摘要，兼容旧流程）
+    // ═══════════════════════════════════════════════════════════════
+
     private final List<String> longTerm;
-
-    /** 长期记忆最大条目数 */
     private int longTermCapacity;
 
     public AgentMemory() {
         this.identity = "";
-        this.shortTerm = new ArrayList<>();
-        this.shortTermCapacity = 20;
+        this.actionBuffer = new ActionBuffer(64);
+        this.chatHistory = new ArrayList<>();
+        this.chatHistoryCapacity = 20;
+        this.memoryRecords = new ArrayList<>();
+        this.memoryRecordsCapacity = 100;
         this.longTerm = new ArrayList<>();
         this.longTermCapacity = 50;
     }
 
-    // ---- Identity Layer ----
+    // ── Identity ─────────────────────────────────────────────────
 
-    public String getIdentity() { return identity; }
-    public void setIdentity(String identity) { this.identity = identity; }
+    public String getIdentity() {
+        return identity;
+    }
 
-    // ---- Short-term Layer ----
+    public void setIdentity(String identity) {
+        this.identity = identity;
+    }
+
+    // ── ActionBuffer ─────────────────────────────────────────────
+
+    public ActionBuffer getActionBuffer() {
+        return actionBuffer;
+    }
+
+    // ── ChatHistory ──────────────────────────────────────────────
 
     /**
-     * 追加一条消息到短期记忆。超出容量时移除最旧的。
+     * 追加一条消息到对话历史。超出容量时移除最旧的。
      */
-    public void addShortTerm(AgentMsg msg) {
-        shortTerm.add(msg);
-        while (shortTerm.size() > shortTermCapacity) {
-            shortTerm.remove(0);
+    public void addChatMessage(AgentMsg msg) {
+        chatHistory.add(msg);
+        while (chatHistory.size() > chatHistoryCapacity) {
+            chatHistory.remove(0);
         }
     }
 
+    /** 旧 API 兼容：addShortTerm → addChatMessage */
+    public void addShortTerm(AgentMsg msg) {
+        addChatMessage(msg);
+    }
+
+    public List<AgentMsg> getChatHistory() {
+        return Collections.unmodifiableList(chatHistory);
+    }
+
+    /** 旧 API 兼容 */
     public List<AgentMsg> getShortTerm() {
-        return Collections.unmodifiableList(shortTerm);
+        return getChatHistory();
     }
 
-    public void clearShortTerm() {
-        shortTerm.clear();
+    public void clearChatHistory() {
+        chatHistory.clear();
     }
 
-    public int getShortTermCapacity() { return shortTermCapacity; }
-    public void setShortTermCapacity(int capacity) { this.shortTermCapacity = capacity; }
+    public int getChatHistoryCapacity() {
+        return chatHistoryCapacity;
+    }
 
-    // ---- Long-term Layer ----
+    public void setChatHistoryCapacity(int capacity) {
+        this.chatHistoryCapacity = capacity;
+    }
+
+    /** 旧 API 兼容 */
+    public int getShortTermCapacity() {
+        return chatHistoryCapacity;
+    }
+
+    public void setShortTermCapacity(int capacity) {
+        this.chatHistoryCapacity = capacity;
+    }
+
+    // ── MemoryRecords ────────────────────────────────────────────
 
     /**
-     * 追加一条压缩摘要到长期记忆。
+     * 追加一条记忆切片。超出容量时移除最旧的。
      */
+    public void addMemoryRecord(MemoryRecord record) {
+        memoryRecords.add(record);
+        while (memoryRecords.size() > memoryRecordsCapacity) {
+            memoryRecords.remove(0);
+        }
+    }
+
+    public List<MemoryRecord> getMemoryRecords() {
+        return Collections.unmodifiableList(memoryRecords);
+    }
+
+    public int getMemoryRecordsCapacity() {
+        return memoryRecordsCapacity;
+    }
+
+    public void setMemoryRecordsCapacity(int capacity) {
+        this.memoryRecordsCapacity = capacity;
+    }
+
+    // ── Long-term（兼容旧流程） ──────────────────────────────────
+
     public void addLongTerm(String summary) {
         longTerm.add(summary);
         while (longTerm.size() > longTermCapacity) {
@@ -85,23 +166,26 @@ public class AgentMemory {
         longTerm.clear();
     }
 
-    public int getLongTermCapacity() { return longTermCapacity; }
-    public void setLongTermCapacity(int capacity) { this.longTermCapacity = capacity; }
+    public int getLongTermCapacity() {
+        return longTermCapacity;
+    }
 
-    // ---- Utility ----
+    public void setLongTermCapacity(int capacity) {
+        this.longTermCapacity = capacity;
+    }
+
+    // ── Utility ──────────────────────────────────────────────────
 
     /**
-     * 构建发送给 LLM 的完整消息列表：identity → long-term 摘要 → short-term 对话窗口。
+     * 构建发送给 LLM 的完整消息列表：identity → long-term 摘要 → chat history。
      */
     public List<AgentMsg> buildPromptMessages() {
         List<AgentMsg> messages = new ArrayList<>();
 
-        // 1. Identity
         if (identity != null && !identity.isEmpty()) {
             messages.add(AgentMsg.system(identity));
         }
 
-        // 2. Long-term summaries as system context
         if (!longTerm.isEmpty()) {
             StringBuilder sb = new StringBuilder("[Long-term Memory]\n");
             for (String entry : longTerm) {
@@ -110,16 +194,16 @@ public class AgentMemory {
             messages.add(AgentMsg.system(sb.toString()));
         }
 
-        // 3. Short-term conversation window
-        messages.addAll(shortTerm);
-
+        messages.addAll(chatHistory);
         return messages;
     }
 
     @Override
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
-                + ", shortTerm=" + shortTerm.size()
+                + ", actionBuffer=" + actionBuffer.size()
+                + ", chatHistory=" + chatHistory.size()
+                + ", memoryRecords=" + memoryRecords.size()
                 + ", longTerm=" + longTerm.size() + "}";
     }
 }

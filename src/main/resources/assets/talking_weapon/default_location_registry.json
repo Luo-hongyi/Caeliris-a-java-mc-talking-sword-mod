@@ -1,0 +1,19 @@
+{
+    "_comment": "关键位置注册表。记录玩家与武器共同命名的重要地点，供 loc: 标签使用。",
+    "_comment2": "格式：\"地点名\" -> {\"x\": 0, \"y\": 64, \"z\": 0, \"dim\": \"minecraft:overworld\", \"note\": \"备注\"}",
+    "_comment3": "可通过游戏内聊天命令（计划中）或直接编辑本文件更新。",
+    "home": {
+        "x": 0,
+        "y": 64,
+        "z": 0,
+        "dim": "minecraft:overworld",
+        "note": "主要居所（请修改坐标）"
+    },
+    "spawn": {
+        "x": 0,
+        "y": 64,
+        "z": 0,
+        "dim": "minecraft:overworld",
+        "note": "世界出生点"
+    }
+}
