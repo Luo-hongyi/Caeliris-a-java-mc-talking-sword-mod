@@ -30,11 +30,11 @@ public enum ActionType {
     USE_ITEM(FocusTag.TOOL),
 
     // ── 移动域（高度概括的锚点位移） ──
-    TRAVEL(FocusTag.MOVEMENT),
+    TRAVEL(FocusTag.MOVEMENT, FocusTag.LANDSCAPE),
 
     // ── 环境变化域 ──
-    BIOME_CHANGE(FocusTag.LANDSCAPE),
-    DIM_CHANGE(FocusTag.LANDSCAPE),
+    BIOME_CHANGE(FocusTag.LANDSCAPE, FocusTag.MOVEMENT),
+    DIM_CHANGE(FocusTag.LANDSCAPE, FocusTag.MOVEMENT),
 
     // ── 社交域 ──
     TRADE(FocusTag.SOCIAL),

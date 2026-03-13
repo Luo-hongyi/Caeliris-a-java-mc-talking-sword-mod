@@ -56,8 +56,10 @@ public class TickEventWatcher {
 
     private int tickCounter = 0;
 
-    // ── 群系变化检测状态 ──
+    // ── 群系与维度变化检测状态 ──
     private String lastKnownBiome = null;
+    private String lastKnownDim = null;
+    private long lastBiomeChangeLogTime = 0; // 群系切换的防抖/节流计时戳
 
     // ── 锚点位移检测状态 ──
     private BlockPos anchorPos = null;
@@ -82,13 +84,16 @@ public class TickEventWatcher {
 
         ActionBuffer buffer = AgentRuntime.getInstance().getMemory().getActionBuffer();
 
+        // ── 维度变化检测 ──
+        checkDimensionChange(player, level, buffer);
+
         // ── 群系变化检测 ──
         if (TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get()) {
             checkBiomeChange(player, level, buffer);
         }
 
         // ── 锚点位移检测（旅行） ──
-        checkTravel(player, buffer);
+        checkTravel(player, level, buffer);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -260,16 +265,29 @@ public class TickEventWatcher {
 
         if (lastKnownBiome == null) {
             lastKnownBiome = currentBiome;
+            lastBiomeChangeLogTime = System.currentTimeMillis();
             return;
         }
 
         if (!currentBiome.equals(lastKnownBiome)) {
+            long now = System.currentTimeMillis();
+            // 平滑防抖（3分钟）：距离上次记录群系不足3分钟时，暂不处理状态更新和记录，
+            // 避免玩家在边界反复横跳导致垃圾记录刷屏
+            if (now - lastBiomeChangeLogTime < 180_000L) {
+                return;
+            }
+
             String oldBiome = lastKnownBiome;
             lastKnownBiome = currentBiome;
+            lastBiomeChangeLogTime = now;
 
             // 写入 ActionBuffer
             Set<DetailTag> tags = new LinkedHashSet<>();
+            tags.add(DetailTag.of(DetailTag.ACTION, "biome_change"));
             tags.add(DetailTag.of(DetailTag.BIOME, currentBiome));
+            if (lastKnownDim != null) {
+                tags.add(DetailTag.of(DetailTag.DIM, lastKnownDim));
+            }
             ActionRecord record = ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags);
             buffer.add(record);
             logBufferAdd(record);
@@ -282,11 +300,39 @@ public class TickEventWatcher {
         }
     }
 
+    private void checkDimensionChange(Player player, Level level, ActionBuffer buffer) {
+        String currentDim = level.dimension().location().toString();
+
+        if (lastKnownDim == null) {
+            lastKnownDim = currentDim;
+            return;
+        }
+
+        if (!currentDim.equals(lastKnownDim)) {
+            lastKnownDim = currentDim;
+
+            // 写入 ActionBuffer
+            Set<DetailTag> tags = new LinkedHashSet<>();
+            tags.add(DetailTag.of(DetailTag.ACTION, "dim_change"));
+            tags.add(DetailTag.of(DetailTag.DIM, currentDim));
+            if (lastKnownBiome != null) {
+                tags.add(DetailTag.of(DetailTag.BIOME, lastKnownBiome));
+            }
+
+            ActionRecord record = ActionRecord.of(ActionType.DIM_CHANGE, currentDim, tags);
+            buffer.add(record);
+            logBufferAdd(record);
+
+            // 维度变化时，距离概念已经错乱，重置旅行锚点
+            anchorPos = player.blockPosition();
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 锚点位移检测（旅行）
     // ═══════════════════════════════════════════════════════════════
 
-    private void checkTravel(Player player, ActionBuffer buffer) {
+    private void checkTravel(Player player, Level level, ActionBuffer buffer) {
         BlockPos currentPos = player.blockPosition();
 
         if (anchorPos == null) {
@@ -306,10 +352,14 @@ public class TickEventWatcher {
                     currentPos.getX(), currentPos.getY(), currentPos.getZ());
 
             Set<DetailTag> tags = new LinkedHashSet<>();
+            tags.add(DetailTag.of(DetailTag.ACTION, "travel"));
+
             // 将当前群系和维度写入标签
             if (lastKnownBiome != null) {
                 tags.add(DetailTag.of(DetailTag.BIOME, lastKnownBiome));
             }
+            String dim = player.level().dimension().location().toString();
+            tags.add(DetailTag.of(DetailTag.DIM, dim));
 
             ActionRecord record = ActionRecord.of(ActionType.TRAVEL, direction, tags);
             buffer.add(record);
