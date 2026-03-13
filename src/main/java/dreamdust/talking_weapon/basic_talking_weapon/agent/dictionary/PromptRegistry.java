@@ -81,6 +81,10 @@ public final class PromptRegistry {
         return get("cancel_speech", "剑：沉默不语……");
     }
 
+    public String getBusySpeech() {
+        return get("busy_speech", "剑：我还在思考上一个问题，别催！");
+    }
+
     // ── 加载逻辑 ──
 
     private static PromptRegistry load() {

@@ -10,23 +10,24 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
  * <p>
  * 具体的请求发送、响应处理、ActionBar 展示等逻辑已迁移至：
  * <ul>
- *   <li>{@code LLMInteractionTask} — 完整的 LLM 交互流程</li>
- *   <li>{@code SpeechAction} — ActionBar 文字展示</li>
- *   <li>{@code AgentSensor} — 触发入口与取消</li>
+ * <li>{@code LLMInteractionTask} — 完整的 LLM 交互流程</li>
+ * <li>{@code SpeechAction} — ActionBar 文字展示</li>
+ * <li>{@code AgentSensor} — 触发入口与取消</li>
  * </ul>
  */
 public final class LLMAgentService {
 
-    private LLMAgentService() {} // 不可实例化
+    private LLMAgentService() {
+    } // 不可实例化
 
     /**
      * 根据当前配置构建 {@link ChatLanguageModel}。
      * <p>
      * 所有 Provider 均通过 OpenAI 兼容接口调用：
      * <ul>
-     *   <li>OpenAI: https://api.openai.com/v1/</li>
-     *   <li>Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1/</li>
-     *   <li>Claude / Gemini: 通过第三方代理</li>
+     * <li>OpenAI: https://api.openai.com/v1/</li>
+     * <li>Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1/</li>
+     * <li>Claude / Gemini: 通过第三方代理</li>
      * </ul>
      */
     public static ChatLanguageModel buildModel() {
@@ -34,7 +35,6 @@ public final class LLMAgentService {
                 .apiKey(TalkingWeaponConfig.OPENAI_API_KEY.get())
                 .baseUrl(TalkingWeaponConfig.BASE_URL.get())
                 .modelName(TalkingWeaponConfig.MODEL_NAME.get())
-                .maxTokens(TalkingWeaponConfig.MAX_TOKENS.get())
                 .build();
     }
 }

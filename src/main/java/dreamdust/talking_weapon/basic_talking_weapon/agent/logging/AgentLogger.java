@@ -161,8 +161,9 @@ public final class AgentLogger {
                         .snapshot();
                 for (int i = 0; i < records.size(); i++) {
                     dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
-                    w.println(String.format("[%03d] Type: %-15s Target: %-20s Count: %-3d Tags: %s",
-                            i, r.getType(), r.getTarget(), r.getCount(), r.getDetailTags()));
+                    w.println(String.format("[%03d] Type: %-15s Target: %-20s Count: %-3d Focus: %s Details: %s",
+                            i, r.getType(), r.getTarget(), r.getCount(),
+                            r.getType().getAllFocusTags(), r.getDetailTags()));
                 }
             }
         } catch (IOException e) {

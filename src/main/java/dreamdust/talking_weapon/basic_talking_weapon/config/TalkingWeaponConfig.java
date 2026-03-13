@@ -41,7 +41,6 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.ConfigValue<String> OPENAI_API_KEY;
         public static final ForgeConfigSpec.ConfigValue<String> BASE_URL;
         public static final ForgeConfigSpec.ConfigValue<String> MODEL_NAME;
-        public static final ForgeConfigSpec.IntValue MAX_TOKENS;
         public static final ForgeConfigSpec.IntValue THINKING_MAX_LENGTH;
 
         // —— 截图 ——
@@ -119,9 +118,6 @@ public final class TalkingWeaponConfig {
                 MODEL_NAME = builder
                                 .comment("模型名称")
                                 .define("modelName", "gpt-4o");
-                MAX_TOKENS = builder
-                                .comment("最大生成 token 数")
-                                .defineInRange("maxTokens", 256, 1, 4096);
                 THINKING_MAX_LENGTH = builder
                                 .comment("思考内容最大字符数（0=不限制，超出部分会在日志中截断）")
                                 .defineInRange("thinkingMaxLength", 300, 0, 10000);

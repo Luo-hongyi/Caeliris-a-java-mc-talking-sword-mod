@@ -54,7 +54,7 @@ public class AgentSensor {
         // 忙检查
         if (runtime.isBusy()) {
             if (player != null) {
-                showActionBar(player, "剑：我还在思考上一个问题，别催！");
+                showActionBar(player, PromptRegistry.getInstance().getBusySpeech());
             }
             return false;
         }
