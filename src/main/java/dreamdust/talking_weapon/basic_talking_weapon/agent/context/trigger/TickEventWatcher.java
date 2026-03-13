@@ -27,6 +27,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 统一事件感知器：监听 Forge 游戏事件并写入 {@link ActionBuffer}。
@@ -104,26 +105,29 @@ public class TickEventWatcher {
             return;
 
         LivingEntity hurt = event.getEntity();
-        Player player = mc.player;
+        UUID playerUUID = mc.player.getUUID();
 
         // 玩家攻击别人
-        if (event.getSource().getEntity() == player) {
+        if (event.getSource().getEntity() != null
+                && event.getSource().getEntity().getUUID().equals(playerUUID)) {
             String targetId = entityId(hurt);
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.of(DetailTag.ENTITY, targetId));
             addTraitTags(hurt, tags);
-            AgentRuntime.getInstance().getMemory().getActionBuffer()
-                    .add(ActionRecord.of(ActionType.ATTACK, targetId, tags));
+            ActionRecord record = ActionRecord.of(ActionType.ATTACK, targetId, tags);
+            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+            logBufferAdd(record);
         }
         // 玩家被攻击
-        else if (hurt == player) {
+        else if (hurt.getUUID().equals(playerUUID)) {
             String sourceId = event.getSource().getEntity() != null
                     ? entityId((LivingEntity) event.getSource().getEntity())
                     : "unknown";
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.of(DetailTag.ENTITY, sourceId));
-            AgentRuntime.getInstance().getMemory().getActionBuffer()
-                    .add(ActionRecord.of(ActionType.HURT_BY, sourceId, tags));
+            ActionRecord record = ActionRecord.of(ActionType.HURT_BY, sourceId, tags);
+            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+            logBufferAdd(record);
         }
     }
 
@@ -137,23 +141,28 @@ public class TickEventWatcher {
             return;
 
         LivingEntity dead = event.getEntity();
+        UUID playerUUID = mc.player.getUUID();
 
         // 玩家击杀了目标
-        if (event.getSource().getEntity() == mc.player && dead != mc.player) {
+        if (event.getSource().getEntity() != null
+                && event.getSource().getEntity().getUUID().equals(playerUUID)
+                && !dead.getUUID().equals(playerUUID)) {
             String targetId = entityId(dead);
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.of(DetailTag.ENTITY, targetId));
             addTraitTags(dead, tags);
-            AgentRuntime.getInstance().getMemory().getActionBuffer()
-                    .add(ActionRecord.of(ActionType.KILL, targetId, tags));
+            ActionRecord record = ActionRecord.of(ActionType.KILL, targetId, tags);
+            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+            logBufferAdd(record);
         }
         // 玩家自己死亡
-        else if (dead == mc.player) {
+        else if (dead.getUUID().equals(playerUUID)) {
             String sourceId = event.getSource().getEntity() != null
                     ? entityId((LivingEntity) event.getSource().getEntity())
                     : "unknown";
-            AgentRuntime.getInstance().getMemory().getActionBuffer()
-                    .add(ActionRecord.of(ActionType.DEATH, sourceId));
+            ActionRecord record = ActionRecord.of(ActionType.DEATH, sourceId);
+            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+            logBufferAdd(record);
         }
     }
 
@@ -169,7 +178,9 @@ public class TickEventWatcher {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null)
             return;
-        if (event.getPlayer() != mc.player)
+        if (event.getPlayer() == null)
+            return;
+        if (!event.getPlayer().getUUID().equals(mc.player.getUUID()))
             return;
 
         BlockState state = event.getState();
@@ -179,8 +190,9 @@ public class TickEventWatcher {
         Set<DetailTag> tags = new LinkedHashSet<>();
         tags.add(DetailTag.of(DetailTag.BLOCK, id));
 
-        AgentRuntime.getInstance().getMemory().getActionBuffer()
-                .add(ActionRecord.of(ActionType.MINE_BLOCK, id, tags));
+        ActionRecord record = ActionRecord.of(ActionType.MINE_BLOCK, id, tags);
+        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+        logBufferAdd(record);
     }
 
     /**
@@ -191,7 +203,9 @@ public class TickEventWatcher {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null)
             return;
-        if (event.getEntity() != mc.player)
+        if (event.getEntity() == null)
+            return;
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID()))
             return;
 
         ItemStack stack = event.getItem();
@@ -204,8 +218,9 @@ public class TickEventWatcher {
         // 判断是否为食物
         ActionType type = stack.getItem().isEdible() ? ActionType.EAT : ActionType.USE_ITEM;
 
-        AgentRuntime.getInstance().getMemory().getActionBuffer()
-                .add(ActionRecord.of(type, id, tags));
+        ActionRecord record = ActionRecord.of(type, id, tags);
+        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+        logBufferAdd(record);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -230,7 +245,9 @@ public class TickEventWatcher {
             // 写入 ActionBuffer
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.of(DetailTag.BIOME, currentBiome));
-            buffer.add(ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags));
+            ActionRecord record = ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags);
+            buffer.add(record);
+            logBufferAdd(record);
 
             // 原有的 LLM 触发逻辑（fire BiomeChangeTrigger）
             if (AgentSensor.getInstance().isRuntimeBusy())
@@ -269,7 +286,9 @@ public class TickEventWatcher {
                 tags.add(DetailTag.of(DetailTag.BIOME, lastKnownBiome));
             }
 
-            buffer.add(ActionRecord.of(ActionType.TRAVEL, direction, tags));
+            ActionRecord record = ActionRecord.of(ActionType.TRAVEL, direction, tags);
+            buffer.add(record);
+            logBufferAdd(record);
 
             // 重置锚点
             anchorPos = currentPos;
@@ -295,5 +314,21 @@ public class TickEventWatcher {
         if (entity.getMobType() == net.minecraft.world.entity.MobType.ARTHROPOD) {
             tags.add(DetailTag.of(DetailTag.TRAIT, "arthropod"));
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ActionBuffer 调试日志
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 将每次写入 ActionBuffer 的记录打印到 stdout，方便调试。
+     */
+    private void logBufferAdd(ActionRecord record) {
+        ActionBuffer buffer = AgentRuntime.getInstance().getMemory().getActionBuffer();
+        System.out.println("[ActionBuffer +] " + record.getType()
+                + " target=" + record.getTarget()
+                + " count=" + record.getCount()
+                + " tags=" + record.getDetailTags()
+                + " | buffer_size=" + buffer.size());
     }
 }

@@ -140,6 +140,37 @@ public final class AgentLogger {
     }
 
     /**
+     * 将整个 ActionBuffer 快照单独输出到一个日志文件中，方便调试。
+     * 文件名格式: action_buffer_dump_<时间戳>.log
+     */
+    public static void logActionBufferDump(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionBuffer buffer) {
+        try {
+            Path dir = ensureLogDir();
+            String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
+            File file = dir.resolve("action_buffer_dump_" + timestamp + ".log").toFile();
+            try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
+                w.println("╔══════════════════════════════════════════════════════════════╗");
+                w.println("║          TALKING WEAPON — ACTION BUFFER DUMP                 ║");
+                w.println("╚══════════════════════════════════════════════════════════════╝");
+                w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
+                w.println("动作总数: " + buffer.size());
+                w.println();
+
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord> records = buffer
+                        .snapshot();
+                for (int i = 0; i < records.size(); i++) {
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
+                    w.println(String.format("[%03d] Type: %-15s Target: %-20s Count: %-3d Tags: %s",
+                            i, r.getType(), r.getTarget(), r.getCount(), r.getDetailTags()));
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * 记录 Agent 状态与记忆。在构建 prompt 之前调用。
      */
     public static void logAgentState(AgentMemory memory, AgentState state) {

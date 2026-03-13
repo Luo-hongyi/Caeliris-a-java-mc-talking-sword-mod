@@ -4,8 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import net.minecraftforge.fml.loading.FMLPaths;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -27,7 +25,7 @@ import java.util.*;
  */
 public final class TagDescriptionDictionary {
 
-    private static final Logger LOGGER = LogManager.getLogger("TalkingWeapon/TagDict");
+    private static final String LOG_PREFIX = "[TalkingWeapon/TagDict] ";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     /** 配置文件相对于 Forge config 目录的路径 */
@@ -65,7 +63,7 @@ public final class TagDescriptionDictionary {
      */
     public static synchronized void reload() {
         INSTANCE = load();
-        LOGGER.info("[TagDescriptionDictionary] 已重新加载，共 {} 条映射。", INSTANCE.descriptions.size());
+        System.out.println(LOG_PREFIX + "已重新加载，共 " + INSTANCE.descriptions.size() + " 条映射。");
     }
 
     // ─────────────────────────────────────────────
@@ -132,11 +130,11 @@ public final class TagDescriptionDictionary {
                 });
             }
 
-            LOGGER.info("[TagDescriptionDictionary] 加载完成，共 {} 条映射：{}", filtered.size(), configPath);
+            System.out.println(LOG_PREFIX + "加载完成，共 " + filtered.size() + " 条映射：" + configPath);
             return new TagDescriptionDictionary(filtered);
 
         } catch (Exception e) {
-            LOGGER.error("[TagDescriptionDictionary] 加载失败，使用空字典：{}", e.getMessage());
+            System.err.println(LOG_PREFIX + "加载失败，使用空字典：" + e.getMessage());
             return new TagDescriptionDictionary(Collections.emptyMap());
         }
     }
@@ -157,14 +155,14 @@ public final class TagDescriptionDictionary {
             Files.createDirectories(configPath.getParent());
             try (InputStream in = TagDescriptionDictionary.class.getResourceAsStream(DEFAULT_RESOURCE)) {
                 if (in == null) {
-                    LOGGER.warn("[TagDescriptionDictionary] 未找到内置默认资源：{}", DEFAULT_RESOURCE);
+                    System.err.println(LOG_PREFIX + "未找到内置默认资源：" + DEFAULT_RESOURCE);
                     return;
                 }
                 Files.copy(in, configPath);
-                LOGGER.info("[TagDescriptionDictionary] 已创建默认配置：{}", configPath);
+                System.out.println(LOG_PREFIX + "已创建默认配置：" + configPath);
             }
         } catch (IOException e) {
-            LOGGER.error("[TagDescriptionDictionary] 复制默认配置失败：{}", e.getMessage());
+            System.err.println(LOG_PREFIX + "复制默认配置失败：" + e.getMessage());
         }
     }
 }

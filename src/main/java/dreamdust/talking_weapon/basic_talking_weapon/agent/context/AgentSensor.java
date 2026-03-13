@@ -36,7 +36,7 @@ public class AgentSensor {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  通用触发入口 —— 所有 IAgentTrigger 通过这里提交
+    // 通用触发入口 —— 所有 IAgentTrigger 通过这里提交
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -84,8 +84,10 @@ public class AgentSensor {
         for (IContextCollector collector : trigger.getCollectors()) {
             try {
                 collector.collect(builder, p, level);
-            } catch (Exception ignored) {
-                // 单个采集器失败不阻塞整体流程
+            } catch (Throwable t) {
+                // 单个采集器失败不阻塞整体流程（包括 Error 级别异常）
+                System.err.println("[TalkingWeapon] Collector '" + collector.getName() + "' failed: " + t);
+                t.printStackTrace();
             }
         }
 
@@ -105,7 +107,8 @@ public class AgentSensor {
 
         // 4. 创建任务并提交
         AgentTask task = trigger.createTask(context);
-        if (task == null) return false;
+        if (task == null)
+            return false;
 
         boolean accepted = runtime.submit(task);
         if (!accepted) {
@@ -120,7 +123,7 @@ public class AgentSensor {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  取消
+    // 取消
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -130,7 +133,8 @@ public class AgentSensor {
      */
     public void triggerCancel(Player player) {
         AgentRuntime runtime = AgentRuntime.getInstance();
-        if (!runtime.isBusy()) return;
+        if (!runtime.isBusy())
+            return;
 
         runtime.cancelCurrentAndClearQueue();
         String cancelSpeech = getConfigText(TalkingWeaponConfig.CANCEL_SPEECH, "剑：沉默不语……");
@@ -138,7 +142,7 @@ public class AgentSensor {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  状态查询
+    // 状态查询
     // ═══════════════════════════════════════════════════════════════
 
     /** 检查是否已过冷却期，可以再次触发 */
@@ -157,7 +161,7 @@ public class AgentSensor {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  工具方法
+    // 工具方法
     // ═══════════════════════════════════════════════════════════════
 
     /** 在 ActionBar 上显示一行文字（主线程安全） */

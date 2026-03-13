@@ -59,12 +59,13 @@ public class PlayerEnvironmentCollector implements IContextCollector {
                 .build());
 
         // ── 标签：光照等级 ──
-        String lightState = blockLight < 7 ? "light_dark" : "light_bright";
-        float lightImportance = blockLight < 7 ? 0.5f : 0.1f;
+        int effectiveLight = Math.max(blockLight, skyLight);
+        String lightState = effectiveLight < 7 ? "light_dark" : "light_bright";
+        float lightImportance = effectiveLight < 7 ? 0.5f : 0.1f;
         builder.addTaggedEntry(TaggedContextEntry.builder()
-                .focus(blockLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
+                .focus(effectiveLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
                 .detail(DetailTag.STATE, lightState)
-                .description("光照等级: block=" + blockLight + ", sky=" + skyLight)
+                .description("光照等级: block=" + blockLight + ", sky=" + skyLight + " (有效=" + effectiveLight + ")")
                 .importance(lightImportance)
                 .build());
 

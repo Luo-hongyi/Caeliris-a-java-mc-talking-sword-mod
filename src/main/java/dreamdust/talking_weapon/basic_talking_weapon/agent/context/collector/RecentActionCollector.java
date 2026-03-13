@@ -39,6 +39,9 @@ public class RecentActionCollector implements IContextCollector {
         String summary = actionBuffer.toContextSummary();
         builder.extra("recent_action_summary", summary);
 
+        // 输出 ActionBuffer 快照日志供调试
+        dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger.logActionBufferDump(actionBuffer);
+
         // 收集动作流中所有的 FocusTag 和 DetailTag，加到上下文中
         List<ActionRecord> records = actionBuffer.snapshot();
         EnumSet<FocusTag> focusTags = EnumSet.noneOf(FocusTag.class);

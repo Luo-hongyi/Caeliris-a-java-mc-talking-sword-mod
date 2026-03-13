@@ -5,8 +5,6 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraftforge.fml.loading.FMLPaths;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -28,7 +26,7 @@ import java.util.*;
  */
 public final class LocationRegistry {
 
-    private static final Logger LOGGER = LogManager.getLogger("TalkingWeapon/LocationRegistry");
+    private static final String LOG_PREFIX = "[TalkingWeapon/LocationRegistry] ";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static final String CONFIG_SUBDIR = "talking_weapon";
@@ -92,7 +90,7 @@ public final class LocationRegistry {
 
     public static synchronized void reload() {
         INSTANCE = load();
-        LOGGER.info("[LocationRegistry] 已重新加载，共 {} 个地点。", INSTANCE.locations.size());
+        System.out.println(LOG_PREFIX + "已重新加载，共 " + INSTANCE.locations.size() + " 个地点。");
     }
 
     // ─────────────────────────────────────────────
@@ -138,7 +136,7 @@ public final class LocationRegistry {
     public synchronized void put(String name, LocationEntry entry) {
         locations.put(name.toLowerCase(Locale.ROOT), entry);
         save();
-        LOGGER.info("[LocationRegistry] 更新地点 '{}' → {}", name, entry.toPromptString());
+        System.out.println(LOG_PREFIX + "更新地点 '" + name + "' → " + entry.toPromptString());
     }
 
     /**
@@ -172,16 +170,16 @@ public final class LocationRegistry {
                         LocationEntry loc = GSON.fromJson(entry.getValue(), LocationEntry.class);
                         map.put(entry.getKey().toLowerCase(Locale.ROOT), loc);
                     } catch (Exception e) {
-                        LOGGER.warn("[LocationRegistry] 跳过无法解析的条目 '{}'：{}", entry.getKey(), e.getMessage());
+                        System.err.println(LOG_PREFIX + "跳过无法解析的条目 '" + entry.getKey() + "'：" + e.getMessage());
                     }
                 }
             });
 
-            LOGGER.info("[LocationRegistry] 加载完成，共 {} 个地点：{}", map.size(), configPath);
+            System.out.println(LOG_PREFIX + "加载完成，共 " + map.size() + " 个地点：" + configPath);
             return new LocationRegistry(map);
 
         } catch (Exception e) {
-            LOGGER.error("[LocationRegistry] 加载失败，使用空注册表：{}", e.getMessage());
+            System.err.println(LOG_PREFIX + "加载失败，使用空注册表：" + e.getMessage());
             return new LocationRegistry(new LinkedHashMap<>());
         }
     }
@@ -196,7 +194,7 @@ public final class LocationRegistry {
             locations.forEach((name, entry) -> root.add(name, GSON.toJsonTree(entry)));
             GSON.toJson(root, writer);
         } catch (IOException e) {
-            LOGGER.error("[LocationRegistry] 保存失败：{}", e.getMessage());
+            System.err.println(LOG_PREFIX + "保存失败：" + e.getMessage());
         }
     }
 
@@ -213,14 +211,14 @@ public final class LocationRegistry {
             Files.createDirectories(configPath.getParent());
             try (InputStream in = LocationRegistry.class.getResourceAsStream(DEFAULT_RESOURCE)) {
                 if (in == null) {
-                    LOGGER.warn("[LocationRegistry] 未找到内置默认资源：{}", DEFAULT_RESOURCE);
+                    System.err.println(LOG_PREFIX + "未找到内置默认资源：" + DEFAULT_RESOURCE);
                     return;
                 }
                 Files.copy(in, configPath);
-                LOGGER.info("[LocationRegistry] 已创建默认配置：{}", configPath);
+                System.out.println(LOG_PREFIX + "已创建默认配置：" + configPath);
             }
         } catch (IOException e) {
-            LOGGER.error("[LocationRegistry] 复制默认配置失败：{}", e.getMessage());
+            System.err.println(LOG_PREFIX + "复制默认配置失败：" + e.getMessage());
         }
     }
 }

@@ -153,7 +153,10 @@ public final class AgentRuntime {
             try {
                 if (!task.isCancelled())
                     task.execute();
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                System.err.println(
+                        "[TalkingWeapon-FG] Task threw exception: " + t.getClass().getName() + ": " + t.getMessage());
+                t.printStackTrace();
             } finally {
                 fgCurrentTask = null;
                 fgBusy = false;
@@ -177,7 +180,10 @@ public final class AgentRuntime {
             try {
                 if (!task.isCancelled())
                     task.execute();
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                System.err.println(
+                        "[TalkingWeapon-BG] Task threw exception: " + t.getClass().getName() + ": " + t.getMessage());
+                t.printStackTrace();
             } finally {
                 bgCurrentTask = null;
                 bgBusy = false;

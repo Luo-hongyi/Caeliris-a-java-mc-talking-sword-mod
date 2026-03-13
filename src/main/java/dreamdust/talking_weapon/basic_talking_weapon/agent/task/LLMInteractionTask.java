@@ -148,8 +148,11 @@ public class LLMInteractionTask extends AgentTask {
             // ── 日志结束 ──
             AgentLogger.endSession();
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             if (!isCancelled()) {
+                System.err.println(
+                        "[TalkingWeapon] LLMInteractionTask failed: " + e.getClass().getName() + ": " + e.getMessage());
+                e.printStackTrace();
                 AgentLogger.logError("LLM 调用失败", e);
                 AgentLogger.endSession();
                 new SpeechAction("剑：我说不出话……" + e.getMessage()).perform();
