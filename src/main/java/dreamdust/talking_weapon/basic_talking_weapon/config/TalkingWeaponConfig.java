@@ -89,6 +89,19 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
         public static final ForgeConfigSpec.BooleanValue ENABLE_BIOME_DETECTION;
 
+        // —— 注意力偏好（测试版） ——
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_COMBAT;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_MOVEMENT;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_LABOR;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_CREATION;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_SOCIAL;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_LANDSCAPE;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_HAZARD;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_STATUS;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_CONSUMABLE;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_BLOCK;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_TOOL;
+
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
 
@@ -225,6 +238,22 @@ public final class TalkingWeaponConfig {
                                 .define("enableThinking", false);
                 builder.pop(); // biome_change
                 builder.pop(); // trigger
+
+                // ── 注意力偏好（测试版） ────────────────────────────────
+                builder.push("attention_weights");
+                builder.comment(" 注意力偏好权重设置 (仅在测试版开放，后续将绑定 Agent 性格)");
+                WEIGHT_COMBAT = builder.defineInRange("combat", 1.0, 0.0, 10.0);
+                WEIGHT_MOVEMENT = builder.defineInRange("movement", 1.0, 0.0, 10.0);
+                WEIGHT_LABOR = builder.defineInRange("labor", 1.0, 0.0, 10.0);
+                WEIGHT_CREATION = builder.defineInRange("creation", 1.0, 0.0, 10.0);
+                WEIGHT_SOCIAL = builder.defineInRange("social", 1.0, 0.0, 10.0);
+                WEIGHT_LANDSCAPE = builder.defineInRange("landscape", 1.0, 0.0, 10.0);
+                WEIGHT_HAZARD = builder.defineInRange("hazard", 1.0, 0.0, 10.0);
+                WEIGHT_STATUS = builder.defineInRange("status", 1.0, 0.0, 10.0);
+                WEIGHT_CONSUMABLE = builder.defineInRange("consumable", 1.0, 0.0, 10.0);
+                WEIGHT_BLOCK = builder.defineInRange("block", 1.0, 0.0, 10.0);
+                WEIGHT_TOOL = builder.defineInRange("tool", 1.0, 0.0, 10.0);
+                builder.pop();
 
                 // ── Agent 行为 ─────────────────────────────────────────
                 builder.push("agent");

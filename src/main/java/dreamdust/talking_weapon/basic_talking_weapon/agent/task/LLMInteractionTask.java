@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
@@ -213,8 +214,15 @@ public class LLMInteractionTask extends AgentTask {
 
             sb.append("[Tagged Context]\n");
             for (TaggedContextEntry entry : taggedEntries) {
+                // 应用注意力权重 (测试版)
+                float weight = getAttentionWeight(entry.getFocusTags());
+                float finalImportance = entry.getBaseImportance() * weight;
+
                 sb.append("- [").append(entry.getFocusTags()).append("] ");
                 sb.append(entry.getDescription());
+                if (weight != 1.0f) {
+                    sb.append(String.format(" (重要度修正: %.1f)", finalImportance));
+                }
 
                 // 将 DetailTag 转换为自然语言標注
                 if (!entry.getDetailTags().isEmpty()) {
@@ -248,5 +256,52 @@ public class LLMInteractionTask extends AgentTask {
         sb.append("}\n");
 
         return sb.toString();
+    }
+
+    private float getAttentionWeight(java.util.Set<FocusTag> tags) {
+        if (tags == null || tags.isEmpty())
+            return 1.0f;
+        double maxWeight = 0.0;
+        for (FocusTag tag : tags) {
+            double w = 1.0;
+            switch (tag) {
+                case COMBAT:
+                    w = TalkingWeaponConfig.WEIGHT_COMBAT.get();
+                    break;
+                case MOVEMENT:
+                    w = TalkingWeaponConfig.WEIGHT_MOVEMENT.get();
+                    break;
+                case LABOR:
+                    w = TalkingWeaponConfig.WEIGHT_LABOR.get();
+                    break;
+                case CREATION:
+                    w = TalkingWeaponConfig.WEIGHT_CREATION.get();
+                    break;
+                case SOCIAL:
+                    w = TalkingWeaponConfig.WEIGHT_SOCIAL.get();
+                    break;
+                case LANDSCAPE:
+                    w = TalkingWeaponConfig.WEIGHT_LANDSCAPE.get();
+                    break;
+                case HAZARD:
+                    w = TalkingWeaponConfig.WEIGHT_HAZARD.get();
+                    break;
+                case STATUS:
+                    w = TalkingWeaponConfig.WEIGHT_STATUS.get();
+                    break;
+                case CONSUMABLE:
+                    w = TalkingWeaponConfig.WEIGHT_CONSUMABLE.get();
+                    break;
+                case BLOCK:
+                    w = TalkingWeaponConfig.WEIGHT_BLOCK.get();
+                    break;
+                case TOOL:
+                    w = TalkingWeaponConfig.WEIGHT_TOOL.get();
+                    break;
+            }
+            if (w > maxWeight)
+                maxWeight = w;
+        }
+        return (float) maxWeight;
     }
 }
