@@ -196,6 +196,31 @@ public class TickEventWatcher {
     }
 
     /**
+     * 玩家放置方块。
+     */
+    @SubscribeEvent
+    public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null)
+            return;
+        if (event.getEntity() == null)
+            return;
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID()))
+            return;
+
+        BlockState state = event.getPlacedBlock();
+        ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        String id = blockId != null ? blockId.toString() : "unknown";
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.of(DetailTag.BLOCK, id));
+
+        ActionRecord record = ActionRecord.of(ActionType.PLACE_BLOCK, id, tags);
+        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
+        logBufferAdd(record);
+    }
+
+    /**
      * 玩家使用物品完毕（进食/喝药水等）。
      */
     @SubscribeEvent

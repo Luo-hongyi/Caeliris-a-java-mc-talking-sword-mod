@@ -31,6 +31,16 @@ public class AgentMemory {
     private final ActionBuffer actionBuffer;
 
     // ═══════════════════════════════════════════════════════════════
+    // Layer 1.5: ConsumedActions (已读动作池)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 存放已经被 RecentActionCollector 读取并喂给 LLM 的动作记录。
+     * 后续供 ReflectionTask（反思任务）或后台统计提取，防止阅后即焚导致彻底丢失。
+     */
+    private final ActionBuffer consumedActions;
+
+    // ═══════════════════════════════════════════════════════════════
     // Layer 2: ChatHistory（对话消息滑动窗口）
     // ═══════════════════════════════════════════════════════════════
 
@@ -54,6 +64,7 @@ public class AgentMemory {
     public AgentMemory() {
         this.identity = "";
         this.actionBuffer = new ActionBuffer(64);
+        this.consumedActions = new ActionBuffer(256); // 已读池容量大一些
         this.chatHistory = new ArrayList<>();
         this.chatHistoryCapacity = 20;
         this.memoryRecords = new ArrayList<>();
@@ -76,6 +87,10 @@ public class AgentMemory {
 
     public ActionBuffer getActionBuffer() {
         return actionBuffer;
+    }
+
+    public ActionBuffer getConsumedActions() {
+        return consumedActions;
     }
 
     // ── ChatHistory ──────────────────────────────────────────────

@@ -39,11 +39,17 @@ public class RecentActionCollector implements IContextCollector {
         String summary = actionBuffer.toContextSummary();
         builder.extra("recent_action_summary", summary);
 
-        // 输出 ActionBuffer 快照日志供调试
+        // 输出 ActionBuffer 快照日志供调试（转移前）
         dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger.logActionBufferDump(actionBuffer);
 
-        // 收集动作流中所有的 FocusTag 和 DetailTag，加到上下文中
+        // 获取快照进行提取
         List<ActionRecord> records = actionBuffer.snapshot();
+
+        // 【关键】阅后即焚：将已经被看到的动作转移至“已读池”中
+        // 防止下一次右键重复看到同样的动作幻觉，但为后续的 反思任务 (ReflectionTask) 保留记录
+        actionBuffer.drainTo(AgentRuntime.getInstance().getMemory().getConsumedActions());
+
+        // 收集动作流中所有的 FocusTag 和 DetailTag，加到上下文中
         EnumSet<FocusTag> focusTags = EnumSet.noneOf(FocusTag.class);
         Set<DetailTag> detailTags = new LinkedHashSet<>();
 

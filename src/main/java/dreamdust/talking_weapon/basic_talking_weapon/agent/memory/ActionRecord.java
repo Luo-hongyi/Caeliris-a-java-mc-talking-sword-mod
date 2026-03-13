@@ -19,7 +19,7 @@ public final class ActionRecord {
     private final ActionType type;
     private final String target; // entity/block registry ID，可 null
     private int count; // 合并计数，默认 1
-    private final long timestamp; // 首次发生时间
+    private long timestamp; // 最后发生时间
     private final Set<DetailTag> detailTags;
 
     public ActionRecord(ActionType type, String target, Set<DetailTag> detailTags) {
@@ -75,18 +75,9 @@ public final class ActionRecord {
         this.count++;
     }
 
-    /**
-     * 是否可与另一条记录合并：同类型 + 同目标 + 时间差 < maxGapMs。
-     */
-    boolean canMergeWith(ActionRecord other, long maxGapMs) {
-        if (this.type != other.type)
-            return false;
-        if (this.target == null && other.target == null)
-            return true;
-        if (this.target == null || other.target == null)
-            return false;
-        return this.target.equals(other.target)
-                && Math.abs(other.timestamp - this.timestamp) < maxGapMs;
+    /** 更新最后发生时间（TTL 刷新） */
+    void updateTimestamp() {
+        this.timestamp = System.currentTimeMillis();
     }
 
     // ─────────────────────────────────────────────
