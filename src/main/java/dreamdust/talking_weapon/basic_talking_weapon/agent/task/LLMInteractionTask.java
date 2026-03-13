@@ -15,6 +15,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
@@ -24,6 +25,11 @@ import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
+
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 需要调用 LLM 的交互任务（前台队列）。
@@ -53,6 +59,28 @@ public class LLMInteractionTask extends AgentTask {
         super(priority, context);
     }
 
+    /**
+     * 从触发器的 trigger_source 属性读取 OutputSchema。
+     * 如果 Context extras 中包含 trigger 引用，使用其 schema；否则使用默认 schema。
+     * 注意：目前 trigger 引用通过 context extras 传递 schema。
+     */
+    private EnumSet<LLMOutputSchema> resolveOutputSchema() {
+        // Context extras 中可以包含 "output_schema" key，存储逗号分隔的 schema 名称
+        String schemaStr = getContext().getExtras().get("output_schema");
+        if (schemaStr != null && !schemaStr.isBlank()) {
+            EnumSet<LLMOutputSchema> schema = EnumSet.noneOf(LLMOutputSchema.class);
+            for (String name : schemaStr.split(",")) {
+                try {
+                    schema.add(LLMOutputSchema.valueOf(name.trim().toUpperCase()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+            if (!schema.isEmpty())
+                return schema;
+        }
+        return LLMOutputSchema.defaultSchema();
+    }
+
     @Override
     public void execute() {
         if (isCancelled())
@@ -61,6 +89,7 @@ public class LLMInteractionTask extends AgentTask {
         AgentRuntime runtime = AgentRuntime.getInstance();
         AgentMemory memory = runtime.getMemory();
         AgentState state = runtime.getState();
+        AgentPersona persona = runtime.getPersona();
         AgentContext ctx = getContext();
 
         try {
@@ -80,8 +109,11 @@ public class LLMInteractionTask extends AgentTask {
                 memory.setIdentity(configIdentity);
             }
 
+            // 中间层：读取 outputSchema
+            EnumSet<LLMOutputSchema> outputSchema = resolveOutputSchema();
+
             // 2. 构建 system prompt
-            String systemPrompt = buildSystemPrompt(memory, state, ctx);
+            String systemPrompt = buildSystemPrompt(memory, state, persona, ctx, outputSchema);
 
             // ── 日志：状态与记忆 ──
             AgentLogger.logAgentState(memory, state);
@@ -122,7 +154,13 @@ public class LLMInteractionTask extends AgentTask {
             AgentResponse agentResponse = AgentResponseParser.parse(rawReply);
             AgentLogger.logParsedResponse(agentResponse);
 
-            // 6. （占位：情绪变化、持有者画像等扩展字段将在后续迭代加入）
+            // 6. 处理情绪更新（如果 schema 包含 EMOTION_UPDATE）
+            if (outputSchema.contains(LLMOutputSchema.EMOTION_UPDATE) && agentResponse.hasEmotionUpdate()) {
+                AgentResponse.EmotionUpdate eu = agentResponse.getEmotionUpdate();
+                state.setPrimaryEmotionByName(eu.emotion);
+                state.setEmotionIntensity(eu.intensity);
+                AgentLogger.logAction("emotion_update", eu.toString());
+            }
 
             // 7. 执行 SpeechAction（只有 speech 字段非空时才说话）
             if (agentResponse.hasSpeech()) {
@@ -170,9 +208,11 @@ public class LLMInteractionTask extends AgentTask {
     }
 
     /**
-     * 组装 system prompt：包含身份、记忆、状态、上下文以及 JSON 输出指令。
+     * 组装 system prompt：包含身份、记忆、状态、Persona、上下文以及动态 JSON 输出指令。
      */
-    private String buildSystemPrompt(AgentMemory memory, AgentState state, AgentContext ctx) {
+    private String buildSystemPrompt(AgentMemory memory, AgentState state,
+            AgentPersona persona, AgentContext ctx,
+            EnumSet<LLMOutputSchema> outputSchema) {
         StringBuilder sb = new StringBuilder();
 
         // 身份
@@ -190,31 +230,42 @@ public class LLMInteractionTask extends AgentTask {
             sb.append("\n");
         }
 
-        // Agent 状态
+        // Agent 运行时状态
         sb.append(state.toPromptSnippet()).append("\n");
+
+        // 收集当前帧所有活跃的 FocusTag，供 Persona 词条筛选使用
+        Set<FocusTag> activeTags = new HashSet<>();
+        for (TaggedContextEntry entry : ctx.getTaggedEntries()) {
+            activeTags.addAll(entry.getFocusTags());
+        }
+
+        // Agent 人格画像（按当前 FocusTag 筛选刻条）
+        String personaSnippet = persona.toPromptSnippet(activeTags);
+        if (!personaSnippet.isBlank()) {
+            sb.append(personaSnippet).append("\n");
+        }
 
         // 当前上下文（环境基础信息）
         sb.append("[Context] ").append(ctx.toString()).append("\n");
 
-        // 扩展上下文（各 Collector 采集，排除 user_prompt）
+        // 扩展上下文（各 Collector 采集，排除 user_prompt 和 output_schema）
         if (!ctx.getExtras().isEmpty()) {
             sb.append("[Extra Context]\n");
             ctx.getExtras().forEach((key, value) -> {
-                if (!"user_prompt".equals(key)) {
+                if (!"user_prompt".equals(key) && !"output_schema".equals(key)) {
                     sb.append("- ").append(key).append(": ").append(value).append("\n");
                 }
             });
         }
 
         // 标签化上下文（结构化信息，经字典翻译后注入）
-        java.util.List<TaggedContextEntry> taggedEntries = ctx.getTaggedEntries();
+        List<TaggedContextEntry> taggedEntries = ctx.getTaggedEntries();
         if (!taggedEntries.isEmpty()) {
             TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
             LocationRegistry locationReg = LocationRegistry.getInstance();
 
             sb.append("[Tagged Context]\n");
             for (TaggedContextEntry entry : taggedEntries) {
-                // 应用注意力权重 (测试版)
                 float weight = getAttentionWeight(entry.getFocusTags());
                 float finalImportance = entry.getBaseImportance() * weight;
 
@@ -224,18 +275,15 @@ public class LLMInteractionTask extends AgentTask {
                     sb.append(String.format(" (重要度修正: %.1f)", finalImportance));
                 }
 
-                // 将 DetailTag 转换为自然语言標注
                 if (!entry.getDetailTags().isEmpty()) {
                     java.util.List<String> translated = new java.util.ArrayList<>();
                     for (DetailTag dt : entry.getDetailTags()) {
                         String raw = dt.toString();
                         if (raw.startsWith("loc:")) {
-                            // loc: 标签解析地点坐标
                             String locName = raw.substring(4);
                             String locDesc = locationReg.describeLocation(locName);
                             translated.add(locDesc != null ? locName + ": " + locDesc : raw);
                         } else {
-                            // 其他标签查自然语言字典
                             String desc = tagDict.describe(raw);
                             translated.add(desc != null ? desc : raw);
                         }
@@ -246,15 +294,48 @@ public class LLMInteractionTask extends AgentTask {
             }
         }
 
-        // ── JSON 输出格式指令 ──
+        // 动态 JSON 输出格式指令（根据 outputSchema 拼装）
+        sb.append(buildOutputFormatInstruction(outputSchema));
+
+        return sb.toString();
+    }
+
+    /**
+     * 根据 outputSchema 动态拼装 JSON 输出格式指令。
+     * 仅将 schema 中声明的字段列入 JSON 属性，其余字段不出现在指令中。
+     */
+    private static String buildOutputFormatInstruction(EnumSet<LLMOutputSchema> schema) {
+        StringBuilder sb = new StringBuilder();
         sb.append("\n[Output Format]\n");
         sb.append("你必须严格以下面的 JSON 格式回复，JSON 之外不得有任何多余文字：\n");
         sb.append("{\n");
-        sb.append("  \"thinking\": \"（推理草稿：分析当前情境，决定说什么、想什么——仅作草稿，不记入记忆；可省略）\",\n");
-        sb.append("  \"inner_monologue\": \"（剑灵的内心独白，对持有者不可见；可省略）\",\n");
-        sb.append("  \"speech\": \"（对持有者说出口的话；若沉默则省略或设为空字符串）\"\n");
-        sb.append("}\n");
 
+        boolean first = true;
+        if (schema.contains(LLMOutputSchema.THINKING)) {
+            sb.append("  \"thinking\": \"(推理草稿：分析当前情境，决定说什么、想什么——仅作草稿，不记入记忆；可省略)\"");
+            first = false;
+        }
+        if (schema.contains(LLMOutputSchema.INNER_MONOLOGUE)) {
+            if (!first)
+                sb.append(",\n");
+            sb.append("  \"inner_monologue\": \"(剑灵的内心独白，对持有者不可见；可省略)\"");
+            first = false;
+        }
+        if (schema.contains(LLMOutputSchema.SPEECH)) {
+            if (!first)
+                sb.append(",\n");
+            sb.append("  \"speech\": \"(对持有者说出口的话；若沉默则省略或设为空字符串)\"");
+            first = false;
+        }
+        if (schema.contains(LLMOutputSchema.EMOTION_UPDATE)) {
+            if (!first)
+                sb.append(",\n");
+            sb.append("  \"emotion_update\": { ");
+            sb.append("\"emotion\": \"(其中一种: FEARFUL/HAPPY/ANGRY/EXCITED/BORED/SAD/CURIOUS/ANXIOUS/NEUTRAL)\",");
+            sb.append(" \"intensity\": 0-100的整数 ");
+            sb.append("}");
+        }
+        sb.append("\n}\n");
         return sb.toString();
     }
 

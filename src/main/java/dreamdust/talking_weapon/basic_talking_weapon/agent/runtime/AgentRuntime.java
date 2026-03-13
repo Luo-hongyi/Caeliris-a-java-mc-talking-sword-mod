@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.runtime;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 
@@ -39,8 +40,11 @@ public final class AgentRuntime {
     /** 全局共享记忆（两个 worker 线程均可读写） */
     private final AgentMemory memory = new AgentMemory();
 
-    /** 全局共享状态（两个 worker 线程均可读写） */
+    /** 全局共享运行时状态（高频，两个 worker 线程均可读写） */
     private final AgentState state = new AgentState();
+
+    /** 全局共享人格画像（低频，仅在 ReflectionTask 中更新） */
+    private final AgentPersona persona = new AgentPersona();
 
     private AgentRuntime() {
         this.fgWorker = new Thread(this::fgLoop, "TalkingWeapon-FG");
@@ -132,6 +136,10 @@ public final class AgentRuntime {
 
     public AgentState getState() {
         return state;
+    }
+
+    public AgentPersona getPersona() {
+        return persona;
     }
 
     // ═══════════════════════════════════════════════════════════════

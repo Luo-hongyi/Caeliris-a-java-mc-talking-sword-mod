@@ -3,7 +3,9 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMOutputSchema;
 
+import java.util.EnumSet;
 import java.util.List;
 
 /**
@@ -47,5 +49,23 @@ public interface IAgentTrigger {
      */
     default String getUserPrompt() {
         return "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。";
+    }
+
+    /**
+     * 声明此触发器期望 LLM 返回的输出字段集合（可合成输出格式）。
+     * <p>
+     * {@code LLMInteractionTask.buildSystemPrompt()} 将根据此集合动态拼装
+     * JSON 格式指令，只要求 LLM 输出必要字段，避免冗余并节省 Token。
+     * <p>
+     * 默认包含 {@code THINKING}、{@code INNER_MONOLOGUE}、{@code SPEECH}，
+     * 不包含 {@code EMOTION_UPDATE}。
+     * <p>
+     * 情绪化触发器（如受伤、BOSS 击杀等）应覆写此方法，
+     * 加入 {@link LLMOutputSchema#EMOTION_UPDATE} 以启用情绪更新。
+     *
+     * @return 需要的输出字段枚举集
+     */
+    default EnumSet<LLMOutputSchema> getOutputSchema() {
+        return LLMOutputSchema.defaultSchema();
     }
 }

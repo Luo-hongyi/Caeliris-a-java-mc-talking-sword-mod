@@ -33,6 +33,33 @@ public final class AgentResponse {
     /** 剑对持有者说出口的话；省略或空字符串表示沉默 */
     private String speech;
 
+    /**
+     * 情绪更新指令（可选）。
+     * 仅当触发器的 OutputSchema 包含 {@code EMOTION_UPDATE} 时，LLM 才被要求填写此字段。
+     * Gson 自动反序列化，字段缺失时为 null。
+     */
+    private EmotionUpdate emotion_update;
+
+    /**
+     * LLM 返回的情绪更新指令。
+     */
+    public static class EmotionUpdate {
+        /** 情绪枚举名，大写，如 "FEARFUL". 对应 AgentState.PrimaryEmotion */
+        public String emotion;
+        /** 情绪强度，0-100 */
+        public int intensity;
+
+        /** 是否有效（emotion 字段非空） */
+        public boolean isValid() {
+            return emotion != null && !emotion.isBlank();
+        }
+
+        @Override
+        public String toString() {
+            return "EmotionUpdate{emotion='" + emotion + "', intensity=" + intensity + "}";
+        }
+    }
+
     // ─────────────────────────────────────────────
     // Getters / Setters（供 Gson 注入）
     // ─────────────────────────────────────────────
@@ -61,6 +88,14 @@ public final class AgentResponse {
         this.speech = v;
     }
 
+    public EmotionUpdate getEmotionUpdate() {
+        return emotion_update;
+    }
+
+    public void setEmotionUpdate(EmotionUpdate v) {
+        this.emotion_update = v;
+    }
+
     // ─────────────────────────────────────────────
     // 便捷查询
     // ─────────────────────────────────────────────
@@ -78,6 +113,11 @@ public final class AgentResponse {
     /** 是否有推理草稿 */
     public boolean hasThinking() {
         return thinking != null && !thinking.isBlank();
+    }
+
+    /** 是否携带情绪更新 */
+    public boolean hasEmotionUpdate() {
+        return emotion_update != null && emotion_update.isValid();
     }
 
     @Override

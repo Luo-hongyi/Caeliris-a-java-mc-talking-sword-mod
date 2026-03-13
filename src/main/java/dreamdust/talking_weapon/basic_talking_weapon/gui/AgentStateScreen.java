@@ -1,0 +1,380 @@
+package dreamdust.talking_weapon.basic_talking_weapon.gui;
+
+import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.PrimaryEmotion;
+import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.ContainerObjectSelectionList;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarratableEntry;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Agent 主概览界面：显示并编辑当前 AgentState 和 AgentPersona 的核心字段。
+ * <p>
+ * 所有字段均可编辑（测试版）。底部提供导航按钮跳转子界面。
+ */
+public class AgentStateScreen extends Screen {
+
+    private static final int LABEL_COLOR = 0xFFCCCCCC;
+    private static final int TITLE_COLOR = 0xFFFFD700;
+    private static final int HEADER_HEIGHT = 30;
+    private static final int FOOTER_HEIGHT = 40;
+
+    private final Screen parent;
+
+    private static final PrimaryEmotion[] EMOTIONS = PrimaryEmotion.values();
+    private int emotionIndex;
+
+    // 编辑框引用（供 save() 读取）
+    private EditBox intensityBox;
+    private EditBox familiarityBox;
+    private EditBox favorabilityBox;
+
+    // 注意力权重编辑框
+    private EditBox wCombat, wMovement, wLabor, wCreation, wSocial;
+    private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool;
+
+    private Button emotionLabel;
+    private StateScrollList scrollList;
+
+    public AgentStateScreen(Screen parent) {
+        super(Component.literal("⚔ 剑的灵魂 · 状态概览"));
+        this.parent = parent;
+
+        AgentState state = AgentRuntime.getInstance().getState();
+        this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
+    }
+
+    private static int emotionIndexOf(PrimaryEmotion e) {
+        for (int i = 0; i < EMOTIONS.length; i++) {
+            if (EMOTIONS[i] == e)
+                return i;
+        }
+        return 0;
+    }
+
+    @Override
+    protected void init() {
+        AgentState state = AgentRuntime.getInstance().getState();
+        AgentPersona persona = AgentRuntime.getInstance().getPersona();
+
+        int rowWidth = Math.min(width - 40, 420);
+        int left = (width - rowWidth) / 2;
+
+        scrollList = new StateScrollList(minecraft, width, height, HEADER_HEIGHT, height - FOOTER_HEIGHT, 26);
+        addWidget(scrollList);
+
+        // ── 情绪状态 ──
+        scrollList.addEntry(new LabelRow("§b▸ 情绪状态"));
+
+        // 情绪循环选择
+        Button prevEmotion = Button.builder(Component.literal("<"), btn -> {
+            emotionIndex = (emotionIndex - 1 + EMOTIONS.length) % EMOTIONS.length;
+            emotionLabel.setMessage(Component.literal(EMOTIONS[emotionIndex].name()));
+        }).bounds(0, 0, 20, 20).build();
+
+        emotionLabel = Button.builder(Component.literal(EMOTIONS[emotionIndex].name()), btn -> {
+            emotionIndex = (emotionIndex + 1) % EMOTIONS.length;
+            btn.setMessage(Component.literal(EMOTIONS[emotionIndex].name()));
+        }).bounds(0, 0, 120, 20).build();
+
+        Button nextEmotion = Button.builder(Component.literal(">"), btn -> {
+            emotionIndex = (emotionIndex + 1) % EMOTIONS.length;
+            emotionLabel.setMessage(Component.literal(EMOTIONS[emotionIndex].name()));
+        }).bounds(0, 0, 20, 20).build();
+
+        scrollList.addEntry(new ThreeWidgetRow("情绪类型", left, rowWidth, prevEmotion, emotionLabel, nextEmotion));
+
+        intensityBox = editBox("强度", String.valueOf(state.getEmotionIntensity()), 3);
+        scrollList.addEntry(new BoxRow("情绪强度 (0-100)", left, rowWidth, intensityBox));
+
+        // ── 关系数值 ──
+        scrollList.addEntry(new LabelRow("§b▸ 关系数值"));
+
+        familiarityBox = editBox("熟悉度", String.valueOf(state.getFamiliarity()), 8);
+        scrollList.addEntry(new BoxRow("熟悉度 (累计次数)", left, rowWidth, familiarityBox));
+
+        favorabilityBox = editBox("好感度", String.valueOf(persona.getFavorability()), 4);
+        scrollList.addEntry(new BoxRow("好感度 (-100 ~ 100)", left, rowWidth, favorabilityBox));
+
+        // ── 注意力权重（可编辑） ──
+        scrollList.addEntry(new LabelRow("§b▸ 注意力权重 (0.0 ~ 10.0)"));
+
+        wCombat = weightBox(TalkingWeaponConfig.WEIGHT_COMBAT.get());
+        scrollList.addEntry(new BoxRow("COMBAT 战斗", left, rowWidth, wCombat));
+        wMovement = weightBox(TalkingWeaponConfig.WEIGHT_MOVEMENT.get());
+        scrollList.addEntry(new BoxRow("MOVEMENT 移动", left, rowWidth, wMovement));
+        wLabor = weightBox(TalkingWeaponConfig.WEIGHT_LABOR.get());
+        scrollList.addEntry(new BoxRow("LABOR 劳作", left, rowWidth, wLabor));
+        wCreation = weightBox(TalkingWeaponConfig.WEIGHT_CREATION.get());
+        scrollList.addEntry(new BoxRow("CREATION 创造", left, rowWidth, wCreation));
+        wSocial = weightBox(TalkingWeaponConfig.WEIGHT_SOCIAL.get());
+        scrollList.addEntry(new BoxRow("SOCIAL 社交", left, rowWidth, wSocial));
+        wLandscape = weightBox(TalkingWeaponConfig.WEIGHT_LANDSCAPE.get());
+        scrollList.addEntry(new BoxRow("LANDSCAPE 风景", left, rowWidth, wLandscape));
+        wHazard = weightBox(TalkingWeaponConfig.WEIGHT_HAZARD.get());
+        scrollList.addEntry(new BoxRow("HAZARD 危险", left, rowWidth, wHazard));
+        wStatus = weightBox(TalkingWeaponConfig.WEIGHT_STATUS.get());
+        scrollList.addEntry(new BoxRow("STATUS 状态", left, rowWidth, wStatus));
+        wConsumable = weightBox(TalkingWeaponConfig.WEIGHT_CONSUMABLE.get());
+        scrollList.addEntry(new BoxRow("CONSUMABLE 消耗品", left, rowWidth, wConsumable));
+        wBlock = weightBox(TalkingWeaponConfig.WEIGHT_BLOCK.get());
+        scrollList.addEntry(new BoxRow("BLOCK 方块", left, rowWidth, wBlock));
+        wTool = weightBox(TalkingWeaponConfig.WEIGHT_TOOL.get());
+        scrollList.addEntry(new BoxRow("TOOL 工具", left, rowWidth, wTool));
+
+        // ── 底部导航按钮 ──
+        int btnY = height - FOOTER_HEIGHT + 8;
+        int btnW = 82;
+        int gap = 6;
+        int totalW = btnW * 4 + gap * 3;
+        int bx = (width - totalW) / 2;
+
+        addRenderableWidget(Button.builder(Component.literal("§6玩家画像 →"), btn -> {
+            save();
+            minecraft.setScreen(new AgentPlayerProfileScreen(this));
+        }).bounds(bx, btnY, btnW, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("§6性格词条 →"), btn -> {
+            save();
+            minecraft.setScreen(new AgentTraitsScreen(this));
+        }).bounds(bx + (btnW + gap), btnY, btnW, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("§6地点注册 →"), btn -> {
+            save();
+            minecraft.setScreen(new AgentLocationRegistryScreen(this));
+        }).bounds(bx + (btnW + gap) * 2, btnY, btnW, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
+            save();
+            minecraft.setScreen(parent);
+        }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
+    }
+
+    private EditBox editBox(String hint, String value, int maxLen) {
+        EditBox box = new EditBox(font, 0, 0, 100, 20, Component.literal(hint));
+        box.setValue(value);
+        box.setMaxLength(maxLen);
+        box.setCanLoseFocus(true);
+        return box;
+    }
+
+    private EditBox weightBox(double value) {
+        EditBox box = new EditBox(font, 0, 0, 70, 20, Component.literal(""));
+        box.setValue(String.format("%.2f", value));
+        box.setMaxLength(5);
+        box.setCanLoseFocus(true);
+        return box;
+    }
+
+    private static String fmt(double d) {
+        return String.format("%.2f", d);
+    }
+
+    private void save() {
+        AgentState state = AgentRuntime.getInstance().getState();
+        AgentPersona persona = AgentRuntime.getInstance().getPersona();
+        state.setPrimaryEmotion(EMOTIONS[emotionIndex]);
+        try {
+            state.setEmotionIntensity(Integer.parseInt(intensityBox.getValue().trim()));
+        } catch (NumberFormatException ignored) {
+        }
+        try {
+            state.setFamiliarity(Integer.parseInt(familiarityBox.getValue().trim()));
+        } catch (NumberFormatException ignored) {
+        }
+        try {
+            persona.setFavorability(Integer.parseInt(favorabilityBox.getValue().trim()));
+        } catch (NumberFormatException ignored) {
+        }
+
+        // 注意力权重→写入配置
+        setWeight(TalkingWeaponConfig.WEIGHT_COMBAT, wCombat);
+        setWeight(TalkingWeaponConfig.WEIGHT_MOVEMENT, wMovement);
+        setWeight(TalkingWeaponConfig.WEIGHT_LABOR, wLabor);
+        setWeight(TalkingWeaponConfig.WEIGHT_CREATION, wCreation);
+        setWeight(TalkingWeaponConfig.WEIGHT_SOCIAL, wSocial);
+        setWeight(TalkingWeaponConfig.WEIGHT_LANDSCAPE, wLandscape);
+        setWeight(TalkingWeaponConfig.WEIGHT_HAZARD, wHazard);
+        setWeight(TalkingWeaponConfig.WEIGHT_STATUS, wStatus);
+        setWeight(TalkingWeaponConfig.WEIGHT_CONSUMABLE, wConsumable);
+        setWeight(TalkingWeaponConfig.WEIGHT_BLOCK, wBlock);
+        setWeight(TalkingWeaponConfig.WEIGHT_TOOL, wTool);
+        TalkingWeaponConfig.SPEC.save();
+    }
+
+    private void setWeight(net.minecraftforge.common.ForgeConfigSpec.DoubleValue cfg, EditBox box) {
+        try {
+            double v = Double.parseDouble(box.getValue().trim());
+            cfg.set(Math.max(0.0, Math.min(10.0, v)));
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        renderBackground(g);
+        scrollList.render(g, mouseX, mouseY, delta);
+        g.drawCenteredString(font, title, width / 2, 10, TITLE_COLOR);
+        super.render(g, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public boolean mouseScrolled(double x, double y, double delta) {
+        return scrollList.mouseScrolled(x, y, delta);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 滚动列表
+    // ═══════════════════════════════════════════════════════════════
+
+    private static class StateScrollList extends ContainerObjectSelectionList<StateScrollList.Row> {
+
+        StateScrollList(Minecraft mc, int w, int h, int top, int bottom, int itemH) {
+            super(mc, w, h, top, bottom, itemH);
+            setRenderBackground(false);
+            setRenderTopAndBottom(false);
+        }
+
+        public int addEntry(Row e) {
+            return super.addEntry(e);
+        }
+
+        @Override
+        public int getRowWidth() {
+            return Math.min(width - 40, 420);
+        }
+
+        @Override
+        protected int getScrollbarPosition() {
+            return width / 2 + getRowWidth() / 2 + 4;
+        }
+
+        abstract static class Row extends ContainerObjectSelectionList.Entry<Row> {
+        }
+    }
+
+    // ── 行类型 ─────────────────────────────────────────────────────
+
+    /** 纯文本标签行 */
+    private class LabelRow extends StateScrollList.Row {
+        private final String text;
+
+        LabelRow(String text) {
+            this.text = text;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
+                int mx, int my, boolean hov, float delta) {
+            g.drawString(font, text, left + 4, top + 6, LABEL_COLOR);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return Collections.emptyList();
+        }
+    }
+
+    /** 标签 + EditBox 行（右侧对齐） */
+    private class BoxRow extends StateScrollList.Row {
+        private final String label;
+        private final int rowLeft, rowWidth;
+        private final EditBox box;
+
+        BoxRow(String label, int rowLeft, int rowWidth, EditBox box) {
+            this.label = label;
+            this.rowLeft = rowLeft;
+            this.rowWidth = rowWidth;
+            this.box = box;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
+                int mx, int my, boolean hov, float delta) {
+            g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
+            box.setX(left + rowWidth - 106);
+            box.setY(top + 2);
+            box.setWidth(100);
+            box.render(g, mx, my, delta);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(box);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(box);
+        }
+    }
+
+    /** "< [center] >" 三按钮选择行 */
+    private class ThreeWidgetRow extends StateScrollList.Row {
+        private final String label;
+        private final int rowLeft, rowWidth;
+        private final AbstractWidget w1, wMid, w2;
+
+        ThreeWidgetRow(String label, int rowLeft, int rowWidth,
+                AbstractWidget w1, AbstractWidget wMid, AbstractWidget w2) {
+            this.label = label;
+            this.rowLeft = rowLeft;
+            this.rowWidth = rowWidth;
+            this.w1 = w1;
+            this.wMid = wMid;
+            this.w2 = w2;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
+                int mx, int my, boolean hov, float delta) {
+            g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
+            int rx = left + rowWidth - 168;
+            w1.setX(rx);
+            w1.setY(top + 2);
+            w1.setWidth(20);
+            wMid.setX(rx + 24);
+            wMid.setY(top + 2);
+            wMid.setWidth(120);
+            w2.setX(rx + 148);
+            w2.setY(top + 2);
+            w2.setWidth(20);
+            w1.render(g, mx, my, delta);
+            wMid.render(g, mx, my, delta);
+            w2.render(g, mx, my, delta);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(w1, wMid, w2);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(w1, wMid, w2);
+        }
+    }
+}

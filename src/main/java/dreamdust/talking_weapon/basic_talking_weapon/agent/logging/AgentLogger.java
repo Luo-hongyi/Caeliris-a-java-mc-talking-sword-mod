@@ -183,9 +183,9 @@ public final class AgentLogger {
         writeSectionHeader(w, "3. Agent 状态与记忆");
 
         w.println("状态:");
-        w.println("  情绪:     " + state.getMood().name());
+        w.println("  情绪:     " + state.getPrimaryEmotion().name()
+                + " (强度: " + state.getEmotionIntensity() + "/100)");
         w.println("  熟悉度:   " + state.getFamiliarity());
-        w.println("  当前目标: " + (state.getCurrentGoal().isEmpty() ? "(无)" : state.getCurrentGoal()));
         w.println();
 
         w.println("记忆:");

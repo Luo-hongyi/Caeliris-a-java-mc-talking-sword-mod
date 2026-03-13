@@ -79,10 +79,6 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean enableProactiveTriggers;
     private boolean enableBiomeDetection;
 
-    // ── 注意力偏好（测试版） ──
-    private final java.util.Map<FocusTag, EditBox> weightBoxes = new java.util.EnumMap<>(FocusTag.class);
-
-    // 可滚动列表
     private ConfigList configList;
 
     // 用于更新的按钮引用
@@ -286,23 +282,6 @@ public class TalkingWeaponConfigScreen extends Screen {
         configList.addEntry(
                 new ToggleEntry("群系变化检测", left, rowWidth, enableBiomeDetection, v -> enableBiomeDetection = v));
 
-        // ── 注意力偏好权重（测试版） ──
-        configList.addEntry(new LabelEntry("§e▸ 注意力偏好 (标注比例，测试版)"));
-        configList.addEntry(new LabelEntry("§7权重范围 0.0 ~ 10.0，影响 Agent 对不同领域的关注度"));
-
-        addWeightRow(left, rowWidth, FocusTag.COMBAT, "战斗权重", TalkingWeaponConfig.WEIGHT_COMBAT);
-        addWeightRow(left, rowWidth, FocusTag.MOVEMENT, "移动权重", TalkingWeaponConfig.WEIGHT_MOVEMENT);
-        addWeightRow(left, rowWidth, FocusTag.LABOR, "劳动权重", TalkingWeaponConfig.WEIGHT_LABOR);
-        addWeightRow(left, rowWidth, FocusTag.CREATION, "创造权重", TalkingWeaponConfig.WEIGHT_CREATION);
-        addWeightRow(left, rowWidth, FocusTag.SOCIAL, "社交权重", TalkingWeaponConfig.WEIGHT_SOCIAL);
-        addWeightRow(left, rowWidth, FocusTag.LANDSCAPE, "环境权重", TalkingWeaponConfig.WEIGHT_LANDSCAPE);
-        addWeightRow(left, rowWidth, FocusTag.HAZARD, "危险权重", TalkingWeaponConfig.WEIGHT_HAZARD);
-        addWeightRow(left, rowWidth, FocusTag.STATUS, "状态权重", TalkingWeaponConfig.WEIGHT_STATUS);
-        addWeightRow(left, rowWidth, FocusTag.CONSUMABLE, "消耗权重", TalkingWeaponConfig.WEIGHT_CONSUMABLE);
-        addWeightRow(left, rowWidth, FocusTag.BLOCK, "方块权重", TalkingWeaponConfig.WEIGHT_BLOCK);
-        addWeightRow(left, rowWidth, FocusTag.TOOL, "工具权重", TalkingWeaponConfig.WEIGHT_TOOL);
-
-        // ── 打开 toml ──
         configList.addEntry(new LabelEntry(""));
         Button openToml = Button.builder(Component.literal("打开配置文件(.toml)"), btn -> openConfigFile())
                 .bounds(0, 0, 210, 20).build();
@@ -422,24 +401,6 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);
 
-        // 注意力权重
-        trySetDouble(TalkingWeaponConfig.WEIGHT_COMBAT, weightBoxes.get(FocusTag.COMBAT).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_MOVEMENT, weightBoxes.get(FocusTag.MOVEMENT).getValue(), 0.0, 10.0,
-                1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_LABOR, weightBoxes.get(FocusTag.LABOR).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_CREATION, weightBoxes.get(FocusTag.CREATION).getValue(), 0.0, 10.0,
-                1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_SOCIAL, weightBoxes.get(FocusTag.SOCIAL).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_LANDSCAPE, weightBoxes.get(FocusTag.LANDSCAPE).getValue(), 0.0, 10.0,
-                1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_HAZARD, weightBoxes.get(FocusTag.HAZARD).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_STATUS, weightBoxes.get(FocusTag.STATUS).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_CONSUMABLE, weightBoxes.get(FocusTag.CONSUMABLE).getValue(), 0.0, 10.0,
-                1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_BLOCK, weightBoxes.get(FocusTag.BLOCK).getValue(), 0.0, 10.0, 1.0);
-        trySetDouble(TalkingWeaponConfig.WEIGHT_TOOL, weightBoxes.get(FocusTag.TOOL).getValue(), 0.0, 10.0, 1.0);
-
-        TalkingWeaponConfig.SPEC.save();
     }
 
     private void openConfigFile() {
@@ -466,20 +427,6 @@ public class TalkingWeaponConfigScreen extends Screen {
         } catch (NumberFormatException ignored) {
             cfg.set(fallback);
         }
-    }
-
-    private void addWeightRow(int left, int rowWidth, FocusTag tag, String label,
-            net.minecraftforge.common.ForgeConfigSpec.DoubleValue config) {
-        EditBox box = new EditBox(font, 0, 0, 80, 20, Component.literal(label));
-        box.setValue(String.valueOf(config.get()));
-        box.setMaxLength(5);
-        box.setCanLoseFocus(true);
-        weightBoxes.put(tag, box);
-
-        EditBox info = new EditBox(font, 0, 0, 80, 20, Component.literal(""));
-        info.setValue("默认 1.0");
-        info.setEditable(false);
-        configList.addEntry(new TwoWidgetEntry(label, left, rowWidth, box, info));
     }
 
     private static Component toggleText(String name, boolean on) {
