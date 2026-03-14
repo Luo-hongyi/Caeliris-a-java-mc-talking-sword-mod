@@ -1,5 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -130,40 +132,42 @@ public final class ActionBuffer {
         buffer.clear();
     }
 
-    // ─────────────────────────────────────────────
-    // 摘要生成
-    // ─────────────────────────────────────────────
+    /**
+     * 将当前的 ActionBuffer 快照按 ActionType 的 PrimaryFocus 分组。
+     */
+    public Map<FocusTag, List<ActionRecord>> groupRecordsByFocus(List<ActionRecord> records) {
+        Map<FocusTag, List<ActionRecord>> grouped = new LinkedHashMap<>();
+        for (ActionRecord r : records) {
+            FocusTag primaryFocus = r.getType().getPrimaryFocus();
+            grouped.computeIfAbsent(primaryFocus, k -> new ArrayList<>()).add(r);
+        }
+        return grouped;
+    }
 
     /**
-     * 生成精简的文本摘要，用于注入 LLM Prompt。
+     * 为特定的、已按 FocusTag 分组的记录列表生成摘要文本。
      * <p>
-     * 规则：
-     * <ol>
-     * <li>同 ActionType + target 只出现一次（计数合并）</li>
-     * <li>KILL 覆盖同目标的 ATTACK</li>
-     * <li>稀有事件（KILL, DEATH, DIM_CHANGE）始终保留</li>
-     * </ol>
+     * 规则与之前类似，同类型合并，超过 5 种方块则折叠。
      *
-     * @return 如 "击杀 zombie ×5, 挖掘 diamond_ore ×2, 长途旅行"
+     * @return 如 "挖掘 diamond_ore ×2, 砍伐 oak_log ×5"
      */
-    public synchronized String toContextSummary() {
-        evictStale();
-        if (buffer.isEmpty())
-            return "(无近期动作)";
+    public String createSummaryForGroup(List<ActionRecord> groupRecords) {
+        if (groupRecords.isEmpty())
+            return "";
 
         // 按 ActionType 分组，再按 target 聚合计数
-        Map<ActionType, Map<String, Integer>> grouped = new LinkedHashMap<>();
-        for (ActionRecord r : buffer) {
-            grouped.computeIfAbsent(r.getType(), k -> new LinkedHashMap<>())
+        Map<ActionType, Map<String, Integer>> aggregated = new LinkedHashMap<>();
+        for (ActionRecord r : groupRecords) {
+            aggregated.computeIfAbsent(r.getType(), k -> new LinkedHashMap<>())
                     .merge(r.getTarget() != null ? r.getTarget() : "", r.getCount(), Integer::sum);
         }
 
         List<String> summaries = new ArrayList<>();
-        for (Map.Entry<ActionType, Map<String, Integer>> entry : grouped.entrySet()) {
+        for (Map.Entry<ActionType, Map<String, Integer>> entry : aggregated.entrySet()) {
             ActionType type = entry.getKey();
             Map<String, Integer> targets = entry.getValue();
 
-            // 如果放置/破坏的方块种类超过 5 种，进行折叠概括（防止建造房子时记录过长）
+            // 如果放置/破坏的方块种类超过 5 种，进行折叠概括
             if (targets.size() > 5 && (type == ActionType.MINE_BLOCK || type == ActionType.PLACE_BLOCK)) {
                 int totalCount = targets.values().stream().mapToInt(Integer::intValue).sum();
                 List<String> topTargets = targets.entrySet().stream()

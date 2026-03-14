@@ -1,0 +1,52 @@
+{
+  "_comment": "The default importance weights for various context entries. Modify these to tune the agent's attention.",
+  
+  "_comment_base": "Base Environmental Context",
+  "base:health_critical": 1.0,
+  "base:health_good": 0.1,
+  "base:hunger_critical": 0.8,
+  "base:hunger_low": 0.4,
+  "base:time": 0.2,
+  "base:weather_bad": 0.3,
+  "base:weather_good": 0.1,
+  "base:biome": 0.2,
+  
+  "_comment_env": "Player State Context",
+  "env:dimension": 0.3,
+  "env:light_level": 0.2,
+  "env:armor": 0.2,
+  "env:xp": 0.1,
+  
+  "_comment_action": "Recent Actions by Category",
+  "action:combat": 0.8,
+  "action:labor": 0.4,
+  "action:status": 0.6,
+  "action:movement": 0.5,
+  "action:social": 0.7,
+  "action:default": 0.3,
+
+  "_comment_surrounding": "Surrounding Blocks",
+  "block:ore": 0.8,
+  "block:hazard": 0.9,
+  "block:valuable": 0.85,
+  "block:fluid": 0.5,
+  "block:interactable": 0.7,
+  "block:crops": 0.6,
+  "block:default": 0.6,
+  
+  "_comment_entity": "Nearby Entities",
+  "entity:hostile_base": 0.9,
+  "entity:neutral_base": 0.7,
+  "entity:passive_base": 0.5,
+  "entity:villager_base": 0.8,
+  "entity:npc": 0.9,
+  
+  "_comment_poi": "Nearby POI / Structures",
+  "poi:default": 0.6,
+  "structure:close": 0.8,
+  "structure:far": 0.5,
+
+  "_comment_look": "Looking At",
+  "look:entity": 1.0,
+  "look:block": 1.0
+}

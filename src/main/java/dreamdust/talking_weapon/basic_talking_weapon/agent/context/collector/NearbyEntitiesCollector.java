@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -144,7 +145,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
                 totalHostile += count;
 
             FocusTag focus = isHostile ? FocusTag.COMBAT : FocusTag.SOCIAL;
-            float imp = isHostile ? 0.6f : 0.2f;
+            float imp = isHostile ? ImportanceRegistry.getInstance().get("entity:hostile_base", 0.6f) : ImportanceRegistry.getInstance().get("entity:passive_base", 0.2f);
 
             TaggedContextEntry.Builder tagBuilder = TaggedContextEntry.builder()
                     .focus(focus)
@@ -163,7 +164,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
                     .focus(FocusTag.COMBAT, FocusTag.HAZARD)
                     .detail(DetailTag.STATE, "combat_intense")
                     .description("附近有大量敌对生物（" + totalHostile + "只），战斗激烈")
-                    .importance(0.9f)
+                    .importance(ImportanceRegistry.getInstance().get("entity:combat_intense", 0.9f))
                     .build());
         }
     }

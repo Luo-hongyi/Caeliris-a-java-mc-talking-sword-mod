@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
@@ -83,7 +84,7 @@ public class LookingAtCollector implements IContextCollector {
                     .focus(FocusTag.COMMON)
                     .detail(detailPrefix, detailValue)
                     .description(sb.toString())
-                    .importance(1.0f)
+                    .importance(ImportanceRegistry.getInstance().get("look:entity", 1.0f))
                     .build());
             return;
         }
@@ -108,7 +109,7 @@ public class LookingAtCollector implements IContextCollector {
                     .focus(FocusTag.COMMON)
                     .detail(DetailTag.BLOCK, blockName)
                     .description(sb.toString())
-                    .importance(1.0f)
+                    .importance(ImportanceRegistry.getInstance().get("look:block", 1.0f))
                     .build());
             return;
         }

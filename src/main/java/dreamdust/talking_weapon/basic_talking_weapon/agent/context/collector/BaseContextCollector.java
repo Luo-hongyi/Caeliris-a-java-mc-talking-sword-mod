@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -43,19 +44,19 @@ public class BaseContextCollector implements IContextCollector {
             String hpDesc;
             if (healthPct < 0.2f) {
                 healthState = "health_critical";
-                healthImportance = 1.0f;
+                healthImportance = ImportanceRegistry.getInstance().get("base:health_critical", 1.0f);
                 hpDesc = "主人的生命力犹如风中残烛，极其虚弱！(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else if (healthPct < 0.5f) {
                 healthState = "health_low";
-                healthImportance = 0.6f;
+                healthImportance = ImportanceRegistry.getInstance().get("base:health_low", 0.6f);
                 hpDesc = "主人受了不轻的伤，需要治疗。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else if (healthPct < 0.8f) {
                 healthState = "health_medium";
-                healthImportance = 0.2f;
+                healthImportance = ImportanceRegistry.getInstance().get("base:health_medium", 0.2f);
                 hpDesc = "主人的生命状况有轻微折损。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else {
                 healthState = "health_full";
-                healthImportance = 0.1f;
+                healthImportance = ImportanceRegistry.getInstance().get("base:health_good", 0.1f);
                 hpDesc = "主人的生命体征非常平稳健康。";
             }
             builder.addTaggedEntry(TaggedContextEntry.builder()
@@ -72,14 +73,14 @@ public class BaseContextCollector implements IContextCollector {
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.STATE, "hungry_critical")
                     .description("主人已经非常饥饿，甚至没有力气奔跑了！(饥饿值: " + food + ")")
-                    .importance(0.8f)
+                    .importance(ImportanceRegistry.getInstance().get("base:hunger_critical", 0.8f))
                     .build());
             } else if (food < 15) {
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.STATE, "hungry_low")
                     .description("主人的体力消耗明显，肚子饿了。(饥饿值: " + food + ")")
-                    .importance(0.4f)
+                    .importance(ImportanceRegistry.getInstance().get("base:hunger_low", 0.4f))
                     .build());
             }
         }
@@ -98,14 +99,14 @@ public class BaseContextCollector implements IContextCollector {
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.STATE, timeState)
                     .description("感知到世界的时间是: " + timeDesc)
-                    .importance(0.2f)
+                    .importance(ImportanceRegistry.getInstance().get("base:time", 0.2f))
                     .build());
 
             // ── 标签：天气 ──
             String weatherState = level.isThundering() ? "weather_thunder"
                     : level.isRaining() ? "weather_rain" : "weather_clear";
-            float weatherImportance = level.isThundering() ? 0.3f
-                    : level.isRaining() ? 0.3f : 0.1f;
+            float weatherImportance = level.isThundering() ? ImportanceRegistry.getInstance().get("base:weather_bad", 0.3f)
+                    : level.isRaining() ? ImportanceRegistry.getInstance().get("base:weather_bad", 0.3f) : ImportanceRegistry.getInstance().get("base:weather_good", 0.1f);
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.STATE, weatherState)
@@ -124,7 +125,7 @@ public class BaseContextCollector implements IContextCollector {
                             .focus(FocusTag.LANDSCAPE)
                             .detail(DetailTag.BIOME, biomeId)
                             .description("主人正身处于群落: " + biomeId)
-                            .importance(0.2f)
+                            .importance(ImportanceRegistry.getInstance().get("base:biome", 0.2f))
                             .build());
                 });
             }

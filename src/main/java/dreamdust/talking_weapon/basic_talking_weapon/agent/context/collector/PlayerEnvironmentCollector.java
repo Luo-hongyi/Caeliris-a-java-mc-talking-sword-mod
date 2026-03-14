@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Player;
@@ -41,7 +42,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
                 .focus(FocusTag.LANDSCAPE)
                 .detail(DetailTag.DIM, dimId)
                 .description("主人目前身处于: " + dimId)
-                .importance(0.3f)
+                .importance(ImportanceRegistry.getInstance().get("env:dimension", 0.3f))
                 .build());
 
         // ── 标签：光照等级 ──
@@ -50,7 +51,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
         int effectiveLight = Math.max(blockLight, skyLight);
         String lightState = effectiveLight < 7 ? "light_dark" : "light_bright";
-        float lightImportance = effectiveLight < 7 ? 0.3f : 0.1f;
+        float lightImportance = effectiveLight < 7 ? ImportanceRegistry.getInstance().get("env:light_level", 0.3f) : 0.1f;
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(effectiveLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
                 .detail(DetailTag.STATE, lightState)
@@ -68,7 +69,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
                     .focus(FocusTag.TOOL)
                     .detail(DetailTag.ITEM, itemId)
                     .description("主人的手中正紧紧握着: " + itemName)
-                    .importance(0.2f)
+                    .importance(ImportanceRegistry.getInstance().get("env:held_item", 0.2f))
                     .build());
         }
 
@@ -78,7 +79,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.STATE, "xp_level")
                     .description("主人当前积攒的经验等级为: " + player.experienceLevel)
-                    .importance(0.1f)
+                    .importance(ImportanceRegistry.getInstance().get("env:xp", 0.1f))
                     .build());
         }
     }

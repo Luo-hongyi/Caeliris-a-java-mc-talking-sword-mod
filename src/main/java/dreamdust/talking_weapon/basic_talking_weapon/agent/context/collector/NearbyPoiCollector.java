@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -99,7 +100,7 @@ public class NearbyPoiCollector implements IContextCollector {
                     .focus(focus)
                     .detail(DetailTag.of(DetailTag.POI, prettifyName(poiName)))
                     .description(String.format("注意到附近的特殊位置: %s (约 %d 格)", prettifyName(poiName), (int) distance))
-                    .importance(0.6f)
+                    .importance(ImportanceRegistry.getInstance().get("poi:default", 0.6f))
                     .timestamp(now)
                     .build());
 
