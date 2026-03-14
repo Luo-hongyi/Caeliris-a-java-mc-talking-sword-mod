@@ -72,10 +72,11 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean entitiesLineOfSight;
     private boolean entitiesFuzzyCount;
 
-    // ── 记忆容纳 (Top-K) ──
+    // ── 注意力过滤 (Top-K) ──
     private EditBox rcTopKBox;
     private EditBox bcTopKBox;
     private EditBox chatTopKBox;
+    private EditBox noiseThresholdBox;
 
     // ── LLM 思考模式 ──
     private EditBox thinkingMaxLenBox;
@@ -199,16 +200,12 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         configList.addEntry(new WidgetRowEntry("模型选择", left, rowWidth, prevModel, modelBtn, nextModel));
 
-        // ── 思考字数上限（全局） ──
+        // ── 思考长度上限（全局） ──
         thinkingMaxLenBox = new EditBox(font, 0, 0, 80, 20, Component.literal("思考上限"));
         thinkingMaxLenBox.setValue(String.valueOf(TalkingWeaponConfig.THINKING_MAX_LENGTH.get()));
         thinkingMaxLenBox.setMaxLength(5);
         thinkingMaxLenBox.setCanLoseFocus(true);
-
-        EditBox thinkingLabel = new EditBox(font, 0, 0, 80, 20, Component.literal(""));
-        thinkingLabel.setValue("0=不限");
-        thinkingLabel.setEditable(false);
-        configList.addEntry(new TwoWidgetEntry("思考字数上限", left, rowWidth, thinkingMaxLenBox, thinkingLabel));
+        configList.addEntry(new InputEntry("思考长度上限 (token)", left, rowWidth, thinkingMaxLenBox, "0=不限"));
 
         configList.addEntry(new LabelEntry("§e▸ 截图设置"));
 
@@ -248,26 +245,32 @@ public class TalkingWeaponConfigScreen extends Screen {
                 new ToggleEntry("视线检测（仅生物）", left, rowWidth, entitiesLineOfSight, v -> entitiesLineOfSight = v));
         configList.addEntry(new ToggleEntry("模糊数量报告", left, rowWidth, entitiesFuzzyCount, v -> entitiesFuzzyCount = v));
 
-        // ── 记忆容量设置 (Top-K) ──
-        configList.addEntry(new LabelEntry("§e▸ 记忆容量限额 (Top-K)"));
+        // ── 注意力过滤设置 (Top-K & 噪声阈值) ──
+        configList.addEntry(new LabelEntry("§e▸ 注意力过滤上限 (Top-K)"));
         
         rcTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("右键触发"));
         rcTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get()));
         rcTopKBox.setMaxLength(3);
         rcTopKBox.setCanLoseFocus(true);
-        configList.addEntry(new TwoWidgetEntry("右键触发上限", left, rowWidth, rcTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 7"); setEditable(false); }}));
+        configList.addEntry(new InputEntry("右键触发上限", left, rowWidth, rcTopKBox, "默认 7"));
 
         bcTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("群系变化"));
         bcTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_BIOME_CHANGE.get()));
         bcTopKBox.setMaxLength(3);
         bcTopKBox.setCanLoseFocus(true);
-        configList.addEntry(new TwoWidgetEntry("群系变化上限", left, rowWidth, bcTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 5"); setEditable(false); }}));
+        configList.addEntry(new InputEntry("群系变化上限", left, rowWidth, bcTopKBox, "默认 5"));
 
         chatTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("玩家对话"));
         chatTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_CHAT.get()));
         chatTopKBox.setMaxLength(3);
         chatTopKBox.setCanLoseFocus(true);
-        configList.addEntry(new TwoWidgetEntry("对话触发上限", left, rowWidth, chatTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 7"); setEditable(false); }}));
+        configList.addEntry(new InputEntry("对话触发上限", left, rowWidth, chatTopKBox, "默认 7"));
+
+        noiseThresholdBox = new EditBox(font, 0, 0, 80, 20, Component.literal("噪声阈值"));
+        noiseThresholdBox.setValue(String.valueOf(TalkingWeaponConfig.NOISE_THRESHOLD.get()));
+        noiseThresholdBox.setMaxLength(5);
+        noiseThresholdBox.setCanLoseFocus(true);
+        configList.addEntry(new InputEntry("噪声过滤阈值", left, rowWidth, noiseThresholdBox, "0.0–1.0"));
 
         // ── 右键触发 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 右键触发 · 采集器"));
@@ -450,6 +453,14 @@ public class TalkingWeaponConfigScreen extends Screen {
                 chatTopKBox.getValue(), 1, 20,
                 TalkingWeaponConfig.TOP_K_CHAT.get());
 
+        // 噪声阈值
+        try {
+            double v = Double.parseDouble(noiseThresholdBox.getValue().trim());
+            TalkingWeaponConfig.NOISE_THRESHOLD.set(Math.max(0.0, Math.min(1.0, v)));
+        } catch (NumberFormatException ignored) {
+            TalkingWeaponConfig.NOISE_THRESHOLD.set(0.1);
+        }
+
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);
 
@@ -598,6 +609,50 @@ public class TalkingWeaponConfigScreen extends Screen {
         @Override
         public List<? extends NarratableEntry> narratables() {
             return widgets;
+        }
+    }
+
+    /** 标签 + 单输入框 + 提示文本行 */
+    private class InputEntry extends ConfigList.Row {
+        private final String label;
+        private final int rowLeft;
+        private final int rowWidth;
+        private final AbstractWidget input;
+        private final String hint;
+
+        InputEntry(String label, int rowLeft, int rowWidth, AbstractWidget input, String hint) {
+            this.label = label;
+            this.rowLeft = rowLeft;
+            this.rowWidth = rowWidth;
+            this.input = input;
+            this.hint = hint;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int index, int top, int left,
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
+            g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
+
+            int btnLeft = left + rowWidth / 2;
+            input.setX(btnLeft);
+            input.setY(top + 2);
+            input.setWidth(80);
+            input.render(g, mouseX, mouseY, delta);
+
+            if (hint != null) {
+                g.drawString(font, "§7" + hint, btnLeft + 86, top + 6, LABEL_COLOR);
+            }
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(input);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(input);
         }
     }
 

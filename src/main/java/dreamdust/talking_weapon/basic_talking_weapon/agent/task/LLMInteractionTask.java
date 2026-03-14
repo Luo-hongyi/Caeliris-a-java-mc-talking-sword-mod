@@ -313,14 +313,16 @@ public class LLMInteractionTask extends AgentTask {
             String playerPos = ctx.getExtra("player_pos");
             String groundLevel = ctx.getExtra("ground_level");
             String timeDesc = ctx.getExtra("time_desc");
+            String dimension = ctx.getExtra("dimension");
             String biome = ctx.getBiome();
 
-            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null || timeDesc != null || biome != null) {
+            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null || timeDesc != null || biome != null || dimension != null) {
                 sb.append("[Supplementary Info]\n");
-                if (timeDesc != null || biome != null) {
+                if (timeDesc != null || biome != null || dimension != null) {
                     sb.append("- 环境: ");
                     if (timeDesc != null) sb.append("时间为").append(timeDesc).append("  ");
-                    if (biome != null) sb.append("身处").append(biome);
+                    if (dimension != null) sb.append("身处维度:").append(dimension).append("  ");
+                    if (biome != null) sb.append("群系:").append(biome);
                     sb.append("\n");
                 }
                 if (playerPos != null) {
@@ -346,7 +348,7 @@ public class LLMInteractionTask extends AgentTask {
                 topK = TalkingWeaponConfig.TOP_K_CHAT.get();
             }
             
-            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, 0.1f, state.getConcentration());
+            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, TalkingWeaponConfig.NOISE_THRESHOLD.get().floatValue(), state.getConcentration());
 
             sb.append("[Tagged Context]\n");
             for (TaggedContextEntry entry : filteredEntries) {

@@ -101,10 +101,11 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue WEIGHT_BLOCK;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_TOOL;
 
-        // —— 记忆容量 (Top-K) ——
+        // —— 注意力过滤 (Top-K & 噪声阈值) ——
         public static final ForgeConfigSpec.IntValue TOP_K_RIGHT_CLICK;
         public static final ForgeConfigSpec.IntValue TOP_K_BIOME_CHANGE;
         public static final ForgeConfigSpec.IntValue TOP_K_CHAT;
+        public static final ForgeConfigSpec.DoubleValue NOISE_THRESHOLD;
 
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -256,12 +257,13 @@ public final class TalkingWeaponConfig {
                 WEIGHT_TOOL = builder.defineInRange("tool", 1.0, 0.0, 10.0);
                 builder.pop();
 
-                // ── 记忆容量 (Top-K) ──────────────────────────────────
-                builder.push("memory_capacity");
-                builder.comment(" 各触发器的环境信息截断上限 (Top-K)");
+                // ── 注意力过滤 (Top-K & 噪声阈值) ──────────────────────────────────
+                builder.push("attention_filter");
+                builder.comment(" 各触发器的环境信息截断上限 (Top-K) 与噪声过滤阈值");
                 TOP_K_RIGHT_CLICK = builder.comment("右键触发时，喂给大模型的环境信息条数上限").defineInRange("rightClick", 7, 1, 20);
                 TOP_K_BIOME_CHANGE = builder.comment("群系变化时，喂给大模型的环境信息条数上限").defineInRange("biomeChange", 5, 1, 20);
                 TOP_K_CHAT = builder.comment("对话触发时，喂给大模型的环境信息条数上限").defineInRange("chat", 7, 1, 20);
+                NOISE_THRESHOLD = builder.comment("低于此得分的上下文条目将被直接丢弃 (0.0–1.0)").defineInRange("noiseThreshold", 0.1, 0.0, 1.0);
                 builder.pop();
 
                 // ── Agent 行为 ─────────────────────────────────────────

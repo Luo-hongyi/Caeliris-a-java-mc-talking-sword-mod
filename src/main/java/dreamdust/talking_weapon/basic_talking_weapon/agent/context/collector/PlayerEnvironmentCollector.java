@@ -38,11 +38,14 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         // ── 标签：维度 ──
         ResourceKey<Level> dimKey = level.dimension();
         String dimId = dimKey.location().toString();
+        builder.extra("dimension", dimId);
+        
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(FocusTag.LANDSCAPE)
                 .detail(DetailTag.DIM, dimId)
                 .description("主人目前身处于: " + dimId)
                 .importance(ImportanceRegistry.getInstance().get("env:dimension", 0.3f))
+                .associativeOnly(true)
                 .build());
 
         // ── 标签：光照等级 ──
