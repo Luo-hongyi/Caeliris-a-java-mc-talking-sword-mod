@@ -23,38 +23,55 @@ public final class DetailTag {
     // 前缀常量 (Prefix Constants)
     // ═══════════════════════════════════════════════════════════════
 
-    /** 行为动词：attack, hurt, kill, eat, mine, craft, interact, move, sleep, death */
-    public static final String ACTION = "action";
+    // --- NATIVE: 对应游戏内部 Registry ID (Minecraft Native) ---
 
-    /** 实体 Registry ID：minecraft:zombie, twilightforest:naga */
+    /** [NATIVE] 实体 Registry ID：minecraft:zombie, twilightforest:naga */
     public static final String ENTITY = "entity";
 
-    /** 物品 Registry ID：minecraft:diamond_sword, farmersdelight:hamburger */
+    /** [NATIVE] 物品 Registry ID：minecraft:diamond_sword, farmersdelight:hamburger */
     public static final String ITEM = "item";
 
-    /** 方块 Registry ID：minecraft:obsidian, minecraft:diamond_ore */
+    /** [NATIVE] 方块 Registry ID：minecraft:obsidian, minecraft:diamond_ore */
     public static final String BLOCK = "block";
 
-    /** 抽象特征（来自 Forge/Vanilla Tags）：undead, boss, foods/meat, ores */
-    public static final String TRAIT = "trait";
-
-    /** 维度 ID：minecraft:overworld, minecraft:the_nether, minecraft:the_end */
+    /**
+     * [NATIVE] 维度 ID：minecraft:overworld, minecraft:the_nether, minecraft:the_end
+     */
     public static final String DIM = "dim";
 
-    /** 群系 ID：minecraft:plains, minecraft:cherry_grove */
+    /** [NATIVE] 群系 ID：minecraft:plains, minecraft:cherry_grove */
     public static final String BIOME = "biome";
 
-    /** 量化状态分桶：health_critical, time_night, weather_rain, combat_intense */
+    /** [NATIVE] 结构/遗迹 ID：minecraft:fortress, minecraft:village */
+    public static final String STRUC = "struc";
+
+    // --- CUSTOM: 核心逻辑推理或叙事定义的自定义标签 (Custom/Inferred) ---
+
+    /**
+     * [CUSTOM] 行为动词：attack, hurt, kill, eat, mine, craft, interact, move, sleep,
+     * death
+     */
+    public static final String ACTION = "action";
+
+    /** [CUSTOM] 抽象特征（来自 Forge/Vanilla Tags 或关键词）：undead, boss, foods/meat, ores */
+    public static final String TRAIT = "trait";
+
+    /** [CUSTOM] 量化状态分桶：health_critical, time_night, weather_rain, combat_intense */
     public static final String STATE = "state";
 
-    /** 纯叙事纪元（不涉及精确时间）：forged, ancient_war, previous_owner, current_journey */
+    /**
+     * [CUSTOM] 纯叙事纪元（不涉及精确时间）：forged, ancient_war, previous_owner, current_journey
+     */
     public static final String ERA = "era";
 
-    /** 玩家/Agent 共同维护的叙事地标：home, trial_grounds, first_base */
+    /** [CUSTOM] 玩家/Agent 共同维护的叙事地标：home, trial_grounds, first_base */
     public static final String LOC = "loc";
 
-    /** 系统级功能方块 POI：nether_portal, mob_spawner, bed */
+    /** [CUSTOM] 系统级功能方块 POI：nether_portal, mob_spawner, bed */
     public static final String POI = "poi";
+
+    /** [CUSTOM] 非原生的高性能环境推理：cave, high_altitude, pitch_dark, lava_nearby */
+    public static final String ENV = "env";
 
     // ═══════════════════════════════════════════════════════════════
     // 实例字段

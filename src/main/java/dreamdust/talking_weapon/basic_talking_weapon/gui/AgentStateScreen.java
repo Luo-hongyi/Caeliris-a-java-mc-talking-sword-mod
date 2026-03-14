@@ -1,8 +1,10 @@
 package dreamdust.talking_weapon.basic_talking_weapon.gui;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.AssociationMode;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.PrimaryEmotion;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.client.Minecraft;
@@ -35,10 +37,13 @@ public class AgentStateScreen extends Screen {
     private final Screen parent;
 
     private static final PrimaryEmotion[] EMOTIONS = PrimaryEmotion.values();
+    private static final AssociationMode[] ASSOC_MODES = AssociationMode.values();
+    private static final FocusTag[] DESIRE_TAGS = FocusTag.values();
     private int emotionIndex;
 
     // 编辑框引用（供 save() 读取）
     private EditBox intensityBox;
+    private EditBox playerAddressBox;
     private EditBox familiarityBox;
     private EditBox favorabilityBox;
 
@@ -46,7 +51,15 @@ public class AgentStateScreen extends Screen {
     private EditBox wCombat, wMovement, wLabor, wCreation, wSocial;
     private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool;
 
+    // 思维特性编辑引用
+    private EditBox wanderingMindBox;
+    private EditBox desireDescBox;
+    private int associationModeIndex;
+    private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
+
     private Button emotionLabel;
+    private Button assocModeLabel;
+    private Button desireTagLabel;
     private StateScrollList scrollList;
 
     public AgentStateScreen(Screen parent) {
@@ -55,13 +68,30 @@ public class AgentStateScreen extends Screen {
 
         AgentState state = AgentRuntime.getInstance().getState();
         this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
+        this.associationModeIndex = assocIndexOf(state.getAssociationMode());
+        // desireTagIndex: 0=无渴望, 1..n=FocusTag
+        FocusTag desire = state.getCurrentDesireTag();
+        this.desireTagIndex = desire == null ? 0 : desireTagIndexOf(desire) + 1;
     }
 
     private static int emotionIndexOf(PrimaryEmotion e) {
-        for (int i = 0; i < EMOTIONS.length; i++) {
+        for (int i = 0; i < EMOTIONS.length; i++)
             if (EMOTIONS[i] == e)
                 return i;
-        }
+        return 0;
+    }
+
+    private static int assocIndexOf(AssociationMode m) {
+        for (int i = 0; i < ASSOC_MODES.length; i++)
+            if (ASSOC_MODES[i] == m)
+                return i;
+        return 1; // BALANCED
+    }
+
+    private static int desireTagIndexOf(FocusTag tag) {
+        for (int i = 0; i < DESIRE_TAGS.length; i++)
+            if (DESIRE_TAGS[i] == tag)
+                return i;
         return 0;
     }
 
@@ -103,6 +133,9 @@ public class AgentStateScreen extends Screen {
         // ── 关系数值 ──
         scrollList.addEntry(new LabelRow("§b▸ 关系数值"));
 
+        playerAddressBox = editBox("称呼", state.getPlayerAddress(), 16);
+        scrollList.addEntry(new BoxRow("对玩家称呼", left, rowWidth, playerAddressBox));
+
         familiarityBox = editBox("熟悉度", String.valueOf(state.getFamiliarity()), 8);
         scrollList.addEntry(new BoxRow("熟悉度 (累计次数)", left, rowWidth, familiarityBox));
 
@@ -134,6 +167,48 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new BoxRow("BLOCK 方块", left, rowWidth, wBlock));
         wTool = weightBox(TalkingWeaponConfig.WEIGHT_TOOL.get());
         scrollList.addEntry(new BoxRow("TOOL 工具", left, rowWidth, wTool));
+
+        // ── 思维特性 ──
+        scrollList.addEntry(new LabelRow("§b▸ 思维特性"));
+
+        wanderingMindBox = editBox("随想值", String.format("%.2f", state.getWanderingMind()), 4);
+        scrollList.addEntry(new BoxRow("随想值 (0.00~1.00)", left, rowWidth, wanderingMindBox));
+
+        // 联想模式选择器
+        Button prevAssoc = Button.builder(Component.literal("<"), btn -> {
+            associationModeIndex = (associationModeIndex - 1 + ASSOC_MODES.length) % ASSOC_MODES.length;
+            assocModeLabel.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        }).bounds(0, 0, 20, 20).build();
+        assocModeLabel = Button.builder(Component.literal(ASSOC_MODES[associationModeIndex].name()), btn -> {
+            associationModeIndex = (associationModeIndex + 1) % ASSOC_MODES.length;
+            btn.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        }).bounds(0, 0, 120, 20).build();
+        Button nextAssoc = Button.builder(Component.literal(">"), btn -> {
+            associationModeIndex = (associationModeIndex + 1) % ASSOC_MODES.length;
+            assocModeLabel.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        }).bounds(0, 0, 20, 20).build();
+        scrollList.addEntry(new ThreeWidgetRow("联想模式", left, rowWidth, prevAssoc, assocModeLabel, nextAssoc));
+
+        // 渴望分类选择器（0 = 无渴望, 1..n = FocusTag）
+        String desireLabelStr = desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name();
+        Button prevDesire = Button.builder(Component.literal("<"), btn -> {
+            desireTagIndex = (desireTagIndex - 1 + DESIRE_TAGS.length + 1) % (DESIRE_TAGS.length + 1);
+            desireTagLabel.setMessage(
+                    Component.literal(desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name()));
+        }).bounds(0, 0, 20, 20).build();
+        desireTagLabel = Button.builder(Component.literal(desireLabelStr), btn -> {
+            desireTagIndex = (desireTagIndex + 1) % (DESIRE_TAGS.length + 1);
+            btn.setMessage(Component.literal(desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name()));
+        }).bounds(0, 0, 120, 20).build();
+        Button nextDesire = Button.builder(Component.literal(">"), btn -> {
+            desireTagIndex = (desireTagIndex + 1) % (DESIRE_TAGS.length + 1);
+            desireTagLabel.setMessage(
+                    Component.literal(desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name()));
+        }).bounds(0, 0, 20, 20).build();
+        scrollList.addEntry(new ThreeWidgetRow("渴望分类", left, rowWidth, prevDesire, desireTagLabel, nextDesire));
+
+        desireDescBox = editBox("渴望描述", state.getDesireDescription(), 64);
+        scrollList.addEntry(new BoxRow("渴望描述", left, rowWidth, desireDescBox));
 
         // ── 底部导航按钮 ──
         int btnY = height - FOOTER_HEIGHT + 8;
@@ -187,6 +262,7 @@ public class AgentStateScreen extends Screen {
         AgentState state = AgentRuntime.getInstance().getState();
         AgentPersona persona = AgentRuntime.getInstance().getPersona();
         state.setPrimaryEmotion(EMOTIONS[emotionIndex]);
+        state.setPlayerAddress(playerAddressBox.getValue().trim());
         try {
             state.setEmotionIntensity(Integer.parseInt(intensityBox.getValue().trim()));
         } catch (NumberFormatException ignored) {

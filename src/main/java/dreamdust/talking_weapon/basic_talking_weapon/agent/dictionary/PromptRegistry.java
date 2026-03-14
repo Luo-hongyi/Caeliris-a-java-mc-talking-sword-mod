@@ -53,8 +53,20 @@ public final class PromptRegistry {
 
     // ── 快捷获取方法 ──
 
-    public String getSystemIdentity() {
-        return get("system_identity", "你是一把会说话的剑中的灵魂。");
+    public String getRoleBackground() {
+        return get("role_background", "你是塞勒瑞思，被封印在剑中的古精灵灵魂。");
+    }
+
+    public String getRolePersonality() {
+        return get("role_personality", "你有些迷茫，但对冒险充满好奇。");
+    }
+
+    public String getFocusTagDescription() {
+        return get("focus_tag_description", "【系统设定 - FocusTag领域说明】\nCOMBAT: 战斗行为或意图\n...");
+    }
+
+    public String getEmotionTypeDescription() {
+        return get("emotion_type_description", "【系统设定 - 情绪类型说明】\nNEUTRAL: 平静平衡\n...");
     }
 
     public String getRightClickPrompt() {

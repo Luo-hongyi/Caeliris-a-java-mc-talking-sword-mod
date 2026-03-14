@@ -44,6 +44,8 @@ public final class LocationRegistry {
         public int z;
         public String dim; // 维度 ID，如 "minecraft:overworld"
         public String note; // 备注
+        public String focusTag; // 关联的 FocusTag 名称（如 "LANDSCAPE"），可为空
+        public String detailTags; // 逗号分隔的 DetailTag 列表（如 "trait:safe,env:base"），可为空
 
         public LocationEntry() {
         }
@@ -56,11 +58,34 @@ public final class LocationRegistry {
             this.note = note;
         }
 
+        public LocationEntry(int x, int y, int z, String dim, String note, String focusTag, String detailTags) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.dim = dim;
+            this.note = note;
+            this.focusTag = focusTag;
+            this.detailTags = detailTags;
+        }
+
         /** 返回给 LLM 的自然语言坐标描述 */
         public String toPromptString() {
             return String.format("(%d, %d, %d) [%s]%s",
                     x, y, z, dim,
                     (note != null && !note.isBlank() ? " — " + note : ""));
+        }
+
+        /** 获取解析后的 DetailTag 字符串列表 */
+        public List<String> getParsedDetailTags() {
+            if (detailTags == null || detailTags.isBlank())
+                return Collections.emptyList();
+            List<String> result = new ArrayList<>();
+            for (String s : detailTags.split(",")) {
+                String trimmed = s.trim();
+                if (!trimmed.isEmpty())
+                    result.add(trimmed);
+            }
+            return result;
         }
 
         @Override

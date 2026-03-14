@@ -1,29 +1,28 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 
 /**
- * 注视目标采集器：获取玩家准心（crosshair）当前对准的方块或实体，
- * 写入 {@code extras["looking_at"]}。
+ * 注视目标采集器：获取玩家准心（crosshair）当前对准的方块或实体。
  * <p>
- * 信息包括：
- * <ul>
- *   <li><b>方块</b> — 名称、坐标、距离</li>
- *   <li><b>实体</b> — 名称、距离；若为生物还包含生命值</li>
- *   <li><b>无</b> — 正在看天空 / 虚空</li>
- * </ul>
- * <p>
- * 使用 {@link Minecraft#hitResult} 和 {@link Minecraft#crosshairPickEntity} 原版 API。
+ * 使用 {@link FocusTag#COMMON} 赋予最高权重，强行打断注意力偏好。
+ * 若准心方块、普通实体则输出详细信息。
+ * 若准心为展示框，则解析其内含的物品并判定为 ITEM 还是 BLOCK。
  */
 public class LookingAtCollector implements IContextCollector {
 
@@ -34,7 +33,8 @@ public class LookingAtCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         Minecraft mc = Minecraft.getInstance();
 
@@ -50,10 +50,10 @@ public class LookingAtCollector implements IContextCollector {
 
             if (crosshairEntity instanceof LivingEntity living) {
                 sb.append(" [生命: ")
-                  .append(String.format("%.0f", living.getHealth()))
-                  .append("/")
-                  .append(String.format("%.0f", living.getMaxHealth()))
-                  .append("]");
+                        .append(String.format("%.0f", living.getHealth()))
+                        .append("/")
+                        .append(String.format("%.0f", living.getMaxHealth()))
+                        .append("]");
             }
 
             // 如果实体有自定义名称
@@ -61,7 +61,30 @@ public class LookingAtCollector implements IContextCollector {
                 sb.append(" 名称: \"").append(crosshairEntity.getCustomName().getString()).append("\"");
             }
 
-            builder.extra("looking_at", sb.toString());
+            String detailPrefix = DetailTag.ENTITY;
+            String detailValue = name;
+
+            // 处理展示框特殊情况：获取内部物品
+            if (crosshairEntity instanceof ItemFrame itemFrame) {
+                ItemStack framedItem = itemFrame.getItem();
+                if (!framedItem.isEmpty()) {
+                    String itemName = framedItem.getHoverName().getString();
+                    sb.append(" [展示框内物品: ").append(itemName).append("]");
+                    detailValue = itemName;
+                    if (framedItem.getItem() instanceof BlockItem) {
+                        detailPrefix = DetailTag.BLOCK;
+                    } else {
+                        detailPrefix = DetailTag.ITEM;
+                    }
+                }
+            }
+
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.COMMON)
+                    .detail(detailPrefix, detailValue)
+                    .description(sb.toString())
+                    .importance(1.0f)
+                    .build());
             return;
         }
 
@@ -77,10 +100,16 @@ public class LookingAtCollector implements IContextCollector {
 
             StringBuilder sb = new StringBuilder();
             sb.append("正在看: ").append(blockName);
-            sb.append(" (坐标 ").append(pos.getX()).append(", ").append(pos.getY()).append(", ").append(pos.getZ()).append(")");
+            sb.append(" (坐标 ").append(pos.getX()).append(", ").append(pos.getY()).append(", ").append(pos.getZ())
+                    .append(")");
             sb.append(" (距离 ").append(String.format("%.1f", dist)).append("格)");
 
-            builder.extra("looking_at", sb.toString());
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.COMMON)
+                    .detail(DetailTag.BLOCK, blockName)
+                    .description(sb.toString())
+                    .importance(1.0f)
+                    .build());
             return;
         }
 

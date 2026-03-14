@@ -1,6 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * POI 探查采集器：扫描玩家附近已加载区域中的 POI 方块（床、钟、职业方块等），
@@ -74,7 +78,6 @@ public class NearbyPoiCollector implements IContextCollector {
                 });
 
         if (poiDistances.isEmpty()) {
-            builder.extra("nearby_poi", "附近没有发现POI");
             return;
         }
 
@@ -82,19 +85,42 @@ public class NearbyPoiCollector implements IContextCollector {
         List<Map.Entry<String, Double>> sorted = new ArrayList<>(poiDistances.entrySet());
         sorted.sort(Map.Entry.comparingByValue());
 
-        StringBuilder sb = new StringBuilder();
+        long now = System.currentTimeMillis();
         int count = 0;
         for (Map.Entry<String, Double> entry : sorted) {
             if (count >= maxResults)
                 break;
-            if (sb.length() > 0)
-                sb.append(", ");
-            sb.append(prettifyName(entry.getKey()))
-                    .append("(约").append((int) entry.getValue().doubleValue()).append("格)");
+
+            String poiName = entry.getKey();
+            double distance = entry.getValue();
+            FocusTag focus = determineFocusTag(poiName);
+
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(focus)
+                    .detail(DetailTag.of(DetailTag.POI, prettifyName(poiName)))
+                    .description(String.format("注意到附近的特殊位置: %s (约 %d 格)", prettifyName(poiName), (int) distance))
+                    .importance(0.6f)
+                    .timestamp(now)
+                    .build());
+
             count++;
         }
+    }
 
-        builder.extra("nearby_poi", sb.toString());
+    private FocusTag determineFocusTag(String poiName) {
+        if (poiName.contains("bed")) return FocusTag.STATUS;
+        if (poiName.contains("nether_portal")) return FocusTag.MOVEMENT;
+
+        Set<String> workstations = Set.of(
+            "barrel", "blast_furnace", "brewing_stand", "cartography_table",
+            "cauldron", "composter", "fletching_table", "grindstone",
+            "lectern", "loom", "smoker", "smithing_table", "stonecutter"
+        );
+        for (String ws : workstations) {
+            if (poiName.contains(ws)) return FocusTag.CREATION;
+        }
+
+        return FocusTag.BLOCK;
     }
 
     private ServerLevel resolveIntegratedServerLevel(Level level) {

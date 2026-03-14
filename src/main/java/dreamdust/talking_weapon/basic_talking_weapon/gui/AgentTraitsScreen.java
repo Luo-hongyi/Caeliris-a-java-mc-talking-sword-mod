@@ -19,14 +19,18 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 性格词条编辑器：按 FocusTag 分页显示词条，支持增删改和重分配 Tag。
+ * 性格词条编辑器：按 FocusTag 分页显示词条，支持增删改。
+ * 每条词条占两行：第一行为词条文本，第二行为逗号分隔的 DetailTag 编辑框。
  */
 public class AgentTraitsScreen extends Screen {
 
     private static final int TITLE_COLOR = 0xFFFFD700;
     private static final int LABEL_COLOR = 0xFFCCCCCC;
+    private static final int DIM_COLOR = 0xFF888888;
     private static final int HEADER_HEIGHT = 50;
     private static final int FOOTER_HEIGHT = 40;
+    /** 每行占两行高度：词条文本 + DetailTag 编辑框 */
+    private static final int ROW_HEIGHT = 48;
 
     private static final FocusTag[] TAGS = FocusTag.values();
 
@@ -51,10 +55,10 @@ public class AgentTraitsScreen extends Screen {
         clearWidgets();
         editRows.clear();
 
-        int rowWidth = Math.min(width - 40, 480);
+        int rowWidth = Math.min(width - 40, 500);
         int left = (width - rowWidth) / 2;
 
-        // ── Tag 选择器（固定 widget） ──
+        // ── Tag 选择器 ──
         Button prevTag = Button.builder(Component.literal("<"), btn -> {
             tagIndex = (tagIndex - 1 + TAGS.length) % TAGS.length;
             tagLabel.setMessage(Component.literal(TAGS[tagIndex].name()));
@@ -78,7 +82,7 @@ public class AgentTraitsScreen extends Screen {
         addRenderableWidget(nextTag);
 
         // ── 滚动列表 ──
-        scrollList = new TraitScrollList(minecraft, width, height, HEADER_HEIGHT, height - FOOTER_HEIGHT, 26);
+        scrollList = new TraitScrollList(minecraft, width, height, HEADER_HEIGHT, height - FOOTER_HEIGHT, ROW_HEIGHT);
         addWidget(scrollList);
 
         AgentPersona persona = AgentRuntime.getInstance().getPersona();
@@ -111,6 +115,7 @@ public class AgentTraitsScreen extends Screen {
         for (TraitEditRow row : editRows) {
             if (!row.deleted) {
                 row.trait.setTrait(row.traitBox.getValue());
+                row.trait.setDetailTagsFromString(row.detailTagsBox.getValue());
             }
         }
         AgentPersona persona = AgentRuntime.getInstance().getPersona();
@@ -124,7 +129,7 @@ public class AgentTraitsScreen extends Screen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
         renderBackground(g);
         g.drawCenteredString(font, title, width / 2, 10, TITLE_COLOR);
-        g.drawString(font, "§7分类:", (width - Math.min(width - 40, 480)) / 2 + 4, HEADER_HEIGHT - 28, LABEL_COLOR);
+        g.drawString(font, "§7分类:", (width - Math.min(width - 40, 500)) / 2 + 4, HEADER_HEIGHT - 28, LABEL_COLOR);
         scrollList.render(g, mouseX, mouseY, delta);
         super.render(g, mouseX, mouseY, delta);
     }
@@ -157,7 +162,7 @@ public class AgentTraitsScreen extends Screen {
 
         @Override
         public int getRowWidth() {
-            return Math.min(width - 40, 480);
+            return Math.min(width - 40, 500);
         }
 
         @Override
@@ -170,56 +175,72 @@ public class AgentTraitsScreen extends Screen {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 词条编辑行
+    // 词条编辑行（两行显示）
     // ═══════════════════════════════════════════════════════════════
 
     private class TraitEditRow extends TraitScrollList.Row {
         final TraitEntry trait;
         final EditBox traitBox;
+        final EditBox detailTagsBox;
         boolean deleted = false;
-        private Button deleteBtn;
+        private final Button deleteBtn;
         private final int rowWidth;
 
         TraitEditRow(TraitEntry trait, int rowLeft, int rowWidth) {
             this.trait = trait;
             this.rowWidth = rowWidth;
 
-            traitBox = new EditBox(minecraft.font, 0, 0, rowWidth - 100, 20, Component.literal(""));
-            traitBox.setMaxLength(64);
+            // 第一行：词条文本
+            traitBox = new EditBox(minecraft.font, 0, 0, rowWidth - 36, 18, Component.literal(""));
+            traitBox.setMaxLength(128);
             traitBox.setCanLoseFocus(true);
             traitBox.setValue(trait.getTrait());
+
+            // 第二行：DetailTag 编辑框
+            detailTagsBox = new EditBox(minecraft.font, 0, 0, rowWidth - 36, 18, Component.literal(""));
+            detailTagsBox.setMaxLength(256);
+            detailTagsBox.setCanLoseFocus(true);
+            detailTagsBox.setValue(trait.getDetailTagsAsString());
 
             deleteBtn = Button.builder(Component.literal("§c✗"), btn -> {
                 deleted = true;
                 btn.active = false;
-            }).bounds(0, 0, 24, 20).build();
+            }).bounds(0, 0, 24, 18).build();
         }
 
         @Override
         public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
                 int mx, int my, boolean hov, float delta) {
             if (deleted) {
-                g.drawString(minecraft.font, "§7§m" + trait.getTrait(), left + 4, top + 7, 0xFF888888);
+                g.drawString(minecraft.font, "§7§m" + trait.getTrait(), left + 4, top + 7, 0xFF666666);
                 return;
             }
+            // 行一：词条文本 + 删除按钮
             traitBox.setX(left + 4);
             traitBox.setY(top + 2);
             traitBox.setWidth(rowWidth - 36);
             traitBox.render(g, mx, my, delta);
+
             deleteBtn.setX(left + rowWidth - 28);
             deleteBtn.setY(top + 2);
-            deleteBtn.setWidth(24);
             deleteBtn.render(g, mx, my, delta);
+
+            // 行二：DetailTag 标签提示 + 编辑框
+            g.drawString(minecraft.font, "§8tags:", left + 4, top + 24 + 3, DIM_COLOR);
+            detailTagsBox.setX(left + 36);
+            detailTagsBox.setY(top + 24);
+            detailTagsBox.setWidth(rowWidth - 68);
+            detailTagsBox.render(g, mx, my, delta);
         }
 
         @Override
         public List<? extends GuiEventListener> children() {
-            return deleted ? Collections.emptyList() : List.of(traitBox, deleteBtn);
+            return deleted ? Collections.emptyList() : List.of(traitBox, detailTagsBox, deleteBtn);
         }
 
         @Override
         public List<? extends NarratableEntry> narratables() {
-            return deleted ? Collections.emptyList() : List.of(traitBox, deleteBtn);
+            return deleted ? Collections.emptyList() : List.of(traitBox, detailTagsBox, deleteBtn);
         }
     }
 }

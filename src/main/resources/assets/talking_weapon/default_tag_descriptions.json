@@ -18,7 +18,13 @@
   "state:light_bright": "光照充足",
   "state:combat_intense": "附近有大量敌对生物，战斗激烈",
   "trait:undead": "亡灵生物",
-  "trait:boss": "首领级生物",
+  "trait:boss": {
+    "description": "首领级生物",
+    "extras": [
+      "trait:dangerous",
+      "trait:epic_encounter"
+    ]
+  },
   "trait:animal": "动物或牲畜",
   "trait:friendly": "友好生物",
   "trait:arthropod": "节肢动物",
@@ -54,10 +60,13 @@
   "action:biome_change": "进入新的群系",
   "action:dim_change": "穿越了维度",
   "poi:nether_portal": "下界传送门",
-  "poi:village": "村庄",
-  "poi:stronghold": "要塞",
+  "poi:village": "村庄 (POI)",
+  "poi:stronghold": "要塞 (POI)",
   "poi:monument": "海底神殿",
   "poi:mansion": "林地府邸",
+  "struc:minecraft:village": "村庄",
+  "struc:minecraft:fortress": "下界要塞",
+  "struc:minecraft:stronghold": "要塞",
   "era:forged": "初生纪元（武器被锻造时期）",
   "era:current_journey": "当前的冒险旅程"
 }

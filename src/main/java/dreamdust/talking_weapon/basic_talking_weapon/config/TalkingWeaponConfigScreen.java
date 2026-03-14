@@ -72,6 +72,11 @@ public class TalkingWeaponConfigScreen extends Screen {
     private boolean entitiesLineOfSight;
     private boolean entitiesFuzzyCount;
 
+    // ── 记忆容纳 (Top-K) ──
+    private EditBox rcTopKBox;
+    private EditBox bcTopKBox;
+    private EditBox chatTopKBox;
+
     // ── LLM 思考模式 ──
     private EditBox thinkingMaxLenBox;
 
@@ -243,6 +248,27 @@ public class TalkingWeaponConfigScreen extends Screen {
                 new ToggleEntry("视线检测（仅生物）", left, rowWidth, entitiesLineOfSight, v -> entitiesLineOfSight = v));
         configList.addEntry(new ToggleEntry("模糊数量报告", left, rowWidth, entitiesFuzzyCount, v -> entitiesFuzzyCount = v));
 
+        // ── 记忆容量设置 (Top-K) ──
+        configList.addEntry(new LabelEntry("§e▸ 记忆容量限额 (Top-K)"));
+        
+        rcTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("右键触发"));
+        rcTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get()));
+        rcTopKBox.setMaxLength(3);
+        rcTopKBox.setCanLoseFocus(true);
+        configList.addEntry(new TwoWidgetEntry("右键触发上限", left, rowWidth, rcTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 7"); setEditable(false); }}));
+
+        bcTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("群系变化"));
+        bcTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_BIOME_CHANGE.get()));
+        bcTopKBox.setMaxLength(3);
+        bcTopKBox.setCanLoseFocus(true);
+        configList.addEntry(new TwoWidgetEntry("群系变化上限", left, rowWidth, bcTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 5"); setEditable(false); }}));
+
+        chatTopKBox = new EditBox(font, 0, 0, 80, 20, Component.literal("玩家对话"));
+        chatTopKBox.setValue(String.valueOf(TalkingWeaponConfig.TOP_K_CHAT.get()));
+        chatTopKBox.setMaxLength(3);
+        chatTopKBox.setCanLoseFocus(true);
+        configList.addEntry(new TwoWidgetEntry("对话触发上限", left, rowWidth, chatTopKBox, new EditBox(font, 0, 0, 80, 20, Component.literal("")) {{ setValue("默认 7"); setEditable(false); }}));
+
         // ── 右键触发 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 右键触发 · 采集器"));
 
@@ -397,6 +423,16 @@ public class TalkingWeaponConfigScreen extends Screen {
         trySetInt(TalkingWeaponConfig.THINKING_MAX_LENGTH,
                 thinkingMaxLenBox.getValue(), 0, 10000,
                 TalkingWeaponConfig.THINKING_MAX_LENGTH.get());
+
+        trySetInt(TalkingWeaponConfig.TOP_K_RIGHT_CLICK,
+                rcTopKBox.getValue(), 1, 20,
+                TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get());
+        trySetInt(TalkingWeaponConfig.TOP_K_BIOME_CHANGE,
+                bcTopKBox.getValue(), 1, 20,
+                TalkingWeaponConfig.TOP_K_BIOME_CHANGE.get());
+        trySetInt(TalkingWeaponConfig.TOP_K_CHAT,
+                chatTopKBox.getValue(), 1, 20,
+                TalkingWeaponConfig.TOP_K_CHAT.get());
 
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);

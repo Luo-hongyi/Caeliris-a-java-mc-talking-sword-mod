@@ -1,8 +1,10 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import net.minecraft.core.BlockPos;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
@@ -13,15 +15,15 @@ import net.minecraft.world.level.material.FluidState;
 import java.util.*;
 
 /**
- * 周围方块/地形特征采集器：扫描玩家周围方块，生成可读的环境描述，
- * 写入 {@code extras["surrounding_blocks"]} 和 {@code extras["terrain_features"]}。
+ * 周围方块/地形特征采集器：扫描玩家周围方块，进行高维度的环境推理。
  * <p>
- * 采集内容：
- * <ul>
- *   <li><b>脚下/头顶方块</b> — 玩家脚下和头部上方各 1 格</li>
- *   <li><b>方块组成统计</b> — 玩家周围区域内最多出现的非空气方块 Top-N</li>
- *   <li><b>地形特征</b> — 室内/露天、洞穴、附近水体/岩浆、高度信息</li>
- * </ul>
+ * 产生两类输出：
+ * <ol>
+ * <li><b>显式环境推理</b>：输出 {@link DetailTag#ENV}（如 `env:cave`,
+ * `env:lava_nearby`），能在提示词中可见。</li>
+ * <li><b>隐式环境锚点</b>：将周围所有方块按类型输出打上 {@link DetailTag#BLOCK}，但标记为
+ * {@code associativeOnly = true}，不渲染到提示词中，仅供联想系统检索。</li>
+ * </ol>
  * <p>
  * 使用原版 API，无外部依赖。
  */
@@ -30,16 +32,12 @@ public class SurroundingBlocksCollector implements IContextCollector {
     /** 扫描半径（方块数），默认 5 */
     private final int scanRadius;
 
-    /** 方块统计 Top-N */
-    private final int topN;
-
     public SurroundingBlocksCollector() {
-        this(5, 8);
+        this.scanRadius = 5;
     }
 
-    public SurroundingBlocksCollector(int scanRadius, int topN) {
+    public SurroundingBlocksCollector(int scanRadius) {
         this.scanRadius = Math.max(1, Math.min(scanRadius, 12));
-        this.topN = Math.max(3, Math.min(topN, 20));
     }
 
     @Override
@@ -49,20 +47,21 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         BlockPos playerPos = player.blockPosition();
 
         // ═══════════════════════════════════════════════════
-        //  1. 脚下与头顶方块
+        // 1. 脚下与头顶方块推测
         // ═══════════════════════════════════════════════════
         BlockPos belowPos = playerPos.below();
-        BlockPos aboveHeadPos = playerPos.above(2); // 玩家身高约 1.8 格，above(2) 是头顶上方
+        BlockPos aboveHeadPos = playerPos.above(2);
         String blockBelow = level.getBlockState(belowPos).getBlock().getName().getString();
         String blockAbove = level.getBlockState(aboveHeadPos).getBlock().getName().getString();
 
         // ═══════════════════════════════════════════════════
-        //  2. 区域方块统计
+        // 2. 区域方块统计与隐式锚点生成
         // ═══════════════════════════════════════════════════
         Map<String, Integer> blockCounts = new LinkedHashMap<>();
         int waterCount = 0;
@@ -75,7 +74,8 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     BlockState state = level.getBlockState(pos);
 
                     // 跳过空气
-                    if (state.isAir()) continue;
+                    if (state.isAir())
+                        continue;
 
                     // 流体统计
                     FluidState fluid = state.getFluidState();
@@ -88,40 +88,39 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     }
 
                     String name = state.getBlock().getName().getString();
+                    // 这里本应使用 Registry Name，但在演示中为方便直接获取翻译名作为 ID 键
                     blockCounts.merge(name, 1, Integer::sum);
                 }
             }
         }
 
-        // 按数量降序排序，取 Top-N
-        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(blockCounts.entrySet());
-        sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
-        int limit = Math.min(sorted.size(), topN);
-
-        StringBuilder blocksSb = new StringBuilder();
-        blocksSb.append("脚下: ").append(blockBelow).append(", 头顶: ").append(blockAbove);
-        if (limit > 0) {
-            blocksSb.append("; 周围主要方块: ");
-            for (int i = 0; i < limit; i++) {
-                if (i > 0) blocksSb.append(", ");
-                Map.Entry<String, Integer> entry = sorted.get(i);
-                blocksSb.append(entry.getKey()).append("×").append(entry.getValue());
-            }
+        // --- 生成隐式关联方块 (Associative Only) ---
+        for (Map.Entry<String, Integer> entry : blockCounts.entrySet()) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.LANDSCAPE)
+                    .detail(DetailTag.BLOCK, entry.getKey())
+                    .description("周围环境方块: " + entry.getKey() + " 数量: " + entry.getValue())
+                    .importance(0.3f)
+                    .associativeOnly(true) // 核心：平时隐形，仅供记忆联想查收！
+                    .build());
         }
 
-        builder.extra("surrounding_blocks", blocksSb.toString());
-
         // ═══════════════════════════════════════════════════
-        //  3. 地形特征
+        // 3. 地面特征生成 (ENV Tags)
         // ═══════════════════════════════════════════════════
         List<String> features = new ArrayList<>();
-
-        // 3a. 露天 / 室内 / 洞穴
         boolean canSeeSky = level.canSeeSky(playerPos.above());
+
+        // 3a. 露天 / 室内 / 洞穴推断
         if (canSeeSky) {
             features.add("露天环境");
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.LANDSCAPE)
+                    .detail(DetailTag.ENV, "exposed")
+                    .description("处于露天环境中，视野开阔。脚踩: " + blockBelow)
+                    .importance(0.6f)
+                    .build());
         } else {
-            // 检测距地表距离（向上扫描找到天空的距离）
             int depthToSky = 0;
             BlockPos scan = playerPos.above();
             for (int i = 0; i < 64; i++) {
@@ -132,74 +131,86 @@ public class SurroundingBlocksCollector implements IContextCollector {
                 }
             }
             if (depthToSky == 0) {
-                features.add("深层洞穴或建筑内部(头顶64格内无天空)");
+                features.add("深层建筑内部");
+                builder.addTaggedEntry(TaggedContextEntry.builder()
+                        .focus(FocusTag.LANDSCAPE)
+                        .detail(DetailTag.ENV, "deep_indoors")
+                        .description("位于头顶极深处被遮挡的建筑内部或极深地城。")
+                        .importance(0.8f)
+                        .build());
             } else if (depthToSky <= 5) {
-                features.add("浅层遮挡(距天空约" + depthToSky + "格，可能是树下或屋檐)");
+                features.add("浅层遮挡");
             } else {
-                features.add("洞穴或地下(距地表约" + depthToSky + "格)");
+                features.add("洞穴或地下");
+                builder.addTaggedEntry(TaggedContextEntry.builder()
+                        .focus(FocusTag.LANDSCAPE)
+                        .detail(DetailTag.ENV, "cave")
+                        .description(
+                                "位于地下洞穴中，距地表约 " + depthToSky + " 格。周围主要由 " + blockAbove + ", " + blockBelow + " 构成。")
+                        .importance(0.8f)
+                        .build());
             }
         }
 
-        // 3b. 高度信息
+        // 3b. 高度信息推断
         int y = playerPos.getY();
-        if (y >= 200) {
-            features.add("极高处(Y=" + y + ")");
-        } else if (y >= 100) {
-            features.add("山地/高处(Y=" + y + ")");
-        } else if (y <= 0) {
-            features.add("深暗之域深度(Y=" + y + ")");
-        } else if (y <= 30) {
-            features.add("地下(Y=" + y + ")");
+        if (y >= 100) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.LANDSCAPE)
+                    .detail(DetailTag.ENV, "high_altitude")
+                    .description("位于高海拔处 (Y=" + y + ")。")
+                    .importance(0.6f)
+                    .build());
         }
 
-        // 3c. 附近水体/岩浆
-        if (waterCount > 10) {
-            features.add("附近有大量水体");
-        } else if (waterCount > 0) {
-            features.add("附近有少量水");
-        }
-        if (lavaCount > 10) {
-            features.add("附近有大量岩浆(危险!)");
-        } else if (lavaCount > 0) {
-            features.add("附近有岩浆");
+        // 3c. 水体/岩浆推断
+        if (lavaCount > 0) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.HAZARD)
+                    .detail(DetailTag.ENV, "lava_nearby")
+                    .description("极度危险！周围发现大量岩浆池。")
+                    .importance(0.9f)
+                    .build());
+        } else if (waterCount > 10) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.LANDSCAPE)
+                    .detail(DetailTag.ENV, "water_nearby")
+                    .description("附近有大量水体。")
+                    .importance(0.5f)
+                    .build());
         }
 
-        // 3d. 光照环境
+        // 3d. 光照环境推断
         int blockLight = level.getBrightness(LightLayer.BLOCK, playerPos);
         int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
         if (blockLight <= 3 && skyLight <= 3) {
-            features.add("极暗环境(怪物可能生成)");
-        } else if (blockLight <= 7 && skyLight <= 7) {
-            features.add("昏暗环境");
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.HAZARD) // 黑暗带来危险
+                    .detail(DetailTag.ENV, "pitch_dark")
+                    .description("环境漆黑一片，极易生成怪物。")
+                    .importance(0.85f)
+                    .build());
         }
 
-        // 3e. 是否在水中
-        if (player.isInWater()) {
-            features.add("玩家在水中");
-        }
-        if (player.isInLava()) {
-            features.add("玩家在岩浆中");
-        }
-
-        // 3f. 玩家四周悬崖检测（四个正方向向下扫描）
+        // 3e. 悬崖检测 (落差过滤)
         int maxDrop = 0;
-        for (int[] dir : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+        for (int[] dir : new int[][] { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) {
             BlockPos edge = playerPos.offset(dir[0] * 2, 0, dir[1] * 2);
             int drop = 0;
             for (int i = 0; i < 30; i++) {
-                if (!level.getBlockState(edge.below(i)).isAir()) break;
+                if (!level.getBlockState(edge.below(i)).isAir())
+                    break;
                 drop++;
             }
             maxDrop = Math.max(maxDrop, drop);
         }
-        if (maxDrop >= 20) {
-            features.add("附近有悬崖(落差>" + maxDrop + "格)");
-        } else if (maxDrop >= 8) {
-            features.add("附近有较高落差(" + maxDrop + "格)");
-        }
-
-        if (!features.isEmpty()) {
-            builder.extra("terrain_features", String.join("; ", features));
+        if (maxDrop >= 8) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.HAZARD)
+                    .detail(DetailTag.ENV, "cliff")
+                    .description("处于高落差悬崖边缘 (落差 > " + maxDrop + " 格)，小心脚下！")
+                    .importance(0.7f)
+                    .build());
         }
     }
 }

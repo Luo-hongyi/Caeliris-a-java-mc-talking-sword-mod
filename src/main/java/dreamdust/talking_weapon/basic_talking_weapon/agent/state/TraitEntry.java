@@ -2,20 +2,26 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.state;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
- * 性格/偏好词条：将一条人格描述与一个认知领域标签（{@link FocusTag}）绑定。
+ * 性格/偏好词条：将一条人格描述与一个认知领域标签（{@link FocusTag}）绑定，
+ * 并可选附带若干 DetailTag（以 {@code prefix:value} 字符串形式存储）。
  * <p>
- * 词条由 LLM 在反思任务（ReflectionTask）中动态生成和更新。
- * 在构建 LLM 的 system prompt 时，系统将根据当前上下文中激活的 FocusTag
- * 筛选出相关词条注入，以保证人格呈现的精准性并节省 Token。
+ * DetailTag 用于联想搜索：根据词条上的细节标签可进一步检索相关记忆或其他词条。
  *
  * <p>
  * <b>示例：</b>
- * 
+ *
  * <pre>
  * new TraitEntry("厌恶生食", FocusTag.CONSUMABLE)
+ *     .withDetailTag("item:minecraft:rotten_flesh")
+ *
  * new TraitEntry("对岩浆有着本能的恐惧", FocusTag.HAZARD)
- * new TraitEntry("热衷于战斗厮杀", FocusTag.COMBAT)
+ *     .withDetailTag("block:minecraft:lava")
+ *     .withDetailTag("state:health_critical")
  * </pre>
  */
 public class TraitEntry {
@@ -26,16 +32,36 @@ public class TraitEntry {
     /** 该词条所属的认知领域（用于按场景筛选） */
     private FocusTag associatedTag;
 
+    /**
+     * 附带的细节标签列表（以 {@code prefix:value} 原始字符串存储）。
+     * <p>
+     * 用于联想模式下的二次/三次检索——当该词条被召回时，
+     * 系统可沿着这些 DetailTag 进一步查找相关记忆。
+     */
+    private List<String> detailTags;
+
     /** Gson 反序列化所需的无参构造 */
     public TraitEntry() {
+        this.detailTags = new ArrayList<>();
     }
 
     public TraitEntry(String trait, FocusTag associatedTag) {
         this.trait = trait;
         this.associatedTag = associatedTag;
+        this.detailTags = new ArrayList<>();
     }
 
-    // ---- Getters & Setters ----
+    // ── 链式构建辅助 ──────────────────────────────────────────────────
+
+    /** 快速追加一条 DetailTag 字符串，返回 this 支持链式调用。 */
+    public TraitEntry withDetailTag(String rawTag) {
+        if (rawTag != null && !rawTag.isBlank()) {
+            this.detailTags.add(rawTag.trim());
+        }
+        return this;
+    }
+
+    // ── Getters & Setters ─────────────────────────────────────────────
 
     public String getTrait() {
         return trait;
@@ -53,8 +79,55 @@ public class TraitEntry {
         this.associatedTag = associatedTag;
     }
 
+    // ── DetailTags ────────────────────────────────────────────────────
+
+    /** 返回不可修改的 DetailTag 字符串列表。 */
+    public List<String> getDetailTags() {
+        return detailTags == null
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(detailTags);
+    }
+
+    /** 整体替换 DetailTag 列表。 */
+    public void setDetailTags(List<String> tags) {
+        this.detailTags = tags != null ? new ArrayList<>(tags) : new ArrayList<>();
+    }
+
+    /**
+     * 返回逗号分隔的 DetailTag 字符串（供 GUI 编辑框显示）。
+     * <p>
+     * 示例：{@code "entity:minecraft:zombie, state:health_critical"}
+     */
+    public String getDetailTagsAsString() {
+        if (detailTags == null || detailTags.isEmpty())
+            return "";
+        return String.join(", ", detailTags);
+    }
+
+    /**
+     * 从逗号分隔字符串解析并写入 DetailTag 列表（GUI 保存时使用）。
+     * 每条以逗号分隔，自动 trim 并过滤空白条目。
+     */
+    public void setDetailTagsFromString(String csv) {
+        this.detailTags = new ArrayList<>();
+        if (csv == null || csv.isBlank())
+            return;
+        for (String part : csv.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                this.detailTags.add(trimmed);
+            }
+        }
+    }
+
+    // ── toString ──────────────────────────────────────────────────────
+
     @Override
     public String toString() {
-        return "[" + (associatedTag != null ? associatedTag.name() : "UNTAGGED") + "] " + trait;
+        String base = "[" + (associatedTag != null ? associatedTag.name() : "UNTAGGED") + "] " + trait;
+        if (detailTags != null && !detailTags.isEmpty()) {
+            base += " tags:" + detailTags;
+        }
+        return base;
     }
 }

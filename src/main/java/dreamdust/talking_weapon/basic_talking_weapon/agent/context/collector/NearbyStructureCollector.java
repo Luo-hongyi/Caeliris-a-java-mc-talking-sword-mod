@@ -1,6 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -9,7 +12,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkStatus;
@@ -28,8 +30,8 @@ import java.util.*;
  *
  * <h3>配置</h3>
  * <ul>
- *   <li>{@code scanRadiusChunks} — 扫描半径（区块），默认 5（约 80 格）</li>
- *   <li>{@code maxResults} — 最多报告的结构数量，默认 8</li>
+ * <li>{@code scanRadiusChunks} — 扫描半径（区块），默认 5（约 80 格）</li>
+ * <li>{@code maxResults} — 最多报告的结构数量，默认 8</li>
  * </ul>
  */
 public class NearbyStructureCollector implements IContextCollector {
@@ -66,7 +68,8 @@ public class NearbyStructureCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        if (player == null || level == null) return;
+        if (player == null || level == null)
+            return;
 
         BlockPos playerPos = player.blockPosition();
         Map<String, Double> structureDistances = collectStructureDistances(level, playerPos);
@@ -80,7 +83,6 @@ public class NearbyStructureCollector implements IContextCollector {
         }
 
         if (structureDistances.isEmpty()) {
-            builder.extra("nearby_structures", "附近没有发现特殊结构");
             return;
         }
 
@@ -88,17 +90,25 @@ public class NearbyStructureCollector implements IContextCollector {
         List<Map.Entry<String, Double>> sorted = new ArrayList<>(structureDistances.entrySet());
         sorted.sort(Map.Entry.comparingByValue());
 
-        StringBuilder sb = new StringBuilder();
+        long now = System.currentTimeMillis();
         int count = 0;
         for (Map.Entry<String, Double> entry : sorted) {
-            if (count >= maxResults) break;
-            if (sb.length() > 0) sb.append(", ");
-            sb.append(prettifyName(entry.getKey()))
-              .append("(约").append((int) entry.getValue().doubleValue()).append("格)");
+            if (count >= maxResults)
+                break;
+
+            String structureId = entry.getKey();
+            double distance = entry.getValue();
+
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.LANDSCAPE)
+                    .detail(DetailTag.of(DetailTag.STRUC, structureId))
+                    .description(String.format("注意到附近的结构: %s (约 %d 格)", prettifyName(structureId), (int) distance))
+                    .importance(distance < 32 ? 0.8f : 0.5f) // 距离越近权重越高
+                    .timestamp(now)
+                    .build());
+
             count++;
         }
-
-        builder.extra("nearby_structures", sb.toString());
     }
 
     private Map<String, Double> collectStructureDistances(Level level, BlockPos playerPos) {
@@ -113,14 +123,17 @@ public class NearbyStructureCollector implements IContextCollector {
                 int cz = centerCZ + dz;
 
                 ChunkAccess chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.STRUCTURE_STARTS, false);
-                if (chunk == null) continue;
+                if (chunk == null)
+                    continue;
 
                 Map<Structure, StructureStart> starts = chunk.getAllStarts();
-                if (starts == null || starts.isEmpty()) continue;
+                if (starts == null || starts.isEmpty())
+                    continue;
 
                 for (Map.Entry<Structure, StructureStart> entry : starts.entrySet()) {
                     StructureStart start = entry.getValue();
-                    if (start == null || !start.isValid()) continue;
+                    if (start == null || !start.isValid())
+                        continue;
 
                     String name = resolveStructureName(level, entry.getKey());
                     BoundingBox bb = start.getBoundingBox();
@@ -139,7 +152,8 @@ public class NearbyStructureCollector implements IContextCollector {
         try {
             Minecraft minecraft = Minecraft.getInstance();
             MinecraftServer server = minecraft.getSingleplayerServer();
-            if (server == null) return null;
+            if (server == null)
+                return null;
             return server.getLevel(level.dimension());
         } catch (Exception ignored) {
             return null;
@@ -147,7 +161,7 @@ public class NearbyStructureCollector implements IContextCollector {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  工具方法
+    // 工具方法
     // ═══════════════════════════════════════════════════════════════
 
     /**

@@ -5,8 +5,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Agent 低频人格画像（Persona）：描述武器灵魂深层的、长期演化的性格特征与关系状态。
@@ -106,23 +104,7 @@ public class AgentPersona {
         return result;
     }
 
-    /**
-     * 根据当前上下文激活的 FocusTag 集合，筛选出相关词条。
-     * <p>
-     * 用于构建 system prompt 时，只注入与当前场景相关的性格描述，
-     * 避免无关词条干扰 LLM 输出并减少 Token 消耗。
-     *
-     * @param activeTags 当前上下文的 FocusTag 集合（来自 TaggedContextEntry）
-     * @return 匹配的词条列表；若 activeTags 为空则返回全部词条
-     */
-    public List<TraitEntry> getTraitsForTags(Set<FocusTag> activeTags) {
-        if (activeTags == null || activeTags.isEmpty()) {
-            return Collections.unmodifiableList(traits);
-        }
-        return traits.stream()
-                .filter(t -> t.getAssociatedTag() != null && activeTags.contains(t.getAssociatedTag()))
-                .collect(Collectors.toList());
-    }
+    // (Removed getTraitsForTags as filtering is now done externally)
 
     // ── Player Profile ────────────────────────────────────────────
 
@@ -139,20 +121,18 @@ public class AgentPersona {
     /**
      * 生成用于注入 system prompt 的 Persona 片段。
      * <p>
-     * 仅将与 {@code activeTags} 相关的性格词条注入，其余省略。
-     * 若 activeTags 为 null，则注入全部词条。
+     * 仅将传入的性格词条注入，其余省略。
      *
-     * @param activeTags 当前帧激活的 FocusTag 集合（可为 null）
+     * @param relevantTraits 外部筛选好的、当前场景激活的词条列表
      * @return 格式化的 Persona 描述字符串
      */
-    public String toPromptSnippet(Set<FocusTag> activeTags) {
+    public String toPromptSnippet(List<TraitEntry> relevantTraits) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("[AgentPersona]\n");
         sb.append("好感度: ").append(favorability).append("/100\n");
 
-        List<TraitEntry> relevantTraits = getTraitsForTags(activeTags);
-        if (!relevantTraits.isEmpty()) {
+        if (relevantTraits != null && !relevantTraits.isEmpty()) {
             sb.append("性格特征 (与当前场景相关):\n");
             for (TraitEntry t : relevantTraits) {
                 sb.append("  - ").append(t.getTrait()).append("\n");

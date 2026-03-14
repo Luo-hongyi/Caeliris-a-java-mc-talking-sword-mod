@@ -12,6 +12,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonArray;
+
 /**
  * DetailTag 到自然语言描述的映射字典。
  * <p>
@@ -26,7 +33,36 @@ import java.util.*;
 public final class TagDescriptionDictionary {
 
     private static final String LOG_PREFIX = "[TalkingWeapon/TagDict] ";
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+    /** 自定义反序列化器：同时支持旧版 String -> String 格式，和新版 String -> TagDefinition 格式 */
+    private static final JsonDeserializer<TagDefinition> DEFINITION_DESERIALIZER = new JsonDeserializer<>() {
+        @Override
+        public TagDefinition deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+                throws JsonParseException {
+            if (json.isJsonPrimitive()) {
+                // 向下兼容：直接是一个描述字符串
+                return new TagDefinition(json.getAsString());
+            } else if (json.isJsonObject()) {
+                // 新版结构：{ "description": "xxx", "extras": ["a", "b"] }
+                JsonObject obj = json.getAsJsonObject();
+                String desc = obj.has("description") ? obj.get("description").getAsString() : "";
+                List<String> extras = new ArrayList<>();
+                if (obj.has("extras") && obj.get("extras").isJsonArray()) {
+                    JsonArray arr = obj.getAsJsonArray("extras");
+                    for (JsonElement e : arr) {
+                        extras.add(e.getAsString());
+                    }
+                }
+                return new TagDefinition(desc, extras);
+            }
+            return new TagDefinition("");
+        }
+    };
+
+    private static final Gson GSON = new GsonBuilder()
+            .registerTypeAdapter(TagDefinition.class, DEFINITION_DESERIALIZER)
+            .setPrettyPrinting()
+            .create();
 
     /** 配置文件相对于 Forge config 目录的路径 */
     private static final String CONFIG_SUBDIR = "talking_weapon";
@@ -35,8 +71,8 @@ public final class TagDescriptionDictionary {
     /** jar 内默认资源路径 */
     private static final String DEFAULT_RESOURCE = "/assets/talking_weapon/default_tag_descriptions.json";
 
-    /** 标签 -> 自然语言描述 */
-    private final Map<String, String> descriptions;
+    /** 标签 -> 标签定义(描述与额外挂载标签) */
+    private Map<String, TagDefinition> definitions;
 
     // ─────────────────────────────────────────────
     // 单例
@@ -44,8 +80,8 @@ public final class TagDescriptionDictionary {
 
     private static TagDescriptionDictionary INSTANCE;
 
-    private TagDescriptionDictionary(Map<String, String> descriptions) {
-        this.descriptions = Collections.unmodifiableMap(descriptions);
+    private TagDescriptionDictionary(Map<String, TagDefinition> definitions) {
+        this.definitions = new LinkedHashMap<>(definitions);
     }
 
     /**
@@ -63,7 +99,7 @@ public final class TagDescriptionDictionary {
      */
     public static synchronized void reload() {
         INSTANCE = load();
-        System.out.println(LOG_PREFIX + "已重新加载，共 " + INSTANCE.descriptions.size() + " 条映射。");
+        System.out.println(LOG_PREFIX + "已重新加载，共 " + INSTANCE.definitions.size() + " 条映射。");
     }
 
     // ─────────────────────────────────────────────
@@ -77,14 +113,31 @@ public final class TagDescriptionDictionary {
      * @return 描述文字；若不在字典中则返回 {@code null}
      */
     public String describe(String tag) {
-        return descriptions.get(tag);
+        TagDefinition def = definitions.get(tag);
+        if (def != null && def.getDescription() != null && !def.getDescription().isBlank()) {
+            return def.getDescription();
+        }
+        return null;
     }
 
     /**
      * 查询描述，若不在字典中返回标签原文。
      */
     public String describeOrRaw(String tag) {
-        return descriptions.getOrDefault(tag, tag);
+        String desc = describe(tag);
+        return desc != null ? desc : tag;
+    }
+
+    /**
+     * 获取原生标签挂载的“额外附带标签(Extras)”。
+     * 用于跨界触发联想记忆（例如：钻石矿石 -> 附带 "trait:valuable"）。
+     *
+     * @param tag 原生标签组合
+     * @return 额外标签列表，若无则返回空列表
+     */
+    public List<String> getExtras(String tag) {
+        TagDefinition def = definitions.get(tag);
+        return def != null ? def.getExtras() : Collections.emptyList();
     }
 
     /**
@@ -96,7 +149,7 @@ public final class TagDescriptionDictionary {
     public List<String> describeAll(Collection<String> tags) {
         List<String> result = new ArrayList<>();
         for (String tag : tags) {
-            String desc = descriptions.get(tag);
+            String desc = describe(tag);
             if (desc != null)
                 result.add(desc);
         }
@@ -105,7 +158,23 @@ public final class TagDescriptionDictionary {
 
     /** 返回字典中所有标签数量 */
     public int size() {
-        return descriptions.size();
+        return definitions.size();
+    }
+
+    /** 获取所有条目的只读副本，供外部界面读取 */
+    public Map<String, TagDefinition> getAllEntries() {
+        return Collections.unmodifiableMap(definitions);
+    }
+
+    /**
+     * 整体替换字典内容并立即持久化到 JSON。
+     *
+     * @param newDefinitions 新的标签定义映射
+     */
+    public synchronized void updateAll(Map<String, TagDefinition> newDefinitions) {
+        definitions = new LinkedHashMap<>(newDefinitions);
+        save();
+        System.out.println(LOG_PREFIX + "已更新并保存，共 " + definitions.size() + " 条映射。");
     }
 
     // ─────────────────────────────────────────────
@@ -117,12 +186,12 @@ public final class TagDescriptionDictionary {
         ensureConfigExists(configPath);
 
         try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
-            Type type = new TypeToken<Map<String, String>>() {
+            Type type = new TypeToken<Map<String, TagDefinition>>() {
             }.getType();
-            Map<String, String> raw = GSON.fromJson(reader, type);
+            Map<String, TagDefinition> raw = GSON.fromJson(reader, type);
 
             // 过滤掉以 "_comment" 开头的注释键
-            Map<String, String> filtered = new LinkedHashMap<>();
+            Map<String, TagDefinition> filtered = new LinkedHashMap<>();
             if (raw != null) {
                 raw.forEach((k, v) -> {
                     if (!k.startsWith("_comment"))
@@ -163,6 +232,24 @@ public final class TagDescriptionDictionary {
             }
         } catch (IOException e) {
             System.err.println(LOG_PREFIX + "复制默认配置失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 将当前字典写回配置文件。
+     */
+    private void save() {
+        Path configPath = getConfigPath();
+        try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
+            // 构建带注释头的 JsonObject
+            com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+            root.addProperty("_comment", "DetailTag 到自然语言的描述映射。当 Collector 产出某个 DetailTag 时，将用此处的描述注入 LLM 提示词。");
+            root.addProperty("_comment2", "格式：纯字符串值为描述，对象值可包含 description 和 extras 数组。");
+            Gson serializer = new GsonBuilder().setPrettyPrinting().create();
+            definitions.forEach((key, def) -> root.add(key, serializer.toJsonTree(def)));
+            serializer.toJson(root, writer);
+        } catch (IOException e) {
+            System.err.println(LOG_PREFIX + "保存失败：" + e.getMessage());
         }
     }
 }

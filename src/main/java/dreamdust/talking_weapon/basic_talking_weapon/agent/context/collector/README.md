@@ -17,6 +17,7 @@
    - `detailTags`：细节标签（`DetailTag`，`prefix:value` 格式），用于记忆检索
    - `description`：人类/LLM 可读的事件描述
    - `baseImportance`：事件客观重要度 (0.0~1.0)
+   - `associativeOnly`：是否为隐式关联标签（若为 true，则在未命中记忆联想时对大模型不可见，用于海量方块扫描）
    - `timestamp`：精确物理时间戳
 
 ### FocusTag（注意力元标签，共 11 个）
@@ -43,6 +44,8 @@
 | `entity:` | 实体 Registry ID | `entity:minecraft:zombie` |
 | `item:` | 物品 Registry ID | `item:minecraft:diamond_sword` |
 | `block:` | 方块 Registry ID | `block:minecraft:obsidian` |
+| `env:` | 抽象环境/地貌特征 | `env:exposed`, `env:cave`, `env:pitch_dark` |
+| `struc:`| 结构特征 | `struc:minecraft:village` |
 | `trait:` | 抽象特征 (Forge Tags) | `trait:undead`, `trait:boss` |
 | `dim:` | 维度 ID | `dim:minecraft:the_nether` |
 | `biome:` | 群系 ID | `biome:minecraft:plains` |
@@ -57,8 +60,12 @@
 |---|---|---|
 | `BaseContextCollector` | HP、饥饿值、坐标、群系、天气、游戏时间 | `state:health_*`, `state:time_*`, `state:weather_*`, `biome:*` |
 | `ScreenshotCollector` | 当前画面截图（Base64） | _(无标签)_ |
-| `NearbyEntitiesCollector` | 16 格内实体，按类型分组计数 | `entity:*`, `state:combat_intense` |
-| `PlayerEnvironmentCollector` | 维度、光照、持有物品、盔甲值、经验等级 | `dim:*`, `state:light_*`, `item:*` |
+| `NearbyEntitiesCollector`| 16 格内实体，按类型分组计数 | `entity:*`, `state:combat_intense` |
+| `PlayerEnvironmentCollector`| 维度、光照、持有物品、盔甲值、经验等级 | `dim:*`, `state:light_*`, `item:*` |
+| `SurroundingBlocksCollector`| 3D探测玩家空间视野内的方块与地形 | `env:*`, `block:* (隐式)` |
+| `NearbyStructureCollector` | 探测玩家周边的群系结构 | `struc:*` |
+| `NearbyPoiCollector` | 探测周围的村庄职业工作台与床铺门户 | `poi:*` |
+| `LookingAtCollector` | 玩家视线正中锁定的方块或实体 | `entity:*`, `block:*`, `item:*` |
 
 ## 如何新增采集器
 

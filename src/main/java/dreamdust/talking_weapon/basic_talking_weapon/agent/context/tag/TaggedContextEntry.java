@@ -12,6 +12,8 @@ import java.util.*;
  * <li><b>description</b> — 人类/LLM 可读的事件描述</li>
  * <li><b>baseImportance</b> — 事件的客观重要度 (0.0 ~ 1.0)</li>
  * <li><b>timestamp</b> — 精确的物理时间戳 (毫秒)，用于记忆衰减排序和时序判定</li>
+ * <li><b>associativeOnly</b> — 是否为仅用于联想的隐式标签（默认 false，若为 true 则不在 Prompt
+ * 显示，除非匹配性格/记忆）</li>
  * </ul>
  * <p>
  * 不可变对象，通过 {@link Builder} 构建。
@@ -23,6 +25,7 @@ public final class TaggedContextEntry {
     private final String description;
     private final float baseImportance;
     private final long timestamp;
+    private final boolean associativeOnly;
 
     private TaggedContextEntry(Builder builder) {
         this.focusTags = builder.focusTags.isEmpty()
@@ -32,6 +35,7 @@ public final class TaggedContextEntry {
         this.description = builder.description;
         this.baseImportance = builder.baseImportance;
         this.timestamp = builder.timestamp;
+        this.associativeOnly = builder.associativeOnly;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -61,6 +65,11 @@ public final class TaggedContextEntry {
     /** 获取精确的物理时间戳 (毫秒)，用于记忆衰减和时序判定 */
     public long getTimestamp() {
         return timestamp;
+    }
+
+    /** 检查是否属于仅用于联想召回的隐式标签 */
+    public boolean isAssociativeOnly() {
+        return associativeOnly;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -120,6 +129,7 @@ public final class TaggedContextEntry {
         private String description = "";
         private float baseImportance = 0.5f;
         private long timestamp = System.currentTimeMillis();
+        private boolean associativeOnly = false;
 
         private Builder() {
         }
@@ -157,6 +167,12 @@ public final class TaggedContextEntry {
         /** 设置精确时间戳（默认为构建时的 System.currentTimeMillis()） */
         public Builder timestamp(long timestamp) {
             this.timestamp = timestamp;
+            return this;
+        }
+
+        /** 设置是否为隐式联想专属标签 */
+        public Builder associativeOnly(boolean associativeOnly) {
+            this.associativeOnly = associativeOnly;
             return this;
         }
 

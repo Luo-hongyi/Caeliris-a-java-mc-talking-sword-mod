@@ -9,10 +9,10 @@
 
 ### LLM 交互触发器（已实现）
 
-| 类名 | 触发方式 | 采集器 | 产生任务 |
-|---|---|---|---|
-| `RightClickTrigger` | 玩家右键使用武器 | Base + 截图 + 实体 + 环境 | `LLMInteractionTask` |
-| `BiomeChangeTrigger` | 进入新群系（由 TickEventWatcher 检测） | Base + 按配置动态组合 | `LLMInteractionTask` |
+| 类名 | 触发方式 | 采集器 | 产生任务 | Top-K 上限配置 |
+|---|---|---|---|---|
+| `RightClickTrigger` | 玩家右键使用武器 | Base + 截图 + 实体 + 环境... | `LLMInteractionTask` | `TOP_K_RIGHT_CLICK` |
+| `BiomeChangeTrigger` | 进入新群系（由 TickEventWatcher 检测） | Base + 按配置动态组合 | `LLMInteractionTask` | `TOP_K_BIOME_CHANGE` |
 
 ### 记忆/反思触发器（骨架，待实现 Task）
 
@@ -76,6 +76,7 @@ if (shouldTrigger()) {
 - **忙检查**：`AgentSensor.fireTrigger()` 自动检查 Runtime 是否空闲
 - **主动触发器**应在 `fireTrigger` 前自行检查 `isRuntimeBusy()`
 - **配置开关**：建议在 `TalkingWeaponConfig` 中为新触发器添加启用/禁用开关
+- **注意力配额**：触发器通过 `getSourceName()` 定义了 `triggerSource`，它直接决定了环境数据塞给大模型时的 Top-K 截断上限值。如果在未显式匹配的情境下调用大模型聊天，系统会自动回落到通用的配置上限。
 
 ## 可扩展方向
 

@@ -101,6 +101,11 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue WEIGHT_BLOCK;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_TOOL;
 
+        // —— 记忆容量 (Top-K) ——
+        public static final ForgeConfigSpec.IntValue TOP_K_RIGHT_CLICK;
+        public static final ForgeConfigSpec.IntValue TOP_K_BIOME_CHANGE;
+        public static final ForgeConfigSpec.IntValue TOP_K_CHAT;
+
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
 
@@ -249,6 +254,14 @@ public final class TalkingWeaponConfig {
                 WEIGHT_CONSUMABLE = builder.defineInRange("consumable", 1.0, 0.0, 10.0);
                 WEIGHT_BLOCK = builder.defineInRange("block", 1.0, 0.0, 10.0);
                 WEIGHT_TOOL = builder.defineInRange("tool", 1.0, 0.0, 10.0);
+                builder.pop();
+
+                // ── 记忆容量 (Top-K) ──────────────────────────────────
+                builder.push("memory_capacity");
+                builder.comment(" 各触发器的环境信息截断上限 (Top-K)");
+                TOP_K_RIGHT_CLICK = builder.comment("右键触发时，喂给大模型的环境信息条数上限").defineInRange("rightClick", 7, 1, 20);
+                TOP_K_BIOME_CHANGE = builder.comment("群系变化时，喂给大模型的环境信息条数上限").defineInRange("biomeChange", 5, 1, 20);
+                TOP_K_CHAT = builder.comment("对话触发时，喂给大模型的环境信息条数上限").defineInRange("chat", 7, 1, 20);
                 builder.pop();
 
                 // ── Agent 行为 ─────────────────────────────────────────

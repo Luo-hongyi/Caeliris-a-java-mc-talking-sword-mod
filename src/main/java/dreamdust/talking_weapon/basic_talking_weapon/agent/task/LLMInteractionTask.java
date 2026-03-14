@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
@@ -17,6 +18,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.TraitEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -26,6 +28,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -103,11 +106,15 @@ public class LLMInteractionTask extends AgentTask {
             if (isCancelled())
                 return;
 
-            // 1.5. 从配置读取人格身份写入记忆
-            String configIdentity = PromptRegistry.getInstance().getSystemIdentity();
-            if (configIdentity != null && !configIdentity.isBlank()) {
-                memory.setIdentity(configIdentity);
-            }
+            // 1.5. 从配置读取角色背景与性格，组合后作为 Identity 写入记忆
+            String bg = PromptRegistry.getInstance().getRoleBackground();
+            String per = PromptRegistry.getInstance().getRolePersonality();
+            StringBuilder idBuilder = new StringBuilder();
+            if (bg != null && !bg.isBlank())
+                idBuilder.append("[Role Background]\n").append(bg).append("\n\n");
+            if (per != null && !per.isBlank())
+                idBuilder.append("[Role Personality]\n").append(per).append("\n");
+            memory.setIdentity(idBuilder.toString().trim());
 
             // 中间层：读取 outputSchema
             EnumSet<LLMOutputSchema> outputSchema = resolveOutputSchema();
@@ -182,7 +189,11 @@ public class LLMInteractionTask extends AgentTask {
 
             // 8. 更新记忆
             String speechForMemory = agentResponse.hasSpeech() ? agentResponse.getSpeech() : "(沉默)";
-            memory.addShortTerm(AgentMsg.userWithImage(userPrompt, screenshotBase64));
+            // 修正：只有真实玩家对话（如 triggerSource 为 player_chat）才使其作为 user message
+            // 计入短期记忆，以防各类触发器的系统提示词污染记忆
+            if ("player_chat".equals(ctx.getTriggerSource())) {
+                memory.addShortTerm(AgentMsg.userWithImage(userPrompt, screenshotBase64));
+            }
             memory.addShortTerm(AgentMsg.assistant(speechForMemory));
 
             // ── 日志结束 ──
@@ -233,14 +244,44 @@ public class LLMInteractionTask extends AgentTask {
         // Agent 运行时状态
         sb.append(state.toPromptSnippet()).append("\n");
 
-        // 收集当前帧所有活跃的 FocusTag，供 Persona 词条筛选使用
-        Set<FocusTag> activeTags = new HashSet<>();
+        // 收集当前帧所有活跃的 FocusTag 和 DetailTag，供 Persona 词条与隐式记忆筛选使用
+        Set<FocusTag> activeFocusTags = new HashSet<>();
+        Set<String> activeDetailTags = new HashSet<>();
+        TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
+
         for (TaggedContextEntry entry : ctx.getTaggedEntries()) {
-            activeTags.addAll(entry.getFocusTags());
+            activeFocusTags.addAll(entry.getFocusTags());
+            for (DetailTag dt : entry.getDetailTags()) {
+                String rawTag = dt.toString();
+                activeDetailTags.add(rawTag);
+                // 展开预设的额外环境语义（Extras）供记忆联想匹配
+                activeDetailTags.addAll(tagDict.getExtras(rawTag));
+            }
         }
 
-        // Agent 人格画像（按当前 FocusTag 筛选刻条）
-        String personaSnippet = persona.toPromptSnippet(activeTags);
+        // 找到哪些 DetailTag 成功触发了性格词条联想
+        Set<String> triggeringDetailTags = new HashSet<>();
+        List<TraitEntry> activeTraits = new ArrayList<>();
+        for (TraitEntry t : persona.getTraits()) {
+            boolean triggered = false;
+            // 1. 通过 FocusTag 触发
+            if (t.getAssociatedTag() != null && activeFocusTags.contains(t.getAssociatedTag())) {
+                triggered = true;
+            }
+            // 2. 通过 DetailTag 联想触发
+            for (String dt : t.getDetailTags()) {
+                if (activeDetailTags.contains(dt)) {
+                    triggered = true;
+                    triggeringDetailTags.add(dt);
+                }
+            }
+            if (triggered) {
+                activeTraits.add(t);
+            }
+        }
+
+        // Agent 人格画像（直接传入筛选好的词条）
+        String personaSnippet = persona.toPromptSnippet(activeTraits);
         if (!personaSnippet.isBlank()) {
             sb.append(personaSnippet).append("\n");
         }
@@ -258,22 +299,42 @@ public class LLMInteractionTask extends AgentTask {
             });
         }
 
-        // 标签化上下文（结构化信息，经字典翻译后注入）
-        List<TaggedContextEntry> taggedEntries = ctx.getTaggedEntries();
-        if (!taggedEntries.isEmpty()) {
-            TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
+        // 标签化上下文（结构化信息，经过注意力过滤后注入）
+        List<TaggedContextEntry> rawEntries = ctx.getTaggedEntries();
+        if (!rawEntries.isEmpty()) {
             LocationRegistry locationReg = LocationRegistry.getInstance();
+            
+            int topK = TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get();
+            String source = ctx.getTriggerSource();
+            if ("biome_change".equals(source)) {
+                topK = TalkingWeaponConfig.TOP_K_BIOME_CHANGE.get();
+            } else if ("player_chat".equals(source)) {
+                topK = TalkingWeaponConfig.TOP_K_CHAT.get();
+            }
+            
+            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, 0.2f, state.getConcentration());
 
             sb.append("[Tagged Context]\n");
-            for (TaggedContextEntry entry : taggedEntries) {
-                float weight = getAttentionWeight(entry.getFocusTags());
-                float finalImportance = entry.getBaseImportance() * weight;
+            for (TaggedContextEntry entry : filteredEntries) {
+                // 如果是隐式标签，且它的 detailTags 没有一个命中 triggeringDetailTags，则完全跳过
+                if (entry.isAssociativeOnly()) {
+                    boolean triggered = false;
+                    for (DetailTag dt : entry.getDetailTags()) {
+                        if (triggeringDetailTags.contains(dt.toString())) {
+                            triggered = true;
+                            break;
+                        }
+                    }
+                    if (!triggered) {
+                        continue;
+                    }
+                }
+
+                float finalScore = AttentionFilter.calculateFinalScore(entry, state.getConcentration());
 
                 sb.append("- [").append(entry.getFocusTags()).append("] ");
                 sb.append(entry.getDescription());
-                if (weight != 1.0f) {
-                    sb.append(String.format(" (重要度修正: %.1f)", finalImportance));
-                }
+                sb.append(String.format(" (主观重要度: %.2f)", finalScore));
 
                 if (!entry.getDetailTags().isEmpty()) {
                     java.util.List<String> translated = new java.util.ArrayList<>();
@@ -286,13 +347,26 @@ public class LLMInteractionTask extends AgentTask {
                         } else {
                             String desc = tagDict.describe(raw);
                             translated.add(desc != null ? desc : raw);
+
+                            // 若存在衍生的 Extras 预设标签，也尝试输出其自然语言描述
+                            List<String> extras = tagDict.getExtras(raw);
+                            if (!extras.isEmpty()) {
+                                List<String> extraDescs = tagDict.describeAll(extras);
+                                if (!extraDescs.isEmpty()) {
+                                    translated.add("附带特征: " + String.join(", ", extraDescs));
+                                }
+                            }
                         }
                     }
-                    sb.append(" (").append(String.join(", ", translated)).append(")");
+                    sb.append(" (").append(String.join("; ", translated)).append(")");
                 }
                 sb.append("\n");
             }
         }
+
+        // 动态接入 FocusTag 和 Emotion 类型描述段落（可插拔）
+        sb.append("\n").append(PromptRegistry.getInstance().getFocusTagDescription()).append("\n");
+        sb.append("\n").append(PromptRegistry.getInstance().getEmotionTypeDescription()).append("\n");
 
         // 动态 JSON 输出格式指令（根据 outputSchema 拼装）
         sb.append(buildOutputFormatInstruction(outputSchema));
@@ -339,50 +413,4 @@ public class LLMInteractionTask extends AgentTask {
         return sb.toString();
     }
 
-    private float getAttentionWeight(java.util.Set<FocusTag> tags) {
-        if (tags == null || tags.isEmpty())
-            return 1.0f;
-        double maxWeight = 0.0;
-        for (FocusTag tag : tags) {
-            double w = 1.0;
-            switch (tag) {
-                case COMBAT:
-                    w = TalkingWeaponConfig.WEIGHT_COMBAT.get();
-                    break;
-                case MOVEMENT:
-                    w = TalkingWeaponConfig.WEIGHT_MOVEMENT.get();
-                    break;
-                case LABOR:
-                    w = TalkingWeaponConfig.WEIGHT_LABOR.get();
-                    break;
-                case CREATION:
-                    w = TalkingWeaponConfig.WEIGHT_CREATION.get();
-                    break;
-                case SOCIAL:
-                    w = TalkingWeaponConfig.WEIGHT_SOCIAL.get();
-                    break;
-                case LANDSCAPE:
-                    w = TalkingWeaponConfig.WEIGHT_LANDSCAPE.get();
-                    break;
-                case HAZARD:
-                    w = TalkingWeaponConfig.WEIGHT_HAZARD.get();
-                    break;
-                case STATUS:
-                    w = TalkingWeaponConfig.WEIGHT_STATUS.get();
-                    break;
-                case CONSUMABLE:
-                    w = TalkingWeaponConfig.WEIGHT_CONSUMABLE.get();
-                    break;
-                case BLOCK:
-                    w = TalkingWeaponConfig.WEIGHT_BLOCK.get();
-                    break;
-                case TOOL:
-                    w = TalkingWeaponConfig.WEIGHT_TOOL.get();
-                    break;
-            }
-            if (w > maxWeight)
-                maxWeight = w;
-        }
-        return (float) maxWeight;
     }
-}

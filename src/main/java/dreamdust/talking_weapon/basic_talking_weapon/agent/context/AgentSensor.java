@@ -94,6 +94,22 @@ public class AgentSensor {
         // 3. 将触发器专属的 user prompt 写入 extras
         builder.extra("user_prompt", trigger.getUserPrompt());
 
+        // 3.5 注入 AgentState 中的渴望为 TaggedContextEntry
+        dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState state = runtime.getState();
+        if (state.getCurrentDesireTag() != null) {
+            String desc = state.getDesireDescription();
+            if (desc == null || desc.isBlank()) {
+                desc = "内心的渴望...";
+            }
+            builder.addTaggedEntry(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry
+                    .builder()
+                    .focus(state.getCurrentDesireTag())
+                    .detail(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag.STATE, "desire")
+                    .description("当前渴望: " + desc)
+                    .importance(0.8f) // 较高权重
+                    .build());
+        }
+
         AgentContext context = builder.build();
 
         // 2.5. 记录 Collector 采集结果
