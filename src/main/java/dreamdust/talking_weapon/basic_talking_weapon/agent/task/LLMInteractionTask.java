@@ -232,6 +232,9 @@ public class LLMInteractionTask extends AgentTask {
             sb.append(identity).append("\n\n");
         }
 
+        // 认知规则
+        sb.append(PromptRegistry.getInstance().getSystemCognitionRule()).append("\n\n");
+
         // 长期记忆摘要
         if (!memory.getLongTerm().isEmpty()) {
             sb.append("[Long-term Memory]\n");
@@ -286,17 +289,10 @@ public class LLMInteractionTask extends AgentTask {
             sb.append(personaSnippet).append("\n");
         }
 
-        // 当前上下文（环境基础信息）
-        sb.append("[Context] ").append(ctx.toString()).append("\n");
-
-        // 扩展上下文（各 Collector 采集，排除 user_prompt 和 output_schema）
-        if (!ctx.getExtras().isEmpty()) {
-            sb.append("[Extra Context]\n");
-            ctx.getExtras().forEach((key, value) -> {
-                if (!"user_prompt".equals(key) && !"output_schema".equals(key)) {
-                    sb.append("- ").append(key).append(": ").append(value).append("\n");
-                }
-            });
+        // 明确指令与当前任务
+        String userPrompt = ctx.getExtra("user_prompt");
+        if (userPrompt != null && !userPrompt.isEmpty()) {
+            sb.append("[User Instructions]\n").append(userPrompt).append("\n\n");
         }
 
         // 标签化上下文（结构化信息，经过注意力过滤后注入）
@@ -334,7 +330,7 @@ public class LLMInteractionTask extends AgentTask {
 
                 sb.append("- [").append(entry.getFocusTags()).append("] ");
                 sb.append(entry.getDescription());
-                sb.append(String.format(" (主观重要度: %.2f)", finalScore));
+                sb.append(String.format(" (客观重要度: %.2f -> 主观得分: %.2f)", entry.getBaseImportance(), finalScore));
 
                 if (!entry.getDetailTags().isEmpty()) {
                     java.util.List<String> translated = new java.util.ArrayList<>();

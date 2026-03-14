@@ -4,17 +4,12 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 
 /**
  * 玩家环境采集器：采集与玩家直接相关的环境细节。
@@ -39,67 +34,52 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         if (player == null || level == null)
             return;
 
-        // ── 维度 ──────────────────────────────────────────
-        ResourceKey<Level> dimKey = level.dimension();
-        builder.extra("dimension", dimKey.location().toString());
-
-        // ── 光照等级 ──────────────────────────────────────
-        BlockPos playerPos = player.blockPosition();
-        int blockLight = level.getBrightness(LightLayer.BLOCK, playerPos);
-        int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
-        builder.extra("light_level", "block=" + blockLight + ", sky=" + skyLight);
-
         // ── 标签：维度 ──
+        ResourceKey<Level> dimKey = level.dimension();
         String dimId = dimKey.location().toString();
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(FocusTag.LANDSCAPE)
                 .detail(DetailTag.DIM, dimId)
-                .description("当前维度: " + dimId)
+                .description("主人目前身处于: " + dimId)
                 .importance(0.3f)
                 .build());
 
         // ── 标签：光照等级 ──
+        BlockPos playerPos = player.blockPosition();
+        int blockLight = level.getBrightness(LightLayer.BLOCK, playerPos);
+        int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
         int effectiveLight = Math.max(blockLight, skyLight);
         String lightState = effectiveLight < 7 ? "light_dark" : "light_bright";
-        float lightImportance = effectiveLight < 7 ? 0.5f : 0.1f;
+        float lightImportance = effectiveLight < 7 ? 0.3f : 0.1f;
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(effectiveLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
                 .detail(DetailTag.STATE, lightState)
-                .description("光照等级: block=" + blockLight + ", sky=" + skyLight + " (有效=" + effectiveLight + ")")
+                .description("主人周围的环境光照阴暗程度感知为: " + (effectiveLight < 7 ? "昏暗且危险 (容易生成怪物)" : "明亮安全"))
                 .importance(lightImportance)
                 .build());
 
-        // ── 主手物品 ──────────────────────────────────────
+        // ── 标签：主手物品 ──
         ItemStack mainHand = player.getMainHandItem();
         if (!mainHand.isEmpty()) {
             String itemName = mainHand.getHoverName().getString();
-            builder.extra("held_item", itemName);
-
-            // ── 标签：主手物品 ──
             String itemId = net.minecraftforge.registries.ForgeRegistries.ITEMS
                     .getKey(mainHand.getItem()).toString();
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.TOOL)
                     .detail(DetailTag.ITEM, itemId)
-                    .description("主手持有: " + itemName)
+                    .description("主人的手中正紧紧握着: " + itemName)
                     .importance(0.2f)
                     .build());
-        } else {
-            builder.extra("held_item", "空手");
         }
 
-        // ── 经验等级 ──────────────────────────────────────
-        builder.extra("xp_level", String.valueOf(player.experienceLevel));
-
-        // ── 准星目标方块 ──────────────────────────────────
-        Minecraft mc = Minecraft.getInstance();
-        HitResult hitResult = mc.hitResult;
-        if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK) {
-            BlockHitResult blockHit = (BlockHitResult) hitResult;
-            BlockPos targetPos = blockHit.getBlockPos();
-            BlockState blockState = level.getBlockState(targetPos);
-            String blockName = blockState.getBlock().getName().getString();
-            builder.extra("looking_at_block", blockName);
+        // ── 标签：经验等级 ──
+        if (player.experienceLevel > 0) {
+            builder.addTaggedEntry(TaggedContextEntry.builder()
+                    .focus(FocusTag.STATUS)
+                    .detail(DetailTag.STATE, "xp_level")
+                    .description("主人当前积攒的经验等级为: " + player.experienceLevel)
+                    .importance(0.1f)
+                    .build());
         }
     }
 }

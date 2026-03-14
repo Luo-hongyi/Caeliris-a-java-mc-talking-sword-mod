@@ -61,6 +61,10 @@ public final class PromptRegistry {
         return get("role_personality", "你有些迷茫，但对冒险充满好奇。");
     }
 
+    public String getSystemCognitionRule() {
+        return get("system_cognition_rule", "【核心认知规则】你是一把被玩家携带在身边的有自我意识的武器。在接下来的 [Tagged Context] 中，所有的环境交互、移动、受伤、持有物品等物理状态，都是你的【主人/持有者】在经历。你只是通过感知连接获取到了这些信息，不要错误地认为是自己在进行物理活动。");
+    }
+
     public String getFocusTagDescription() {
         return get("focus_tag_description", "【系统设定 - FocusTag领域说明】\nCOMBAT: 战斗行为或意图\n...");
     }
