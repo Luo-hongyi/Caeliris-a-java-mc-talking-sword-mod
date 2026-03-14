@@ -322,6 +322,7 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         Button reloadPrompts = Button.builder(Component.literal("§b热重载提示词"), btn -> {
             PromptRegistry.reload();
+            dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry.reload();
             btn.setMessage(Component.literal("§a已完成重载"));
         }).bounds(0, 0, 100, 20).build();
 
