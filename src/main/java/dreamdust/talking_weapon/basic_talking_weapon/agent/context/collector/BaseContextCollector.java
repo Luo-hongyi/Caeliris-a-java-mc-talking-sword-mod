@@ -110,6 +110,7 @@ public class BaseContextCollector implements IContextCollector {
 
             // 将 tick 转为直观的时段描述
             String timeDesc = describeTimeOfDay(dayTime);
+            builder.extra("time_desc", timeDesc);
 
             // ── 标签：时间状态 ──
             String timeState = categorizeTime(dayTime);
@@ -118,6 +119,7 @@ public class BaseContextCollector implements IContextCollector {
                     .detail(DetailTag.STATE, timeState)
                     .description("感知到世界的时间是: " + timeDesc)
                     .importance(ImportanceRegistry.getInstance().get("base:time", 0.2f))
+                    .associativeOnly(true)
                     .build());
 
             // ── 标签：天气 ──
@@ -144,6 +146,7 @@ public class BaseContextCollector implements IContextCollector {
                             .detail(DetailTag.BIOME, biomeId)
                             .description("主人正身处于群落: " + biomeId)
                             .importance(ImportanceRegistry.getInstance().get("base:biome", 0.2f))
+                            .associativeOnly(true)
                             .build());
                 });
             }

@@ -312,8 +312,17 @@ public class LLMInteractionTask extends AgentTask {
             String blocksSummary = ctx.getExtra("surrounding_blocks_summary");
             String playerPos = ctx.getExtra("player_pos");
             String groundLevel = ctx.getExtra("ground_level");
-            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null) {
+            String timeDesc = ctx.getExtra("time_desc");
+            String biome = ctx.getBiome();
+
+            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null || timeDesc != null || biome != null) {
                 sb.append("[Supplementary Info]\n");
+                if (timeDesc != null || biome != null) {
+                    sb.append("- 环境: ");
+                    if (timeDesc != null) sb.append("时间为").append(timeDesc).append("  ");
+                    if (biome != null) sb.append("身处").append(biome);
+                    sb.append("\n");
+                }
                 if (playerPos != null) {
                     sb.append("- 主人当前坐标: ").append(playerPos);
                     if (groundLevel != null) sb.append("  地面高度Y=").append(groundLevel);
