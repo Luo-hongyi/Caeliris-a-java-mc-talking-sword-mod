@@ -95,6 +95,20 @@ public class SurroundingBlocksCollector implements IContextCollector {
             }
         }
 
+        // --- 生成方块统计概述 (extras) ---
+        List<Map.Entry<String, Integer>> sortedBlocks = new ArrayList<>(blockCounts.entrySet());
+        sortedBlocks.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+        int topN = Math.min(5, sortedBlocks.size());
+        if (topN > 0) {
+            StringBuilder blockSummary = new StringBuilder();
+            for (int i = 0; i < topN; i++) {
+                Map.Entry<String, Integer> entry = sortedBlocks.get(i);
+                if (i > 0) blockSummary.append(", ");
+                blockSummary.append(entry.getKey()).append("×").append(entry.getValue());
+            }
+            builder.extra("surrounding_blocks_summary", "周围主要方块: " + blockSummary);
+        }
+
         // --- 生成隐式关联方块 (Associative Only) ---
         for (Map.Entry<String, Integer> entry : blockCounts.entrySet()) {
             builder.addTaggedEntry(TaggedContextEntry.builder()

@@ -46,7 +46,15 @@ public enum LLMOutputSchema {
     SPEECH,
 
     /** 情绪更新：返回新情绪名和强度值，更新 AgentState */
-    EMOTION_UPDATE;
+    EMOTION_UPDATE,
+
+    // ── 提示词段落开关（不影响 JSON 输出格式，仅控制 system prompt 中是否注入对应段落） ──
+
+    /** 在 system prompt 中注入 FocusTag 领域说明段落 */
+    FOCUS_TAG_GUIDE,
+
+    /** 在 system prompt 中注入 EmotionType 类型说明段落 */
+    EMOTION_TYPE_GUIDE;
 
     /**
      * 默认 Schema：适用于大多数普通对话触发器。
@@ -61,6 +69,6 @@ public enum LLMOutputSchema {
      * 包含发言和情绪更新，省略详细的内心独白以节省 Token。
      */
     public static EnumSet<LLMOutputSchema> emotionAwareSchema() {
-        return EnumSet.of(THINKING, SPEECH, EMOTION_UPDATE);
+        return EnumSet.of(THINKING, SPEECH, EMOTION_UPDATE, FOCUS_TAG_GUIDE, EMOTION_TYPE_GUIDE);
     }
 }

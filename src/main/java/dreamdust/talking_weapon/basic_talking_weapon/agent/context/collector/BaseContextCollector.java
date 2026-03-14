@@ -37,6 +37,24 @@ public class BaseContextCollector implements IContextCollector {
                     .foodLevel(player.getFoodData().getFoodLevel())
                     .pos(player.getX(), player.getY(), player.getZ());
 
+            // ── 扩展数据：坐标与地面高度 ──
+            int px = (int) player.getX(), py = (int) player.getY(), pz = (int) player.getZ();
+            builder.extra("player_pos", String.format("(%d, %d, %d)", px, py, pz));
+
+            // 从玩家脚下向下扫描找到地面 Y
+            if (level != null) {
+                net.minecraft.core.BlockPos scan = player.blockPosition().below();
+                int groundY = py;
+                for (int i = 0; i < 64; i++) {
+                    if (!level.getBlockState(scan).isAir()) {
+                        groundY = scan.getY();
+                        break;
+                    }
+                    scan = scan.below();
+                }
+                builder.extra("ground_level", String.valueOf(groundY));
+            }
+
             // ── 标签：生命状态 ──
             float healthPct = player.getHealth() / Math.max(player.getMaxHealth(), 1f);
             String healthState;

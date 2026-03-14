@@ -322,11 +322,26 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         Button reloadPrompts = Button.builder(Component.literal("§b热重载提示词"), btn -> {
             PromptRegistry.reload();
-            dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry.reload();
             btn.setMessage(Component.literal("§a已完成重载"));
         }).bounds(0, 0, 100, 20).build();
 
         configList.addEntry(new TwoButtonEntry(left, rowWidth, openPrompts, reloadPrompts));
+
+        // ── 客观重要度管理 ──
+        configList.addEntry(new LabelEntry("§e▸ 客观重要度配置 (importance.json)"));
+        configList.addEntry(new LabelEntry("§7调整 Agent 对各类游戏事件（如战斗、光照、天气）的关注权重，0~1，数值越高越优先进入提示词。"));
+
+        Button openImportance = Button.builder(Component.literal("打开重要度文件"), btn -> {
+            Util.getPlatform().openUri(
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry.getConfigPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        Button reloadImportance = Button.builder(Component.literal("§b热重载重要度"), btn -> {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry.reload();
+            btn.setMessage(Component.literal("§a已完成重载"));
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, openImportance, reloadImportance));
 
         // ── 日志管理 ──
         configList.addEntry(new LabelEntry("§e▸ 日志管理"));

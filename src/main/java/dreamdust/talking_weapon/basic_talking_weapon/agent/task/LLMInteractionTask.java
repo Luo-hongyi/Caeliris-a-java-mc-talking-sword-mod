@@ -297,6 +297,35 @@ public class LLMInteractionTask extends AgentTask {
 
         // 标签化上下文（结构化信息，经过注意力过滤后注入）
         List<TaggedContextEntry> rawEntries = ctx.getTaggedEntries();
+
+        // ── 日志：打印所有采集到的 extras 供调试分析 ──
+        if (!ctx.getExtras().isEmpty()) {
+            StringBuilder extrasLog = new StringBuilder("[Extras Dump]\n");
+            for (java.util.Map.Entry<String, String> e : ctx.getExtras().entrySet()) {
+                extrasLog.append("  ").append(e.getKey()).append(" = ").append(e.getValue()).append("\n");
+            }
+            AgentLogger.logDebug(extrasLog.toString());
+
+            // 仅将简短的概述注入提示词（如存在）
+            String nearbyCreatures = ctx.getExtra("nearby_creatures");
+            String nearbyObjects = ctx.getExtra("nearby_objects");
+            String blocksSummary = ctx.getExtra("surrounding_blocks_summary");
+            String playerPos = ctx.getExtra("player_pos");
+            String groundLevel = ctx.getExtra("ground_level");
+            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null) {
+                sb.append("[Supplementary Info]\n");
+                if (playerPos != null) {
+                    sb.append("- 主人当前坐标: ").append(playerPos);
+                    if (groundLevel != null) sb.append("  地面高度Y=").append(groundLevel);
+                    sb.append("\n");
+                }
+                if (nearbyCreatures != null) sb.append("- 附近生物: ").append(nearbyCreatures).append("\n");
+                if (nearbyObjects != null) sb.append("- 附近实体: ").append(nearbyObjects).append("\n");
+                if (blocksSummary != null) sb.append("- ").append(blocksSummary).append("\n");
+                sb.append("\n");
+            }
+        }
+
         if (!rawEntries.isEmpty()) {
             LocationRegistry locationReg = LocationRegistry.getInstance();
             
@@ -308,7 +337,7 @@ public class LLMInteractionTask extends AgentTask {
                 topK = TalkingWeaponConfig.TOP_K_CHAT.get();
             }
             
-            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, 0.2f, state.getConcentration());
+            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, 0.1f, state.getConcentration());
 
             sb.append("[Tagged Context]\n");
             for (TaggedContextEntry entry : filteredEntries) {
@@ -360,9 +389,13 @@ public class LLMInteractionTask extends AgentTask {
             }
         }
 
-        // 动态接入 FocusTag 和 Emotion 类型描述段落（可插拔）
-        sb.append("\n").append(PromptRegistry.getInstance().getFocusTagDescription()).append("\n");
-        sb.append("\n").append(PromptRegistry.getInstance().getEmotionTypeDescription()).append("\n");
+        // 动态接入 FocusTag 和 Emotion 类型描述段落（按触发器声明的 Schema 按需注入）
+        if (outputSchema.contains(LLMOutputSchema.FOCUS_TAG_GUIDE)) {
+            sb.append("\n").append(PromptRegistry.getInstance().getFocusTagDescription()).append("\n");
+        }
+        if (outputSchema.contains(LLMOutputSchema.EMOTION_TYPE_GUIDE)) {
+            sb.append("\n").append(PromptRegistry.getInstance().getEmotionTypeDescription()).append("\n");
+        }
 
         // 动态 JSON 输出格式指令（根据 outputSchema 拼装）
         sb.append(buildOutputFormatInstruction(outputSchema));

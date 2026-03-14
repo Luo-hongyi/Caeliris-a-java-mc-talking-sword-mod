@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.logging;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
@@ -129,12 +130,32 @@ public final class AgentLogger {
             w.println("标签化上下文 (Tagged Context, " + entries.size() + " 条):");
             for (int i = 0; i < entries.size(); i++) {
                 TaggedContextEntry entry = entries.get(i);
-                w.println("  [" + i + "] importance=" + String.format("%.1f", entry.getBaseImportance()));
+                float subjectiveScore = AttentionFilter.calculateFinalScore(entry, 0.5f);
+                w.println("  [" + i + "] importance=" + String.format("%.2f", entry.getBaseImportance())
+                        + " subjective=" + String.format("%.2f", subjectiveScore)
+                        + (entry.isAssociativeOnly() ? " [ASSOCIATIVE]" : ""));
                 w.println("      focus:   " + entry.getFocusTags());
                 w.println("      details: " + entry.getDetailTags());
                 w.println("      desc:    " + entry.getDescription());
             }
         }
+
+        // ── 遗留对比：旧版 [Context] + [Extra Context] 的字段清单，供开发者查缺使用 ──
+        w.println("──────────────────────────────────────────");
+        w.println("遗留对比: 旧版提示词中曾包含的原始字段 (现已迁移至 Tagged Context)");
+        w.println("  [Context] health=" + context.getHealth() + "/" + context.getMaxHealth()
+                + ", food=" + context.getFoodLevel()
+                + ", pos=(" + (int) context.getPosX() + "," + (int) context.getPosY() + "," + (int) context.getPosZ() + ")"
+                + ", biome=" + context.getBiome()
+                + ", dayTime=" + context.getDayTime()
+                + ", raining=" + context.isRaining());
+        w.println("  [Extra Context] (extras 键值对 — 以下字段是否已被 Tagged Context 覆盖？)");
+        for (Map.Entry<String, String> e : extras.entrySet()) {
+            String key = e.getKey();
+            if (key.equals("user_prompt") || key.equals("output_schema")) continue;
+            w.println("    " + key + " = " + e.getValue());
+        }
+        w.println("──────────────────────────────────────────");
 
         w.println();
     }
@@ -324,6 +345,22 @@ public final class AgentLogger {
             w.println("│ " + line);
         }
         w.println("└──────────────────────────────────────────────────────────────");
+        w.println();
+    }
+
+    /**
+     * 记录调试信息（extras dump 等辅助数据）。
+     */
+    public static void logDebug(String debugContent) {
+        LogSession session = CURRENT_SESSION.get();
+        if (session == null)
+            return;
+        PrintWriter w = session.writer;
+
+        writeSectionHeader(w, "DEBUG");
+        for (String line : debugContent.split("\n")) {
+            w.println("│ " + line);
+        }
         w.println();
     }
 
