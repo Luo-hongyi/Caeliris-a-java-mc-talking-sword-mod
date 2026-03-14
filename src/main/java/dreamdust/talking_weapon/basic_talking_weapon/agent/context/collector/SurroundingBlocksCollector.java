@@ -68,10 +68,12 @@ public class SurroundingBlocksCollector implements IContextCollector {
         int waterCount = 0;
         int lavaCount = 0;
 
+        BlockPos scanCenter = playerPos.above(1);
+
         for (int dx = -scanRadius; dx <= scanRadius; dx++) {
             for (int dy = -scanRadius; dy <= scanRadius; dy++) {
                 for (int dz = -scanRadius; dz <= scanRadius; dz++) {
-                    BlockPos pos = playerPos.offset(dx, dy, dz);
+                    BlockPos pos = scanCenter.offset(dx, dy, dz);
                     BlockState state = level.getBlockState(pos);
 
                     // 跳过空气
@@ -97,7 +99,11 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
         // --- 生成方块统计概述 (extras) ---
         List<Map.Entry<String, Integer>> sortedBlocks = new ArrayList<>(blockCounts.entrySet());
-        sortedBlocks.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+        sortedBlocks.sort((a, b) -> {
+            double scoreA = a.getValue() * getBlockWeight(a.getKey());
+            double scoreB = b.getValue() * getBlockWeight(b.getKey());
+            return Double.compare(scoreB, scoreA);
+        });
         int topN = Math.min(5, sortedBlocks.size());
         if (topN > 0) {
             StringBuilder blockSummary = new StringBuilder();
@@ -227,5 +233,15 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     .importance(ImportanceRegistry.getInstance().get("env:cliff", 0.7f))
                     .build());
         }
+    }
+
+    private double getBlockWeight(String blockName) {
+        String lower = blockName.toLowerCase();
+        // 对常见的基础方块降低 0.5 的排序权重，避免它们总是占据 Top N
+        if (lower.contains("dirt") || lower.contains("stone") || lower.contains("泥土") || lower.contains("石头") 
+            || lower.contains("圆石") || lower.contains("深板岩") || lower.contains("沙砾") || lower.contains("凝灰岩")) {
+            return 0.5;
+        }
+        return 1.0;
     }
 }

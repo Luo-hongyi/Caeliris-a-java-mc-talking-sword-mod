@@ -47,7 +47,7 @@ public class LookingAtCollector implements IContextCollector {
             double dist = player.distanceTo(crosshairEntity);
 
             sb.append("正在看: ").append(name);
-            sb.append(" (距离 ").append(String.format("%.1f", dist)).append("格)");
+            sb.append(" (距离").append(dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(dist)).append(")");
 
             if (crosshairEntity instanceof LivingEntity living) {
                 sb.append(" [生命: ")
