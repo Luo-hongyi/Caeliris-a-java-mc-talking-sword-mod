@@ -5,6 +5,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.ICo
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMOutputSchema;
 
+
 import java.util.EnumSet;
 import java.util.List;
 
@@ -39,15 +40,28 @@ public interface IAgentTrigger {
     AgentTask createTask(AgentContext context);
 
     /**
-     * 返回此触发器专属的 user prompt。
+     * 返回本触发器的“用户消息”（UserMessage 文本）。
      * <p>
-     * 由 {@code AgentSensor} 在 fireTrigger 时写入
-     * {@code AgentContext.extras["user_prompt"]}，
-     * 供 {@code LLMInteractionTask} 读取。
+     * 这段文本用于描述“玩家刚刚做了什么 / 发生了什么事件”，
+     * 会由 {@code AgentSensor} 写入 {@code AgentContext.extras["user_message"]}，
+     * 并作为 {@code LLMInteractionTask} 的 UserMessage 内容发送给模型。
      *
-     * @return 用户提示词文本
+     * @return user message 文本
      */
-    default String getUserPrompt() {
+    default String getUserMessage() {
+        return "[OBSERVATION]";
+    }
+
+    /**
+     * 返回本触发器的“事件指令”（system 事件段落）。
+     * <p>
+     * 这段文本用于告诉模型“本轮需要如何回应/输出哪些字段”，
+     * 会由 {@code AgentSensor} 写入 {@code AgentContext.extras["event_instruction"]}，
+     * 并由 {@code LLMInteractionTask} 注入 system prompt 的 [Event Instructions] 段落。
+     *
+     * @return event instruction 文本
+     */
+    default String getEventInstruction() {
         return "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。";
     }
 

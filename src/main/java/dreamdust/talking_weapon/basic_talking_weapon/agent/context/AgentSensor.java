@@ -69,7 +69,7 @@ public class AgentSensor {
         }
 
         // 0. 开始日志会话
-        AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserPrompt());
+        AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
 
         // 1. 创建 Builder，设置基础元信息
         Minecraft mc = Minecraft.getInstance();
@@ -91,8 +91,9 @@ public class AgentSensor {
             }
         }
 
-        // 3. 将触发器专属的 user prompt 写入 extras
-        builder.extra("user_prompt", trigger.getUserPrompt());
+        // 3. 将触发器的两段式 prompt 写入 extras
+        builder.extra("user_message", trigger.getUserMessage());
+        builder.extra("event_instruction", trigger.getEventInstruction());
 
         // 3.5 注入 AgentState 中的渴望为 TaggedContextEntry
         dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState state = runtime.getState();

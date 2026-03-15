@@ -44,12 +44,15 @@ agent/
 ├── state/                          ← 显式状态
 │   └── AgentState.java              — 情绪 Mood 枚举 + 熟悉度 + 当前目标
 ├── memory/                         ← 记忆系统
-│   ├── AgentMsg.java                — 不可变消息 (Role/Content/Image/Metadata)
+│   ├── AgentMsg.java                — 兼容的轻量消息体 (Role/Content)
+│   ├── AgentOutputRecord.java       — Agent 自身输出的行为记录 (语音/内心独白)
+│   ├── InteractionTurn.java         — 完整的单轮回合（含 TriggerSource、User Prompt 与产生的 Output 列表）
+│   ├── STMPool.java                 — 短期记忆聚合池：收集本纪元的全局 Context Entries + Interaction回合
 │   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
 │   ├── ActionRecord.java            — 极轻量动作记录（TTL 刷新 + 全缓冲区扫描合并）
 │   ├── ActionBuffer.java            — 环形动作缓冲区（3min 滑动窗口淘汰，支持 drainTo 已读池）
-│   ├── MemoryRecord.java            — 剑视角深度记忆切片（不可变，Builder模式）
-│   └── AgentMemory.java             — 四池记忆：ActionBuffer(未读) / ConsumedActions(已读) / ChatHistory / MemoryRecords
+│   ├── LTMEntry.java                — 长期记忆切片（基于Tag检索，含重要度和清晰度衰减）
+│   └── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
 │   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆
@@ -107,7 +110,8 @@ TalkingSword.use()
               ├─ model.generate(systemMsg, userMsg)
               ├─ SpeechAction("剑：" + reply).perform()
               │    └─ 逐行提交到主线程 ActionBar
-              └─ memory.addShortTerm(user + assistant)
+              ├─ STMPool.pushInteractionTurn() ← 将这一个回合的操作收录至短期记忆池
+              └─ STMPool自动淘汰逻辑触发
 ```
 
 ### 被动触发（TickEventWatcher）
@@ -230,7 +234,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 |------|------|
 | **感知** | `AgentSensor` + `IContextCollector` — 模块化采集器组合 → 不可变 `AgentContext` |
 | **触发** | `IAgentTrigger` — 声明采集器列表 + 专属 prompt + 任务类型，支持被动/主动两种模式 |
-| **记忆** | `AgentMemory` — 三池：ActionBuffer(动作流) / ChatHistory(对话窗口) / MemoryRecords(深度记忆) |
+| **记忆** | `AgentMemory` — 四级架构：Identity / ActionBuffer / STMPool / LTMRecords |
 | **状态** | `AgentState` — 情绪(8种Mood) + 熟悉度(0-100) + 当前目标 |
 | **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理（JSON输出） |
 | **行动** | `SpeechAction` / `SoundAction` / `EmoteAction` — 主线程执行 |

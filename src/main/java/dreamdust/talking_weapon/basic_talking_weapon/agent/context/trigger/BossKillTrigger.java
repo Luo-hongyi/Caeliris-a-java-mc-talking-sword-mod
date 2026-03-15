@@ -45,7 +45,12 @@ public class BossKillTrigger implements IAgentTrigger {
     }
 
     @Override
-    public String getUserPrompt() {
+    public String getUserMessage() {
+        return "（你刚刚击败了一个强大的敌人）";
+    }
+
+    @Override
+    public String getEventInstruction() {
         return "你刚刚见证了 " + bossEntityId + " 被击败——这是一场史诗级的战斗！";
     }
 }

@@ -10,10 +10,10 @@ import java.util.List;
  * <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
  * <li><b>ActionBuffer</b> — 环形动作流，高频轻量，不触发 LLM</li>
  * <li><b>ChatHistory</b> — 对话消息滑动窗口（保留 {@link AgentMsg}）</li>
- * <li><b>MemoryRecords</b> — 剑视角的深度记忆切片列表</li>
+ * <li><b>LTMRecords</b> — 剑视角的深度记忆切片列表 / 偏好设定</li>
  * </ol>
  * <p>
- * 线程安全说明：ActionBuffer 自身线程安全；chatHistory 和 memoryRecords
+ * 线程安全说明：ActionBuffer 自身线程安全；ltmRecords
  * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
@@ -31,28 +31,24 @@ public class AgentMemory {
     private final ActionBuffer actionBuffer;
 
     // ═══════════════════════════════════════════════════════════════
-    // Layer 1.5: ConsumedActions (已读动作池)
+    // Layer 1.5: STMPool (短期记忆聚合池)
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * 存放已经被 RecentActionCollector 读取并喂给 LLM 的动作记录。
-     * 后续供 ReflectionTask（反思任务）或后台统计提取，防止阅后即焚导致彻底丢失。
+     * 短期记忆聚合池：存放当前纪元内的全量上下文条目和 Agent 自身产出。
+     * 供 LTM 合成任务读取，合成完成后清空。
      */
-    private final ActionBuffer consumedActions;
+    private final STMPool stmPool;
+
+    // ── ChatHistory (已废除，由 STMPool 替代) ─────────────────
+    // 注意：以前的 addShortTerm, clearChatHistory 等方法已被移除，现在回合历史统归 STMPool 管理。
 
     // ═══════════════════════════════════════════════════════════════
-    // Layer 2: ChatHistory（对话消息滑动窗口）
+    // Layer 3: LTMRecords（长期记忆切片库）
     // ═══════════════════════════════════════════════════════════════
 
-    private final List<AgentMsg> chatHistory;
-    private int chatHistoryCapacity;
-
-    // ═══════════════════════════════════════════════════════════════
-    // Layer 3: MemoryRecords（记忆切片库）
-    // ═══════════════════════════════════════════════════════════════
-
-    private final List<MemoryRecord> memoryRecords;
-    private int memoryRecordsCapacity;
+    private final List<LTMEntry> ltmRecords;
+    private int ltmRecordsCapacity;
 
     // ═══════════════════════════════════════════════════════════════
     // 长期记忆（压缩摘要，兼容旧流程）
@@ -64,13 +60,19 @@ public class AgentMemory {
     public AgentMemory() {
         this.identity = "";
         this.actionBuffer = new ActionBuffer(64);
-        this.consumedActions = new ActionBuffer(256); // 已读池容量大一些
-        this.chatHistory = new ArrayList<>();
-        this.chatHistoryCapacity = 20;
-        this.memoryRecords = new ArrayList<>();
-        this.memoryRecordsCapacity = 100;
+        this.stmPool = new STMPool();
+        this.ltmRecords = new ArrayList<>();
+        this.ltmRecordsCapacity = 100;
         this.longTerm = new ArrayList<>();
         this.longTermCapacity = 50;
+
+        // 加载外部的静态植入记忆
+        try {
+            List<LTMEntry> implanted = LTMStorage.loadGlobalImplantedMemories();
+            this.ltmRecords.addAll(implanted);
+        } catch (Exception e) {
+            System.err.println("[TalkingWeapon] Failed to load implanted LTM records: " + e.getMessage());
+        }
     }
 
     // ── Identity ─────────────────────────────────────────────────
@@ -89,79 +91,45 @@ public class AgentMemory {
         return actionBuffer;
     }
 
-    public ActionBuffer getConsumedActions() {
-        return consumedActions;
+    public STMPool getSTMPool() {
+        return stmPool;
     }
 
-    // ── ChatHistory ──────────────────────────────────────────────
+    // ── LTMRecords ────────────────────────────────────────────
 
     /**
-     * 追加一条消息到对话历史。超出容量时移除最旧的。
+     * 追加一条长期记忆 / 预设偏好。超出容量时移除最旧的（注意后续需要接入遗忘机制）。
      */
-    public void addChatMessage(AgentMsg msg) {
-        chatHistory.add(msg);
-        while (chatHistory.size() > chatHistoryCapacity) {
-            chatHistory.remove(0);
+    public void addLTMRecord(LTMEntry record) {
+        ltmRecords.add(record);
+        while (ltmRecords.size() > ltmRecordsCapacity) {
+            ltmRecords.remove(0);
         }
     }
 
-    /** 旧 API 兼容：addShortTerm → addChatMessage */
-    public void addShortTerm(AgentMsg msg) {
-        addChatMessage(msg);
-    }
-
-    public List<AgentMsg> getChatHistory() {
-        return Collections.unmodifiableList(chatHistory);
-    }
-
-    /** 旧 API 兼容 */
-    public List<AgentMsg> getShortTerm() {
-        return getChatHistory();
-    }
-
-    public void clearChatHistory() {
-        chatHistory.clear();
-    }
-
-    public int getChatHistoryCapacity() {
-        return chatHistoryCapacity;
-    }
-
-    public void setChatHistoryCapacity(int capacity) {
-        this.chatHistoryCapacity = capacity;
-    }
-
-    /** 旧 API 兼容 */
-    public int getShortTermCapacity() {
-        return chatHistoryCapacity;
-    }
-
-    public void setShortTermCapacity(int capacity) {
-        this.chatHistoryCapacity = capacity;
-    }
-
-    // ── MemoryRecords ────────────────────────────────────────────
-
     /**
-     * 追加一条记忆切片。超出容量时移除最旧的。
+     * 重载全局的植入记忆。清理现有记录中的 IMPLANTED 并重新读取加载。
      */
-    public void addMemoryRecord(MemoryRecord record) {
-        memoryRecords.add(record);
-        while (memoryRecords.size() > memoryRecordsCapacity) {
-            memoryRecords.remove(0);
+    public void reloadImplantedMemories() {
+        ltmRecords.removeIf(entry -> entry.getSourceType() == LTMEntry.SourceType.IMPLANTED);
+        try {
+            List<LTMEntry> implanted = LTMStorage.loadGlobalImplantedMemories();
+            ltmRecords.addAll(implanted);
+        } catch (Exception e) {
+            System.err.println("[TalkingWeapon] Failed to reload implanted LTM records: " + e.getMessage());
         }
     }
 
-    public List<MemoryRecord> getMemoryRecords() {
-        return Collections.unmodifiableList(memoryRecords);
+    public List<LTMEntry> getLtmRecords() {
+        return Collections.unmodifiableList(ltmRecords);
     }
 
-    public int getMemoryRecordsCapacity() {
-        return memoryRecordsCapacity;
+    public int getLtmRecordsCapacity() {
+        return ltmRecordsCapacity;
     }
 
-    public void setMemoryRecordsCapacity(int capacity) {
-        this.memoryRecordsCapacity = capacity;
+    public void setLtmRecordsCapacity(int capacity) {
+        this.ltmRecordsCapacity = capacity;
     }
 
     // ── Long-term（兼容旧流程） ──────────────────────────────────
@@ -209,7 +177,26 @@ public class AgentMemory {
             messages.add(AgentMsg.system(sb.toString()));
         }
 
-        messages.addAll(chatHistory);
+        for (InteractionTurn turn : stmPool.turnSnapshot()) {
+            // 用户输入：仅当为 player_chat 时才作为 USER 角色进入历史，
+            // 其他触发源的 prompt 属于系统事件指令，应在 system prompt 的事件段落中体现。
+            if (turn.getUserPrompt() != null && !turn.getUserPrompt().isEmpty()) {
+                if ("player_chat".equals(turn.getTriggerSource())) {
+                    if (turn.hasImage()) {
+                        messages.add(AgentMsg.userWithImage(turn.getUserPrompt(), turn.getUserScreenshotBase64()));
+                    } else {
+                        messages.add(AgentMsg.user(turn.getUserPrompt()));
+                    }
+                }
+            }
+            
+            // 剑灵行动（SPEECH / INNER_MONOLOGUE 等都以 assistant 角色进入历史，地位平等）
+            for (AgentOutputRecord record : turn.getAgentActions()) {
+                if (record.getText() == null || record.getText().isEmpty())
+                    continue;
+                messages.add(AgentMsg.assistant("[" + record.getType().name() + "] " + record.getText()));
+            }
+        }
         return messages;
     }
 
@@ -217,8 +204,8 @@ public class AgentMemory {
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
                 + ", actionBuffer=" + actionBuffer.size()
-                + ", chatHistory=" + chatHistory.size()
-                + ", memoryRecords=" + memoryRecords.size()
+                + ", stmPool=" + stmPool
+                + ", ltmRecords=" + ltmRecords.size()
                 + ", longTerm=" + longTerm.size() + "}";
     }
 }

@@ -39,11 +39,8 @@ public enum LLMOutputSchema {
     /** 推理草稿：LLM 的思考过程，不进记忆，仅记录在日志中 */
     THINKING,
 
-    /** 内心独白：剑灵的主观意识体验，对持有者不可见 */
-    INNER_MONOLOGUE,
-
-    /** 发言：对持有者说出口的话；字段缺失或空字符串表示沉默 */
-    SPEECH,
+    /** 数组形式的一系列行为：包含说的话、内心心理活动、法术释放、物理攻击等。 */
+    ACTIONS,
 
     /** 情绪更新：返回新情绪名和强度值，更新 AgentState */
     EMOTION_UPDATE,
@@ -58,17 +55,17 @@ public enum LLMOutputSchema {
 
     /**
      * 默认 Schema：适用于大多数普通对话触发器。
-     * 包含全部字段，但不含情绪更新。
+     * 包含推理和具体行为动作，但不含情绪更新。
      */
     public static EnumSet<LLMOutputSchema> defaultSchema() {
-        return EnumSet.of(THINKING, INNER_MONOLOGUE, SPEECH);
+        return EnumSet.of(THINKING, ACTIONS);
     }
 
     /**
      * 情绪感知 Schema：适用于高情绪化的触发事件。
-     * 包含发言和情绪更新，省略详细的内心独白以节省 Token。
+     * 包含行动和情绪更新。
      */
     public static EnumSet<LLMOutputSchema> emotionAwareSchema() {
-        return EnumSet.of(THINKING, SPEECH, EMOTION_UPDATE, FOCUS_TAG_GUIDE, EMOTION_TYPE_GUIDE);
+        return EnumSet.of(THINKING, ACTIONS, EMOTION_UPDATE, FOCUS_TAG_GUIDE, EMOTION_TYPE_GUIDE);
     }
 }

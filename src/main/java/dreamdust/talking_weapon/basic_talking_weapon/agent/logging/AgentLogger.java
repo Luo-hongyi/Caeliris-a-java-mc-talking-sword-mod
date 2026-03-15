@@ -5,7 +5,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilt
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
 import java.io.File;
@@ -54,9 +55,10 @@ public final class AgentLogger {
      * 开始一次新的日志会话。在 AgentSensor.fireTrigger() 开头调用。
      *
      * @param triggerSource 触发源名称（如 "right_click", "biome_change"）
-     * @param triggerReason 触发原因描述
+     * @param userMessage 本轮作为 UserMessage 发送的“动作/事件描述”
+     * @param eventInstruction 注入 system prompt 的事件指令
      */
-    public static void beginSession(String triggerSource, String triggerReason) {
+    public static void beginSession(String triggerSource, String userMessage, String eventInstruction) {
         try {
             Path dir = ensureLogDir();
             String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
@@ -78,7 +80,8 @@ public final class AgentLogger {
             // ── 第 1 段：触发器信息 ──
             writeSectionHeader(writer, "1. 触发器信息");
             writer.println("触发源:   " + triggerSource);
-            writer.println("触发原因: " + triggerReason);
+            writer.println("UserMessage: " + (userMessage == null ? "(null)" : userMessage));
+            writer.println("EventInstruction: " + (eventInstruction == null ? "(null)" : eventInstruction));
             writer.println();
         } catch (IOException e) {
             // 日志失败不阻塞游戏
@@ -152,7 +155,7 @@ public final class AgentLogger {
         w.println("  [Extra Context] (extras 键值对 — 以下字段是否已被 Tagged Context 覆盖？)");
         for (Map.Entry<String, String> e : extras.entrySet()) {
             String key = e.getKey();
-            if (key.equals("user_prompt") || key.equals("output_schema")) continue;
+            if (key.equals("user_message") || key.equals("event_instruction") || key.equals("output_schema")) continue;
             w.println("    " + key + " = " + e.getValue());
         }
         w.println("──────────────────────────────────────────");
@@ -231,17 +234,23 @@ public final class AgentLogger {
         }
         w.println();
 
-        w.println("  短期记忆 (" + memory.getShortTerm().size() + " 条):");
-        if (memory.getShortTerm().isEmpty()) {
+        java.util.List<InteractionTurn> turns = memory.getSTMPool().turnSnapshot();
+        w.println("  短期记忆回合 (" + turns.size() + " 轮):");
+        if (turns.isEmpty()) {
             w.println("    (空)");
         } else {
-            for (int i = 0; i < memory.getShortTerm().size(); i++) {
-                AgentMsg msg = memory.getShortTerm().get(i);
-                String content = msg.getContent();
-                if (content.length() > 120)
-                    content = content.substring(0, 120) + "...";
-                w.println("    [" + i + "] " + msg.getRole() + ": " + content
-                        + (msg.hasImage() ? " [+图片]" : ""));
+            for (int i = 0; i < turns.size(); i++) {
+                InteractionTurn turn = turns.get(i);
+                String p = turn.getUserPrompt();
+                if (p != null && p.length() > 60) p = p.substring(0, 60) + "...";
+                w.println("    [" + i + "] 触发: " + turn.getTriggerSource()
+                        + " | Prompt: " + (p != null ? p : "null")
+                        + (turn.hasImage() ? " [+图片]" : ""));
+                for (AgentOutputRecord rec : turn.getAgentActions()) {
+                    String t = rec.getText();
+                    if (t.length() > 60) t = t.substring(0, 60) + "...";
+                    w.println("        -> " + rec.getType() + ": " + t);
+                }
             }
         }
         w.println();
@@ -250,7 +259,7 @@ public final class AgentLogger {
     /**
      * 记录人格提示词和合成后的完整提示词。
      */
-    public static void logPrompts(String systemPrompt, String userPrompt, boolean hasScreenshot) {
+    public static void logPrompts(String systemPrompt, String userMessage, String eventInstruction, boolean hasScreenshot) {
         LogSession session = CURRENT_SESSION.get();
         if (session == null)
             return;
@@ -258,8 +267,8 @@ public final class AgentLogger {
 
         writeSectionHeader(w, "4. 提示词");
 
-        w.println("User Prompt:");
-        w.println("  " + userPrompt);
+        w.println("User Message:");
+        w.println("  " + userMessage);
         w.println("  附带截图: " + (hasScreenshot ? "是" : "否"));
         w.println();
 
@@ -319,8 +328,13 @@ public final class AgentLogger {
 
         writeSectionHeader(w, "4.7 解析后的结构化响应 (Parsed Response)");
         w.println("thinking:        " + (response.hasThinking() ? "(有)" : "(无)"));
-        w.println("inner_monologue: " + (response.hasInnerMonologue() ? "(有，见 4.5)" : "(无)"));
-        w.println("speech:          " + (response.hasSpeech() ? response.getSpeech() : "(沉默)"));
+        w.println("actions:         " + response.getActions().size() + " 个");
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse.ActionRequest req : response.getActions()) {
+            String contentSnippet = req.content != null && req.content.length() > 50 
+                    ? req.content.substring(0, 50) + "..." 
+                    : req.content;
+            w.println("  - [" + req.type + "] " + contentSnippet);
+        }
         w.println();
     }
 

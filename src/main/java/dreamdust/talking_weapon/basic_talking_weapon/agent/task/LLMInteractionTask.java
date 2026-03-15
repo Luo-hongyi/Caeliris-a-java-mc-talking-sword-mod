@@ -14,7 +14,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResp
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMsg;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
@@ -128,24 +130,33 @@ public class LLMInteractionTask extends AgentTask {
             // 3. 构建 LLM 请求
             ChatLanguageModel model = LLMAgentService.buildModel();
 
-            String userPrompt = ctx.getExtras().getOrDefault("user_prompt",
+            // 触发器的事件指令（归因到触发源），应作为 system prompt 的 [Event] 段落注入，
+            // 避免被模型误判为“玩家说的话”。
+            String triggerSrcForMsg = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
+            boolean isPlayerChat = "player_chat".equals(triggerSrcForMsg);
+
+            String eventInstruction = ctx.getExtras().getOrDefault("user_prompt",
                     "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
             String screenshotBase64 = ctx.getScreenshotBase64();
+
+            // user message 尽量只作为“观测载体”存在，避免污染玩家语气识别。
+            // 只有在 player_chat 场景下，才将其视为真实的玩家输入。
+            String userText = isPlayerChat ? eventInstruction : "[OBSERVATION]";
 
             UserMessage message;
             if (screenshotBase64 != null) {
                 message = UserMessage.from(
                         ImageContent.from(screenshotBase64, "image/png"),
-                        TextContent.from(userPrompt));
+                        TextContent.from(userText));
             } else {
-                message = UserMessage.from(TextContent.from(userPrompt));
+                message = UserMessage.from(TextContent.from(userText));
             }
 
             if (isCancelled())
                 return;
 
             // ── 日志：提示词 ──
-            AgentLogger.logPrompts(systemPrompt, userPrompt, screenshotBase64 != null);
+            AgentLogger.logPrompts(systemPrompt, userText, eventInstruction, screenshotBase64 != null);
 
             // 4. 调用 LLM
             Response<AiMessage> response = model.generate(
@@ -169,35 +180,48 @@ public class LLMInteractionTask extends AgentTask {
                 AgentLogger.logAction("emotion_update", eu.toString());
             }
 
-            // 7. 执行 SpeechAction（只有 speech 字段非空时才说话）
-            if (agentResponse.hasSpeech()) {
-                new SpeechAction("剑：" + agentResponse.getSpeech()).perform();
-            }
-
             // ── 日志：推理草稿 ──
             if (agentResponse.hasThinking()) {
                 AgentLogger.logThinking("[thinking]\n" + agentResponse.getThinking());
             }
 
-            // ── 日志：内心独白 ──
-            if (agentResponse.hasInnerMonologue()) {
-                AgentLogger.logThinking("[inner_monologue]\n" + agentResponse.getInnerMonologue());
+            // 7 & 8. 执行 actions 并存入 STM 记忆池
+            STMPool stmPool = AgentRuntime.getInstance().getMemory().getSTMPool();
+            String triggerSrc = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
+            List<AgentOutputRecord> records = new java.util.ArrayList<>();
+            
+            boolean spoke = false;
+            if (agentResponse.hasActions()) {
+                for (AgentResponse.ActionRequest req : agentResponse.getActions()) {
+                    if (req.type == null || req.content == null) continue;
+                    String t = req.type.toLowerCase();
+                    
+                    if ("speech".equals(t)) {
+                        new SpeechAction("剑：" + req.content).perform();
+                        AgentLogger.logAction("speech", req.content);
+                        records.add(new AgentOutputRecord(AgentOutputRecord.Type.SPEECH, req.content));
+                        spoke = true;
+                    } else if ("inner_monologue".equals(t)) {
+                        AgentLogger.logThinking("[inner_monologue]\n" + req.content);
+                        records.add(new AgentOutputRecord(AgentOutputRecord.Type.INNER_MONOLOGUE, req.content));
+                    } else {
+                        AgentLogger.logAction(t, req.content);
+                        // 未来扩展其他 action 会在此做分支，暂只记录日志
+                    }
+                }
             }
 
-            // ── 日志：Agent 行动 ──
-            AgentLogger.logAction("speech", agentResponse.hasSpeech() ? agentResponse.getSpeech() : "(沉默)");
-
-            // 8. 更新记忆
-            String speechForMemory = agentResponse.hasSpeech() ? agentResponse.getSpeech() : "(沉默)";
-            // 修正：只有真实玩家对话（如 triggerSource 为 player_chat）才使其作为 user message
-            // 计入短期记忆，以防各类触发器的系统提示词污染记忆
-            if ("player_chat".equals(ctx.getTriggerSource())) {
-                memory.addShortTerm(AgentMsg.userWithImage(userPrompt, screenshotBase64));
+            if (!spoke) {
+                AgentLogger.logAction("speech", "(沉默)");
             }
-            memory.addShortTerm(AgentMsg.assistant(speechForMemory));
 
-            // ── 日志结束 ──
-            AgentLogger.endSession();
+            InteractionTurn turn = new InteractionTurn(
+                    triggerSrc,
+                    eventInstruction,
+                    screenshotBase64,
+                    records
+            );
+            stmPool.pushInteractionTurn(turn);
 
         } catch (Throwable e) {
             if (!isCancelled()) {
@@ -289,14 +313,59 @@ public class LLMInteractionTask extends AgentTask {
             sb.append(personaSnippet).append("\n");
         }
 
-        // 明确指令与当前任务
+        // 事件指令与当前任务（归因到触发源，而不是玩家发言）
         String userPrompt = ctx.getExtra("user_prompt");
         if (userPrompt != null && !userPrompt.isEmpty()) {
-            sb.append("[User Instructions]\n").append(userPrompt).append("\n\n");
+            sb.append("[Event Instructions]\n").append(userPrompt).append("\n\n");
+        }
+
+        // ── 近期交互回合（STM） ──
+        // 将近期回合以“事件 -> 行动”的形式注入 system prompt，让 Agent 对眼前近况保持连续性。
+        // 注意：这里不会注入任何图片 Base64，只会标记 [+image]，避免 prompt 爆炸。
+        java.util.List<InteractionTurn> recentTurns = memory.getSTMPool().turnSnapshot();
+        if (!recentTurns.isEmpty()) {
+            sb.append("[Recent Interaction Turns]\n");
+            int maxTurns = 12;
+            int startIdx = Math.max(0, recentTurns.size() - maxTurns);
+            for (int i = startIdx; i < recentTurns.size(); i++) {
+                InteractionTurn t = recentTurns.get(i);
+                String src = t.getTriggerSource() != null ? t.getTriggerSource() : "unknown";
+                boolean chat = "player_chat".equals(src);
+
+                String p = t.getUserPrompt();
+                if (p != null && p.length() > 180) {
+                    p = p.substring(0, 180) + "...";
+                }
+
+                sb.append("- (").append(chat ? "PLAYER_CHAT" : "EVENT").append(") ")
+                        .append(src);
+                if (p != null && !p.isBlank()) {
+                    sb.append(" | instruction: ").append(p.replace("\n", " "));
+                }
+                if (t.hasImage()) {
+                    sb.append(" [+image]");
+                }
+                sb.append("\n");
+
+                for (AgentOutputRecord rec : t.getAgentActions()) {
+                    String text = rec.getText();
+                    if (text != null && text.length() > 200) {
+                        text = text.substring(0, 200) + "...";
+                    }
+                    sb.append("    -> ").append(rec.getType()).append(": ")
+                            .append(text != null ? text.replace("\n", " ") : "").append("\n");
+                }
+            }
+            sb.append("\n");
         }
 
         // 标签化上下文（结构化信息，经过注意力过滤后注入）
         List<TaggedContextEntry> rawEntries = ctx.getTaggedEntries();
+
+        // ── STM 写入：将所有采集到的上下文条目（未过滤）推入短期记忆池 ──
+        if (!rawEntries.isEmpty()) {
+            AgentRuntime.getInstance().getMemory().getSTMPool().pushContextAll(rawEntries);
+        }
 
         // ── 日志：打印所有采集到的 extras 供调试分析 ──
         if (!ctx.getExtras().isEmpty()) {
@@ -426,19 +495,15 @@ public class LLMInteractionTask extends AgentTask {
 
         boolean first = true;
         if (schema.contains(LLMOutputSchema.THINKING)) {
-            sb.append("  \"thinking\": \"(推理草稿：分析当前情境，决定说什么、想什么——仅作草稿，不记入记忆；可省略)\"");
+            sb.append("  \"thinking\": \"(推理草稿：分析当前情境，决定要做什么——仅作草稿，不记入记忆；可省略)\"");
             first = false;
         }
-        if (schema.contains(LLMOutputSchema.INNER_MONOLOGUE)) {
-            if (!first)
-                sb.append(",\n");
-            sb.append("  \"inner_monologue\": \"(剑灵的内心独白，对持有者不可见；可省略)\"");
-            first = false;
-        }
-        if (schema.contains(LLMOutputSchema.SPEECH)) {
-            if (!first)
-                sb.append(",\n");
-            sb.append("  \"speech\": \"(对持有者说出口的话；若沉默则省略或设为空字符串)\"");
+        if (schema.contains(LLMOutputSchema.ACTIONS)) {
+            if (!first) sb.append(",\n");
+            sb.append("  \"actions\": [\n");
+            sb.append("    { \"type\": \"inner_monologue\", \"content\": \"(剑灵的内心独白，对持有者不可见)\" },\n");
+            sb.append("    { \"type\": \"speech\", \"content\": \"(对持有者说出口的话)\" }\n");
+            sb.append("  ]");
             first = false;
         }
         if (schema.contains(LLMOutputSchema.EMOTION_UPDATE)) {

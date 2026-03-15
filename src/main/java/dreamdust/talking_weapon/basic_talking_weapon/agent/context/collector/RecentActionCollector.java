@@ -44,7 +44,7 @@ public class RecentActionCollector implements IContextCollector {
 
         // 【关键】阅后即焚：将已经被看到的动作转移至“已读池”中
         // 防止下一次右键重复看到同样的动作幻觉，但为后续的 反思任务 (ReflectionTask) 保留记录
-        actionBuffer.drainTo(AgentRuntime.getInstance().getMemory().getConsumedActions());
+        actionBuffer.clear(); // STM Pool 接管归档职能
 
         // 按 PrimaryFocusTag 进行分组
         java.util.Map<FocusTag, List<ActionRecord>> groupedRecords = actionBuffer.groupRecordsByFocus(records);

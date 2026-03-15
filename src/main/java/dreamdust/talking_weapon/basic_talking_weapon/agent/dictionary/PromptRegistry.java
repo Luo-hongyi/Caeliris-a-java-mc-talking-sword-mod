@@ -73,20 +73,21 @@ public final class PromptRegistry {
         return get("emotion_type_description", "【系统设定 - 情绪类型说明】\nNEUTRAL: 平静平衡\n...");
     }
 
-    public String getRightClickPrompt() {
-        return get("right_click_prompt", "请根据当前状态发表简短评论。");
+    /**
+     * per-trigger user message（UserMessage 文本）：描述玩家动作/事件。
+     * key: trigger.<source>.user_message
+     */
+    public String getTriggerUserMessage(String source) {
+        return get("trigger." + source + ".user_message", "[OBSERVATION]");
     }
 
-    public String getBiomeChangePrompt() {
-        return get("biome_change_prompt", "你进入了新群系{new_biome}，对此发表评论。");
-    }
-
-    public String getDimChangePrompt() {
-        return get("dim_change_prompt", "穿越了维度至 {dim}。");
-    }
-
-    public String getTravelPrompt() {
-        return get("travel_prompt", "长途跋涉到达了 {target}。");
+    /**
+     * per-trigger event instruction（system 事件指令）。
+     * key: trigger.<source>.event_instruction
+     */
+    public String getTriggerEventInstruction(String source) {
+        return get("trigger." + source + ".event_instruction",
+                "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
     }
 
     public String getTriggerSpeech() {

@@ -38,7 +38,10 @@ public enum ActionType {
 
     // ── 社交域 ──
     TRADE(FocusTag.SOCIAL),
-    INTERACT(FocusTag.SOCIAL);
+    INTERACT(FocusTag.SOCIAL),
+
+    // ── Agent 自身域 ──
+    INNER_MONOLOGUE(FocusTag.COMMON);
 
     /** 主注意力域 */
     private final FocusTag primaryFocus;

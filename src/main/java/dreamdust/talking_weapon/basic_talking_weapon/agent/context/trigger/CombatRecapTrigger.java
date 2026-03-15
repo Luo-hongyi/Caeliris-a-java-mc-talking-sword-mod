@@ -45,7 +45,12 @@ public class CombatRecapTrigger implements IAgentTrigger {
     }
 
     @Override
-    public String getUserPrompt() {
+    public String getUserMessage() {
+        return "（你刚刚经历了一场恶战）";
+    }
+
+    @Override
+    public String getEventInstruction() {
         return "你刚刚见证了 " + killCount + " 次击杀，回顾这场战斗。";
     }
 }

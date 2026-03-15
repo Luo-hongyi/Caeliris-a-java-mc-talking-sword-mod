@@ -214,7 +214,7 @@ public class AgentStateScreen extends Screen {
         int btnY = height - FOOTER_HEIGHT + 8;
         int btnW = 82;
         int gap = 6;
-        int totalW = btnW * 4 + gap * 3;
+        int totalW = btnW * 5 + gap * 4;
         int bx = (width - totalW) / 2;
 
         addRenderableWidget(Button.builder(Component.literal("§6玩家画像 →"), btn -> {
@@ -225,17 +225,22 @@ public class AgentStateScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("§6性格词条 →"), btn -> {
             save();
             minecraft.setScreen(new AgentTraitsScreen(this));
-        }).bounds(bx + (btnW + gap), btnY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 1, btnY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§6地点注册 →"), btn -> {
             save();
             minecraft.setScreen(new AgentLocationRegistryScreen(this));
         }).bounds(bx + (btnW + gap) * 2, btnY, btnW, 20).build());
 
+        addRenderableWidget(Button.builder(Component.literal("§6植入记忆 →"), btn -> {
+            save();
+            minecraft.setScreen(new AgentLTMImplantScreen(this));
+        }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
+
         addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
             save();
             minecraft.setScreen(parent);
-        }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 4, btnY, btnW, 20).build());
     }
 
     private EditBox editBox(String hint, String value, int maxLen) {

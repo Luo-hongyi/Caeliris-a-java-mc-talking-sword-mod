@@ -18,7 +18,7 @@
 
 | 类名 | 触发条件 | 用途 |
 |---|---|---|
-| `ReflectionTrigger` | 距上次反思超过 N 分钟 | 定时沉思，生成 MemoryRecord |
+| `ReflectionTrigger` | 距上次反思超过 N 分钟 | 定时沉思，生成 LTMEntry |
 | `CombatRecapTrigger` | ActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾 |
 | `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗深刻记忆 |
 

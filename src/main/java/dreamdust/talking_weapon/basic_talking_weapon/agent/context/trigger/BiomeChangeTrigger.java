@@ -75,8 +75,16 @@ public class BiomeChangeTrigger implements IAgentTrigger {
     }
 
     @Override
-    public String getUserPrompt() {
-        String template = PromptRegistry.getInstance().getBiomeChangePrompt();
+    public String getUserMessage() {
+        String template = PromptRegistry.getInstance().getTriggerUserMessage(getSourceName());
+        return template
+                .replace("{old_biome}", oldBiome)
+                .replace("{new_biome}", newBiome);
+    }
+
+    @Override
+    public String getEventInstruction() {
+        String template = PromptRegistry.getInstance().getTriggerEventInstruction(getSourceName());
         return template
                 .replace("{old_biome}", oldBiome)
                 .replace("{new_biome}", newBiome);

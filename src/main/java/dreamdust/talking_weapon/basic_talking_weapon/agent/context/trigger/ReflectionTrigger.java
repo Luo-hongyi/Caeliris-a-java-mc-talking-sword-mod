@@ -13,7 +13,7 @@ import java.util.List;
  * 由 {@code TickEventWatcher} 在距上次反思超过 N 分钟时创建并 fire。
  * 将 ActionBuffer 快照和近期对话打包发给 LLM 做深度沉思，
  * 最终生成一条
- * {@link dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemoryRecord}。
+ * {@link dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry}。
  * <p>
  * <b>当前阶段</b>：仅骨架，{@link #createTask(AgentContext)} 返回 null。
  */
@@ -41,7 +41,12 @@ public class ReflectionTrigger implements IAgentTrigger {
     }
 
     @Override
-    public String getUserPrompt() {
+    public String getUserMessage() {
+        return "（你开始沉入回忆）";
+    }
+
+    @Override
+    public String getEventInstruction() {
         return "回顾你最近经历的这段旅途，写下你的内心独白。";
     }
 }

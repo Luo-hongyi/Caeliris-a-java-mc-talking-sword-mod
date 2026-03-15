@@ -69,8 +69,7 @@ public final class AgentResponseParser {
         try {
             AgentResponse resp = GSON.fromJson(json, AgentResponse.class);
             // 确保至少有一个有效字段
-            if (resp != null && (resp.hasSpeech()
-                    || resp.hasInnerMonologue()
+            if (resp != null && (resp.hasActions()
                     || resp.hasThinking())) {
                 return resp;
             }
@@ -81,11 +80,11 @@ public final class AgentResponseParser {
     }
 
     /**
-     * 构建降级响应：speech 为整段文字，其他字段留空。
+     * 构建降级响应：将整段文字作为 speech action，其他字段留空。
      */
     private static AgentResponse fallback(String rawText) {
         AgentResponse resp = new AgentResponse();
-        resp.setSpeech(rawText);
+        resp.getActions().add(new AgentResponse.ActionRequest("speech", rawText));
         return resp;
     }
 }

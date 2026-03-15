@@ -70,7 +70,12 @@ public class RightClickTrigger implements IAgentTrigger {
     }
 
     @Override
-    public String getUserPrompt() {
-        return PromptRegistry.getInstance().getRightClickPrompt();
+    public String getUserMessage() {
+        return PromptRegistry.getInstance().getTriggerUserMessage(getSourceName());
+    }
+
+    @Override
+    public String getEventInstruction() {
+        return PromptRegistry.getInstance().getTriggerEventInstruction(getSourceName());
     }
 }
