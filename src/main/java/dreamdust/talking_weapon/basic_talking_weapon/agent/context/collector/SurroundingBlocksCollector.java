@@ -142,32 +142,41 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     .importance(ImportanceRegistry.getInstance().get("env:exposed", 0.6f))
                     .build());
         } else {
-            int depthToSky = 0;
+            int solidBlocksAbove = 0;
+            boolean hitSky = false;
             BlockPos scan = playerPos.above();
+            
             for (int i = 0; i < 64; i++) {
                 scan = scan.above();
                 if (level.canSeeSky(scan)) {
-                    depthToSky = i + 1;
+                    hitSky = true;
                     break;
                 }
+                BlockState state = level.getBlockState(scan);
+                // 不计入空气，统计头顶实打实的遮挡方块层数
+                if (!state.isAir()) {
+                    solidBlocksAbove++;
+                }
             }
-            if (depthToSky == 0) {
-                features.add("深层建筑内部");
+            
+            if (!hitSky) {
+                features.add("深层遮挡或地底");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                         .focus(FocusTag.LANDSCAPE)
                         .detail(DetailTag.ENV, "deep_indoors")
-                        .description("位于头顶极深处被遮挡的建筑内部或极深地城。")
+                        .description("位于头顶极深处被遮挡的建筑内部或极深地城。头顶逾 64 格不见天日。")
                         .importance(ImportanceRegistry.getInstance().get("env:deep_indoors", 0.8f))
                         .build());
-            } else if (depthToSky <= 5) {
-                features.add("浅层遮挡");
+            } else if (solidBlocksAbove <= 4) {
+                features.add("浅层遮挡(室内房屋或树冠下)");
+                // 仅是普通的房屋屋顶或多层建筑的一楼，不视为 cave
             } else {
                 features.add("洞穴或地下");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                         .focus(FocusTag.LANDSCAPE)
                         .detail(DetailTag.ENV, "cave")
                         .description(
-                                "位于地下洞穴中，距地表约 " + depthToSky + " 格。周围主要由 " + blockAbove + ", " + blockBelow + " 构成。")
+                                "位于地下洞穴或厚重岩层下，头顶有逾 " + solidBlocksAbove + " 格厚的实体方块。周围主要由 " + blockAbove + ", " + blockBelow + " 构成。")
                         .importance(ImportanceRegistry.getInstance().get("env:cave", 0.8f))
                         .build());
             }
