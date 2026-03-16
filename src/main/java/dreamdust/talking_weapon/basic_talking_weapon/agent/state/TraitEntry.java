@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.state;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,11 +18,11 @@ import java.util.List;
  *
  * <pre>
  * new TraitEntry("厌恶生食", FocusTag.CONSUMABLE)
- *     .withDetailTag("item:minecraft:rotten_flesh")
+ *     .withDetailTag("native_specific:minecraft:rotten_flesh")
  *
  * new TraitEntry("对岩浆有着本能的恐惧", FocusTag.HAZARD)
- *     .withDetailTag("block:minecraft:lava")
- *     .withDetailTag("state:health_critical")
+ *     .withDetailTag("native_specific:minecraft:lava")
+ *     .withDetailTag("custom_specific:health_critical")
  * </pre>
  */
 public class TraitEntry {
@@ -56,7 +57,7 @@ public class TraitEntry {
     /** 快速追加一条 DetailTag 字符串，返回 this 支持链式调用。 */
     public TraitEntry withDetailTag(String rawTag) {
         if (rawTag != null && !rawTag.isBlank()) {
-            this.detailTags.add(rawTag.trim());
+            this.detailTags.add(TagPolicy.parseRegisteredTag(rawTag.trim()).toString());
         }
         return this;
     }
@@ -90,13 +91,21 @@ public class TraitEntry {
 
     /** 整体替换 DetailTag 列表。 */
     public void setDetailTags(List<String> tags) {
-        this.detailTags = tags != null ? new ArrayList<>(tags) : new ArrayList<>();
+        this.detailTags = new ArrayList<>();
+        if (tags == null) {
+            return;
+        }
+        for (String tag : tags) {
+            if (tag != null && !tag.isBlank()) {
+                this.detailTags.add(TagPolicy.parseRegisteredTag(tag.trim()).toString());
+            }
+        }
     }
 
     /**
      * 返回逗号分隔的 DetailTag 字符串（供 GUI 编辑框显示）。
      * <p>
-     * 示例：{@code "entity:minecraft:zombie, state:health_critical"}
+     * 示例：{@code "native_specific:minecraft:zombie, custom_specific:health_critical"}
      */
     public String getDetailTagsAsString() {
         if (detailTags == null || detailTags.isEmpty())
@@ -109,15 +118,16 @@ public class TraitEntry {
      * 每条以逗号分隔，自动 trim 并过滤空白条目。
      */
     public void setDetailTagsFromString(String csv) {
-        this.detailTags = new ArrayList<>();
-        if (csv == null || csv.isBlank())
-            return;
-        for (String part : csv.split(",")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                this.detailTags.add(trimmed);
+        List<String> parsed = new ArrayList<>();
+        if (csv != null && !csv.isBlank()) {
+            for (String part : csv.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    parsed.add(TagPolicy.parseRegisteredTag(trimmed).toString());
+                }
             }
         }
+        this.detailTags = parsed;
     }
 
     // ── toString ──────────────────────────────────────────────────────

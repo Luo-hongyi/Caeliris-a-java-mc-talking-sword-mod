@@ -94,6 +94,7 @@ public class AgentSensor {
         // 3. 将触发器的两段式 prompt 写入 extras
         builder.extra("user_message", trigger.getUserMessage());
         builder.extra("event_instruction", trigger.getEventInstruction());
+        builder.extra("enabled_actions", String.join(",", trigger.getEnabledActions()));
 
         // 3.5 注入 AgentState 中的渴望为 TaggedContextEntry
         dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState state = runtime.getState();
@@ -105,7 +106,7 @@ public class AgentSensor {
             builder.addTaggedEntry(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry
                     .builder()
                     .focus(state.getCurrentDesireTag())
-                    .detail(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag.STATE, "desire")
+                    .detail(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag.CUSTOM_GENERIC, "desire")
                     .description("当前渴望: " + desc)
                     .importance(0.8f) // 较高权重
                     .build());

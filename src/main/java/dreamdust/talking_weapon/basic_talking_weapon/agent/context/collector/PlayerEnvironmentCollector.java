@@ -42,7 +42,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(FocusTag.LANDSCAPE)
-                .detail(DetailTag.DIM, dimId)
+                .detail(DetailTag.NATIVE_SPECIFIC, dimId)
                 .description("主人目前身处于: " + dimId)
                 .importance(ImportanceRegistry.getInstance().get("env:dimension", 0.3f))
                 .associativeOnly(true)
@@ -57,7 +57,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         float lightImportance = effectiveLight < 7 ? ImportanceRegistry.getInstance().get("env:light_level", 0.3f) : 0.1f;
         builder.addTaggedEntry(TaggedContextEntry.builder()
                 .focus(effectiveLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
-                .detail(DetailTag.STATE, lightState)
+                .detail(DetailTag.CUSTOM_SPECIFIC, lightState)
                 .description("主人周围的环境光照阴暗程度感知为: " + (effectiveLight < 7 ? "昏暗且危险 (容易生成怪物)" : "明亮安全"))
                 .importance(lightImportance)
                 .build());
@@ -70,7 +70,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
                     .getKey(mainHand.getItem()).toString();
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.TOOL)
-                    .detail(DetailTag.ITEM, itemId)
+                    .detail(DetailTag.NATIVE_SPECIFIC, itemId)
                     .description("主人的手中正紧紧握着: " + itemName)
                     .importance(ImportanceRegistry.getInstance().get("env:held_item", 0.2f))
                     .build());
@@ -80,7 +80,7 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         if (player.experienceLevel > 0) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.STATUS)
-                    .detail(DetailTag.STATE, "xp_level")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "xp_level")
                     .description("主人当前积攒的经验等级为: " + player.experienceLevel)
                     .importance(ImportanceRegistry.getInstance().get("env:xp", 0.1f))
                     .build());

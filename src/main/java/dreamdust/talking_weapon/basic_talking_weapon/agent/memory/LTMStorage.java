@@ -3,8 +3,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.io.*;
@@ -49,6 +49,7 @@ public final class LTMStorage {
             List<LTMEntry> result = new ArrayList<>();
             if (rawList != null) {
                 for (ImplantedJsonEntry raw : rawList) {
+                    boolean validEntry = true;
                     // 转译
                     LTMEntry.Builder builder = LTMEntry.builder()
                         .sourceType(LTMEntry.SourceType.IMPLANTED)
@@ -64,13 +65,18 @@ public final class LTMStorage {
                     }
                     if (raw.detail_tags != null) {
                         for (String dStr : raw.detail_tags) {
-                            String[] parts = dStr.split(":", 2);
-                            if (parts.length == 2) {
-                                builder.detail(parts[0], parts[1]);
+                            try {
+                                builder.detail(TagPolicy.parseRegisteredTag(dStr));
+                            } catch (IllegalArgumentException e) {
+                                validEntry = false;
+                                System.err.println(LOG_PREFIX + "植入记忆存在未登记或非法 DetailTag，已跳过该条记忆: " + dStr);
+                                break;
                             }
                         }
                     }
-                    result.add(builder.build());
+                    if (validEntry) {
+                        result.add(builder.build());
+                    }
                 }
             }
             return result;
@@ -109,7 +115,10 @@ public final class LTMStorage {
         newJson.focus_tags = new ArrayList<>();
         for (FocusTag f : entry.getFocusTags()) newJson.focus_tags.add(f.name());
         newJson.detail_tags = new ArrayList<>();
-        for (DetailTag d : entry.getDetailTags()) newJson.detail_tags.add(d.toString());
+        for (var d : entry.getDetailTags()) {
+            TagPolicy.requireRegisteredCustomTag(d);
+            newJson.detail_tags.add(d.toString());
+        }
         
         list.add(newJson);
 
@@ -135,7 +144,7 @@ public final class LTMStorage {
             ImplantedJsonEntry template = new ImplantedJsonEntry();
             template.description = "我最初被锻造于亚尔夫海姆的最北端。那是一片冰冷但充满魔力的土地。";
             template.focus_tags = List.of("LANDSCAPE", "CREATION");
-            template.detail_tags = List.of("loc:亚尔夫海姆");
+            template.detail_tags = List.of("custom_specific:亚尔夫海姆");
             template.importance = 1.0f;
             defaultSet.add(template);
 

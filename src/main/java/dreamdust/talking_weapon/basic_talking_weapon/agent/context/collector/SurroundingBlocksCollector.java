@@ -12,6 +12,7 @@ import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.*;
 
@@ -20,9 +21,9 @@ import java.util.*;
  * <p>
  * 产生两类输出：
  * <ol>
- * <li><b>显式环境推理</b>：输出 {@link DetailTag#ENV}（如 `env:cave`,
- * `env:lava_nearby`），能在提示词中可见。</li>
- * <li><b>隐式环境锚点</b>：将周围所有方块按类型输出打上 {@link DetailTag#BLOCK}，但标记为
+ * <li><b>显式环境推理</b>：输出 {@code custom_specific:*}（如 `custom_specific:cave`,
+ * `custom_specific:lava_nearby`），能在提示词中可见。</li>
+ * <li><b>隐式环境锚点</b>：将周围所有方块按类型输出打上 {@code native_specific:*}，但标记为
  * {@code associativeOnly = true}，不渲染到提示词中，仅供联想系统检索。</li>
  * </ol>
  * <p>
@@ -65,6 +66,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // 2. 区域方块统计与隐式锚点生成
         // ═══════════════════════════════════════════════════
         Map<String, Integer> blockCounts = new LinkedHashMap<>();
+        Map<String, String> blockLabels = new HashMap<>();
         int waterCount = 0;
         int lavaCount = 0;
 
@@ -90,9 +92,9 @@ public class SurroundingBlocksCollector implements IContextCollector {
                         }
                     }
 
-                    String name = state.getBlock().getName().getString();
-                    // 这里本应使用 Registry Name，但在演示中为方便直接获取翻译名作为 ID 键
-                    blockCounts.merge(name, 1, Integer::sum);
+                    String blockId = resolveBlockId(state);
+                    blockCounts.merge(blockId, 1, Integer::sum);
+                    blockLabels.putIfAbsent(blockId, state.getBlock().getName().getString());
                 }
             }
         }
@@ -100,8 +102,8 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // --- 生成方块统计概述 (extras) ---
         List<Map.Entry<String, Integer>> sortedBlocks = new ArrayList<>(blockCounts.entrySet());
         sortedBlocks.sort((a, b) -> {
-            double scoreA = a.getValue() * getBlockWeight(a.getKey());
-            double scoreB = b.getValue() * getBlockWeight(b.getKey());
+            double scoreA = a.getValue() * getBlockWeight(a.getKey(), blockLabels.get(a.getKey()));
+            double scoreB = b.getValue() * getBlockWeight(b.getKey(), blockLabels.get(b.getKey()));
             return Double.compare(scoreB, scoreA);
         });
         int topN = Math.min(5, sortedBlocks.size());
@@ -110,18 +112,20 @@ public class SurroundingBlocksCollector implements IContextCollector {
             for (int i = 0; i < topN; i++) {
                 Map.Entry<String, Integer> entry = sortedBlocks.get(i);
                 if (i > 0) blockSummary.append(", ");
-                blockSummary.append(entry.getKey()).append("×").append(entry.getValue());
+                String label = blockLabels.getOrDefault(entry.getKey(), entry.getKey());
+                blockSummary.append(label).append("×").append(entry.getValue());
             }
             builder.extra("surrounding_blocks_summary", "周围主要方块: " + blockSummary);
         }
 
         // --- 生成隐式关联方块 (Associative Only) ---
         for (Map.Entry<String, Integer> entry : blockCounts.entrySet()) {
+            String label = blockLabels.getOrDefault(entry.getKey(), entry.getKey());
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.BLOCK, entry.getKey())
-                    .description("周围环境方块: " + entry.getKey() + " 数量: " + entry.getValue())
-                    .importance(ImportanceRegistry.getInstance().get("block:default", 0.3f))
+                    .detail(DetailTag.NATIVE_SPECIFIC, entry.getKey())
+                    .description("周围环境方块: " + label + " 数量: " + entry.getValue())
+                    .importance(ImportanceRegistry.getInstance().get("native_specific:default", 0.3f))
                     .associativeOnly(true) // 核心：平时隐形，仅供记忆联想查收！
                     .build());
         }
@@ -137,7 +141,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
             features.add("露天环境");
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.ENV, "exposed")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "exposed")
                     .description("处于露天环境中，视野开阔。脚踩: " + blockBelow)
                     .importance(ImportanceRegistry.getInstance().get("env:exposed", 0.6f))
                     .build());
@@ -163,7 +167,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
                 features.add("深层遮挡或地底");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                         .focus(FocusTag.LANDSCAPE)
-                        .detail(DetailTag.ENV, "deep_indoors")
+                        .detail(DetailTag.CUSTOM_SPECIFIC, "deep_indoors")
                         .description("位于头顶极深处被遮挡的建筑内部或极深地城。头顶逾 64 格不见天日。")
                         .importance(ImportanceRegistry.getInstance().get("env:deep_indoors", 0.8f))
                         .build());
@@ -174,7 +178,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
                 features.add("洞穴或地下");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                         .focus(FocusTag.LANDSCAPE)
-                        .detail(DetailTag.ENV, "cave")
+                        .detail(DetailTag.CUSTOM_SPECIFIC, "cave")
                         .description(
                                 "位于地下洞穴或厚重岩层下，头顶有逾 " + solidBlocksAbove + " 格厚的实体方块。周围主要由 " + blockAbove + ", " + blockBelow + " 构成。")
                         .importance(ImportanceRegistry.getInstance().get("env:cave", 0.8f))
@@ -187,7 +191,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         if (y >= 100) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.ENV, "high_altitude")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "high_altitude")
                     .description("位于高海拔处 (Y=" + y + ")。")
                     .importance(ImportanceRegistry.getInstance().get("env:high_altitude", 0.6f))
                     .build());
@@ -197,14 +201,14 @@ public class SurroundingBlocksCollector implements IContextCollector {
         if (lavaCount > 0) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.HAZARD)
-                    .detail(DetailTag.ENV, "lava_nearby")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "lava_nearby")
                     .description("极度危险！周围发现大量岩浆池。")
                     .importance(ImportanceRegistry.getInstance().get("env:lava_nearby", 0.9f))
                     .build());
         } else if (waterCount > 10) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.ENV, "water_nearby")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "water_nearby")
                     .description("附近有大量水体。")
                     .importance(ImportanceRegistry.getInstance().get("env:water_nearby", 0.5f))
                     .build());
@@ -216,7 +220,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         if (blockLight <= 3 && skyLight <= 3) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.HAZARD) // 黑暗带来危险
-                    .detail(DetailTag.ENV, "pitch_dark")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "pitch_dark")
                     .description("环境漆黑一片，极易生成怪物。")
                     .importance(ImportanceRegistry.getInstance().get("env:pitch_dark", 0.85f))
                     .build());
@@ -237,20 +241,25 @@ public class SurroundingBlocksCollector implements IContextCollector {
         if (maxDrop >= 8) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.HAZARD)
-                    .detail(DetailTag.ENV, "cliff")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "cliff")
                     .description("处于高落差悬崖边缘 (落差 > " + maxDrop + " 格)，小心脚下！")
                     .importance(ImportanceRegistry.getInstance().get("env:cliff", 0.7f))
                     .build());
         }
     }
 
-    private double getBlockWeight(String blockName) {
-        String lower = blockName.toLowerCase();
+    private double getBlockWeight(String blockId, String blockLabel) {
+        String lower = (blockLabel != null && !blockLabel.isBlank() ? blockLabel : blockId).toLowerCase();
         // 对常见的基础方块降低 0.5 的排序权重，避免它们总是占据 Top N
         if (lower.contains("dirt") || lower.contains("stone") || lower.contains("泥土") || lower.contains("石头") 
             || lower.contains("圆石") || lower.contains("深板岩") || lower.contains("沙砾") || lower.contains("凝灰岩")) {
             return 0.5;
         }
         return 1.0;
+    }
+
+    private String resolveBlockId(BlockState state) {
+        var id = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        return id != null ? id.toString() : state.getBlock().getName().getString();
     }
 }

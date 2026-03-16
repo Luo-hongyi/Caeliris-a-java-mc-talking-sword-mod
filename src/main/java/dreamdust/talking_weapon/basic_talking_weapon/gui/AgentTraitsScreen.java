@@ -40,6 +40,7 @@ public class AgentTraitsScreen extends Screen {
 
     private final List<TraitEditRow> editRows = new ArrayList<>();
     private TraitScrollList scrollList;
+    private String saveError = "";
 
     public AgentTraitsScreen(Screen parent) {
         super(Component.literal("⚔ 剑的灵魂 · 性格词条"));
@@ -103,25 +104,33 @@ public class AgentTraitsScreen extends Screen {
         }).bounds(bx, btnY, 86, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
-            save();
-            minecraft.setScreen(parent);
+            if (save()) {
+                minecraft.setScreen(parent);
+            }
         }).bounds(bx + 94, btnY, 86, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("✘ 返回"), btn -> minecraft.setScreen(parent))
                 .bounds(bx + 188, btnY, 86, 20).build());
     }
 
-    private void save() {
-        for (TraitEditRow row : editRows) {
-            if (!row.deleted) {
-                row.trait.setTrait(row.traitBox.getValue());
-                row.trait.setDetailTagsFromString(row.detailTagsBox.getValue());
+    private boolean save() {
+        saveError = "";
+        try {
+            for (TraitEditRow row : editRows) {
+                if (!row.deleted) {
+                    row.trait.setTrait(row.traitBox.getValue());
+                    row.trait.setDetailTagsFromString(row.detailTagsBox.getValue());
+                }
             }
-        }
-        AgentPersona persona = AgentRuntime.getInstance().getPersona();
-        for (TraitEditRow row : editRows) {
-            if (row.deleted)
-                persona.removeTrait(row.trait);
+            AgentPersona persona = AgentRuntime.getInstance().getPersona();
+            for (TraitEditRow row : editRows) {
+                if (row.deleted)
+                    persona.removeTrait(row.trait);
+            }
+            return true;
+        } catch (IllegalArgumentException e) {
+            saveError = e.getMessage();
+            return false;
         }
     }
 
@@ -130,6 +139,9 @@ public class AgentTraitsScreen extends Screen {
         renderBackground(g);
         g.drawCenteredString(font, title, width / 2, 10, TITLE_COLOR);
         g.drawString(font, "§7分类:", (width - Math.min(width - 40, 500)) / 2 + 4, HEADER_HEIGHT - 28, LABEL_COLOR);
+        if (!saveError.isBlank()) {
+            g.drawCenteredString(font, Component.literal(saveError), width / 2, height - FOOTER_HEIGHT - 12, 0xFFFF6B6B);
+        }
         scrollList.render(g, mouseX, mouseY, delta);
         super.render(g, mouseX, mouseY, delta);
     }

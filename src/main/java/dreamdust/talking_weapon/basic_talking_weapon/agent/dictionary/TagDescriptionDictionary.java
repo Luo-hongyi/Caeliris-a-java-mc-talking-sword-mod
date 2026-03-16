@@ -12,20 +12,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-import com.google.gson.JsonDeserializer;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonDeserializationContext;
-import com.google.gson.JsonArray;
-
 /**
  * DetailTag 到自然语言描述的映射字典。
  * <p>
  * 从 {@code config/talking_weapon/tag_descriptions.json} 加载，
  * 首次运行时自动从 jar 内资源复制默认配置。
  * <p>
- * <b>用途</b>：在组装 LLM Prompt 时，将机器可读的标签（如 {@code state:health_critical}）
+ * <b>用途</b>：在组装 LLM Prompt 时，将机器可读的标签（如 {@code custom_specific:health_critical}）
  * 转为自然语言描述（如"持有者生命危急"），提升 LLM 的理解质量。
  * <p>
  * <b>线程安全</b>：字典在模组初始化时加载一次，此后只读，无需同步。
@@ -34,33 +27,7 @@ public final class TagDescriptionDictionary {
 
     private static final String LOG_PREFIX = "[TalkingWeapon/TagDict] ";
 
-    /** 自定义反序列化器：同时支持旧版 String -> String 格式，和新版 String -> TagDefinition 格式 */
-    private static final JsonDeserializer<TagDefinition> DEFINITION_DESERIALIZER = new JsonDeserializer<>() {
-        @Override
-        public TagDefinition deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
-                throws JsonParseException {
-            if (json.isJsonPrimitive()) {
-                // 向下兼容：直接是一个描述字符串
-                return new TagDefinition(json.getAsString());
-            } else if (json.isJsonObject()) {
-                // 新版结构：{ "description": "xxx", "extras": ["a", "b"] }
-                JsonObject obj = json.getAsJsonObject();
-                String desc = obj.has("description") ? obj.get("description").getAsString() : "";
-                List<String> extras = new ArrayList<>();
-                if (obj.has("extras") && obj.get("extras").isJsonArray()) {
-                    JsonArray arr = obj.getAsJsonArray("extras");
-                    for (JsonElement e : arr) {
-                        extras.add(e.getAsString());
-                    }
-                }
-                return new TagDefinition(desc, extras);
-            }
-            return new TagDefinition("");
-        }
-    };
-
     private static final Gson GSON = new GsonBuilder()
-            .registerTypeAdapter(TagDefinition.class, DEFINITION_DESERIALIZER)
             .setPrettyPrinting()
             .create();
 
@@ -71,7 +38,7 @@ public final class TagDescriptionDictionary {
     /** jar 内默认资源路径 */
     private static final String DEFAULT_RESOURCE = "/assets/talking_weapon/default_tag_descriptions.json";
 
-    /** 标签 -> 标签定义(描述与额外挂载标签) */
+    /** 标签 -> 标签描述 */
     private Map<String, TagDefinition> definitions;
 
     // ─────────────────────────────────────────────
@@ -109,7 +76,7 @@ public final class TagDescriptionDictionary {
     /**
      * 查询标签的自然语言描述。
      *
-     * @param tag 完整标签字符串，如 {@code "state:health_critical"}
+     * @param tag 完整标签字符串，如 {@code "custom_specific:health_critical"}
      * @return 描述文字；若不在字典中则返回 {@code null}
      */
     public String describe(String tag) {
@@ -126,18 +93,6 @@ public final class TagDescriptionDictionary {
     public String describeOrRaw(String tag) {
         String desc = describe(tag);
         return desc != null ? desc : tag;
-    }
-
-    /**
-     * 获取原生标签挂载的“额外附带标签(Extras)”。
-     * 用于跨界触发联想记忆（例如：钻石矿石 -> 附带 "trait:valuable"）。
-     *
-     * @param tag 原生标签组合
-     * @return 额外标签列表，若无则返回空列表
-     */
-    public List<String> getExtras(String tag) {
-        TagDefinition def = definitions.get(tag);
-        return def != null ? def.getExtras() : Collections.emptyList();
     }
 
     /**
@@ -159,6 +114,10 @@ public final class TagDescriptionDictionary {
     /** 返回字典中所有标签数量 */
     public int size() {
         return definitions.size();
+    }
+
+    public boolean contains(String tag) {
+        return definitions.containsKey(tag);
     }
 
     /** 获取所有条目的只读副本，供外部界面读取 */
@@ -194,8 +153,9 @@ public final class TagDescriptionDictionary {
             Map<String, TagDefinition> filtered = new LinkedHashMap<>();
             if (raw != null) {
                 raw.forEach((k, v) -> {
-                    if (!k.startsWith("_comment"))
+                    if (!k.startsWith("_comment")) {
                         filtered.put(k, v);
+                    }
                 });
             }
 
@@ -244,7 +204,7 @@ public final class TagDescriptionDictionary {
             // 构建带注释头的 JsonObject
             com.google.gson.JsonObject root = new com.google.gson.JsonObject();
             root.addProperty("_comment", "DetailTag 到自然语言的描述映射。当 Collector 产出某个 DetailTag 时，将用此处的描述注入 LLM 提示词。");
-            root.addProperty("_comment2", "格式：纯字符串值为描述，对象值可包含 description 和 extras 数组。");
+            root.addProperty("_comment2", "此文件只维护描述文本。标签之间的一对多语义关系请写入 tag_relations.json。");
             Gson serializer = new GsonBuilder().setPrettyPrinting().create();
             definitions.forEach((key, def) -> root.add(key, serializer.toJsonTree(def)));
             serializer.toJson(root, writer);
@@ -252,4 +212,5 @@ public final class TagDescriptionDictionary {
             System.err.println(LOG_PREFIX + "保存失败：" + e.getMessage());
         }
     }
+
 }

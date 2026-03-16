@@ -143,9 +143,8 @@ public final class AgentLogger {
             }
         }
 
-        // ── 遗留对比：旧版 [Context] + [Extra Context] 的字段清单，供开发者查缺使用 ──
         w.println("──────────────────────────────────────────");
-        w.println("遗留对比: 旧版提示词中曾包含的原始字段 (现已迁移至 Tagged Context)");
+        w.println("原始快照字段（用于对照当前 Tagged Context 与 extras 输出）");
         w.println("  [Context] health=" + context.getHealth() + "/" + context.getMaxHealth()
                 + ", food=" + context.getFoodLevel()
                 + ", pos=(" + (int) context.getPosX() + "," + (int) context.getPosY() + "," + (int) context.getPosZ() + ")"
@@ -224,12 +223,12 @@ public final class AgentLogger {
         }
         w.println();
 
-        w.println("  长期记忆 (" + memory.getLongTerm().size() + " 条):");
-        if (memory.getLongTerm().isEmpty()) {
+        w.println("  长期记忆切片 (" + memory.getLtmRecords().size() + " 条):");
+        if (memory.getLtmRecords().isEmpty()) {
             w.println("    (空)");
         } else {
-            for (int i = 0; i < memory.getLongTerm().size(); i++) {
-                w.println("    [" + i + "] " + memory.getLongTerm().get(i));
+            for (int i = 0; i < memory.getLtmRecords().size(); i++) {
+                w.println("    [" + i + "] " + memory.getLtmRecords().get(i));
             }
         }
         w.println();

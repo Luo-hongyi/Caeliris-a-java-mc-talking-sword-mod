@@ -93,6 +93,7 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue WEIGHT_MOVEMENT;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_LABOR;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_CREATION;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_CREATURE;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_SOCIAL;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_LANDSCAPE;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_HAZARD;
@@ -248,6 +249,7 @@ public final class TalkingWeaponConfig {
                 WEIGHT_MOVEMENT = builder.defineInRange("movement", 1.0, 0.0, 10.0);
                 WEIGHT_LABOR = builder.defineInRange("labor", 1.0, 0.0, 10.0);
                 WEIGHT_CREATION = builder.defineInRange("creation", 1.0, 0.0, 10.0);
+                WEIGHT_CREATURE = builder.defineInRange("creature", 1.0, 0.0, 10.0);
                 WEIGHT_SOCIAL = builder.defineInRange("social", 1.0, 0.0, 10.0);
                 WEIGHT_LANDSCAPE = builder.defineInRange("landscape", 1.0, 0.0, 10.0);
                 WEIGHT_HAZARD = builder.defineInRange("hazard", 1.0, 0.0, 10.0);

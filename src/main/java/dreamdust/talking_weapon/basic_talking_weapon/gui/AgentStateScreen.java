@@ -18,7 +18,6 @@ import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -232,9 +231,13 @@ public class AgentStateScreen extends Screen {
             minecraft.setScreen(new AgentLocationRegistryScreen(this));
         }).bounds(bx + (btnW + gap) * 2, btnY, btnW, 20).build());
 
-        addRenderableWidget(Button.builder(Component.literal("§6植入记忆 →"), btn -> {
+        addRenderableWidget(Button.builder(Component.literal("§6📝 植入配置"), btn -> {
             save();
-            minecraft.setScreen(new AgentLTMImplantScreen(this));
+            java.io.File cfgFile = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("talking_weapon/implanted_memories.json").toFile();
+            if (!cfgFile.exists()) {
+                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage.loadGlobalImplantedMemories();
+            }
+            net.minecraft.Util.getPlatform().openFile(cfgFile);
         }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
@@ -257,10 +260,6 @@ public class AgentStateScreen extends Screen {
         box.setMaxLength(5);
         box.setCanLoseFocus(true);
         return box;
-    }
-
-    private static String fmt(double d) {
-        return String.format("%.2f", d);
     }
 
     private void save() {
@@ -294,6 +293,9 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_BLOCK, wBlock);
         setWeight(TalkingWeaponConfig.WEIGHT_TOOL, wTool);
         TalkingWeaponConfig.SPEC.save();
+
+        // 当用户编辑了配置文本并回到控制面板点击"保存"时，立即热重载记忆池
+        AgentRuntime.getInstance().getMemory().reloadImplantedMemories();
     }
 
     private void setWeight(net.minecraftforge.common.ForgeConfigSpec.DoubleValue cfg, EditBox box) {
@@ -382,12 +384,11 @@ public class AgentStateScreen extends Screen {
     /** 标签 + EditBox 行（右侧对齐） */
     private class BoxRow extends StateScrollList.Row {
         private final String label;
-        private final int rowLeft, rowWidth;
+        private final int rowWidth;
         private final EditBox box;
 
         BoxRow(String label, int rowLeft, int rowWidth, EditBox box) {
             this.label = label;
-            this.rowLeft = rowLeft;
             this.rowWidth = rowWidth;
             this.box = box;
         }
@@ -416,13 +417,12 @@ public class AgentStateScreen extends Screen {
     /** "< [center] >" 三按钮选择行 */
     private class ThreeWidgetRow extends StateScrollList.Row {
         private final String label;
-        private final int rowLeft, rowWidth;
+        private final int rowWidth;
         private final AbstractWidget w1, wMid, w2;
 
         ThreeWidgetRow(String label, int rowLeft, int rowWidth,
                 AbstractWidget w1, AbstractWidget wMid, AbstractWidget w2) {
             this.label = label;
-            this.rowLeft = rowLeft;
             this.rowWidth = rowWidth;
             this.w1 = w1;
             this.wMid = wMid;

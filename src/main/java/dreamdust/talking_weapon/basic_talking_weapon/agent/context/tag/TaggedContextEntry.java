@@ -180,4 +180,15 @@ public final class TaggedContextEntry {
             return new TaggedContextEntry(this);
         }
     }
+
+    public Builder toBuilder() {
+        Builder b = new Builder();
+        b.focusTags.addAll(this.focusTags);
+        b.detailTags.addAll(this.detailTags);
+        b.description(this.description);
+        b.importance(this.baseImportance);
+        b.timestamp(this.timestamp);
+        b.associativeOnly(this.associativeOnly);
+        return b;
+    }
 }

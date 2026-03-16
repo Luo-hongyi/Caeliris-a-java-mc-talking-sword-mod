@@ -3,75 +3,34 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag;
 import java.util.Objects;
 
 /**
- * 细节标签：{@code prefix:value} 格式的不可变值对象。
+ * 细节标签 (Detail Tag)：{@code prefix:value} 格式的不可变值对象。
  * <p>
- * 细节标签贴近游戏底层数据，用于记忆检索和偏好匹配。
- * 前缀标识标签类型（如实体、物品、群系），值为具体的游戏 Registry ID 或状态枚举。
- * <p>
- * 设计原则：
+ * 去除了历史上的物理语义（如 entity, item），完全采用结构化前缀命名空间：
  * <ul>
- * <li>标签由 Collector 在采集时自动生成，无需人工维护全量字典</li>
- * <li>{@code entity:}、{@code item:}、{@code block:} 等前缀直接使用 Minecraft
- * ResourceLocation</li>
- * <li>{@code trait:} 前缀利用 Forge/Vanilla 数据包标签实现跨模组泛化</li>
- * <li>{@code era:} 前缀为纯叙事纪元划分，不涉及精确时间戳</li>
+ * <li>{@link #NATIVE_SPECIFIC}: 游戏原生单点数据 (如 minecraft:zombie)</li>
+ * <li>{@link #NATIVE_GENERIC}: 游戏原生概括数据 (如 minecraft:undead)</li>
+ * <li>{@link #CUSTOM_SPECIFIC}: 自定义单点数据 (如 某个家的路标家)</li>
+ * <li>{@link #CUSTOM_GENERIC}: 自定义泛用抽象特征 (如 combat_intense)</li>
  * </ul>
  */
 public final class DetailTag {
+
+    public enum TagSource {
+        NATIVE, CUSTOM
+    }
+
+    public enum TagGranularity {
+        SPECIFIC, GENERIC
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // 前缀常量 (Prefix Constants)
     // ═══════════════════════════════════════════════════════════════
 
-    // --- NATIVE: 对应游戏内部 Registry ID (Minecraft Native) ---
-
-    /** [NATIVE] 实体 Registry ID：minecraft:zombie, twilightforest:naga */
-    public static final String ENTITY = "entity";
-
-    /** [NATIVE] 物品 Registry ID：minecraft:diamond_sword, farmersdelight:hamburger */
-    public static final String ITEM = "item";
-
-    /** [NATIVE] 方块 Registry ID：minecraft:obsidian, minecraft:diamond_ore */
-    public static final String BLOCK = "block";
-
-    /**
-     * [NATIVE] 维度 ID：minecraft:overworld, minecraft:the_nether, minecraft:the_end
-     */
-    public static final String DIM = "dim";
-
-    /** [NATIVE] 群系 ID：minecraft:plains, minecraft:cherry_grove */
-    public static final String BIOME = "biome";
-
-    /** [NATIVE] 结构/遗迹 ID：minecraft:fortress, minecraft:village */
-    public static final String STRUC = "struc";
-
-    // --- CUSTOM: 核心逻辑推理或叙事定义的自定义标签 (Custom/Inferred) ---
-
-    /**
-     * [CUSTOM] 行为动词：attack, hurt, kill, eat, mine, craft, interact, move, sleep,
-     * death
-     */
-    public static final String ACTION = "action";
-
-    /** [CUSTOM] 抽象特征（来自 Forge/Vanilla Tags 或关键词）：undead, boss, foods/meat, ores */
-    public static final String TRAIT = "trait";
-
-    /** [CUSTOM] 量化状态分桶：health_critical, time_night, weather_rain, combat_intense */
-    public static final String STATE = "state";
-
-    /**
-     * [CUSTOM] 纯叙事纪元（不涉及精确时间）：forged, ancient_war, previous_owner, current_journey
-     */
-    public static final String ERA = "era";
-
-    /** [CUSTOM] 玩家/Agent 共同维护的叙事地标：home, trial_grounds, first_base */
-    public static final String LOC = "loc";
-
-    /** [CUSTOM] 系统级功能方块 POI：nether_portal, mob_spawner, bed */
-    public static final String POI = "poi";
-
-    /** [CUSTOM] 非原生的高性能环境推理：cave, high_altitude, pitch_dark, lava_nearby */
-    public static final String ENV = "env";
+    public static final String NATIVE_SPECIFIC = "native_specific";
+    public static final String NATIVE_GENERIC = "native_generic";
+    public static final String CUSTOM_SPECIFIC = "custom_specific";
+    public static final String CUSTOM_GENERIC = "custom_generic";
 
     // ═══════════════════════════════════════════════════════════════
     // 实例字段
@@ -79,57 +38,119 @@ public final class DetailTag {
 
     private final String prefix;
     private final String value;
+    private final TagSource source;
+    private final TagGranularity granularity;
 
-    private DetailTag(String prefix, String value) {
+    private DetailTag(String prefix, String value, TagSource source, TagGranularity granularity) {
         this.prefix = prefix;
         this.value = value;
+        this.source = source;
+        this.granularity = granularity;
     }
 
     // ═══════════════════════════════════════════════════════════════
     // 工厂方法
     // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * 创建一个细节标签。
-     *
-     * @param prefix 前缀（推荐使用本类的常量，如 {@link #ENTITY}）
-     * @param value  具体值（如 {@code "minecraft:zombie"}）
-     * @return 不可变的 DetailTag 实例
-     * @throws IllegalArgumentException 如果 prefix 或 value 为空
-     */
+    public static DetailTag nativeSpecific(String value) {
+        return create(NATIVE_SPECIFIC, value, TagSource.NATIVE, TagGranularity.SPECIFIC);
+    }
+
+    public static DetailTag nativeGeneric(String value) {
+        return create(NATIVE_GENERIC, value, TagSource.NATIVE, TagGranularity.GENERIC);
+    }
+
+    public static DetailTag customSpecific(String value) {
+        return create(CUSTOM_SPECIFIC, value, TagSource.CUSTOM, TagGranularity.SPECIFIC);
+    }
+
+    public static DetailTag customGeneric(String value) {
+        return create(CUSTOM_GENERIC, value, TagSource.CUSTOM, TagGranularity.GENERIC);
+    }
+
+    public static DetailTag parse(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("DetailTag raw string must not be empty");
+        }
+        String[] parts = raw.split(":", 2);
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("DetailTag must be in prefix:value format: " + raw);
+        }
+        return of(parts[0], parts[1]);
+    }
+
     public static DetailTag of(String prefix, String value) {
-        if (prefix == null || prefix.isEmpty()) {
+        TagSource s = TagSource.CUSTOM;
+        TagGranularity g = TagGranularity.GENERIC;
+
+        switch (prefix) {
+            case NATIVE_SPECIFIC:
+                s = TagSource.NATIVE;
+                g = TagGranularity.SPECIFIC;
+                break;
+            case NATIVE_GENERIC:
+                s = TagSource.NATIVE;
+                g = TagGranularity.GENERIC;
+                break;
+            case CUSTOM_SPECIFIC:
+                s = TagSource.CUSTOM;
+                g = TagGranularity.SPECIFIC;
+                break;
+            case CUSTOM_GENERIC:
+                s = TagSource.CUSTOM;
+                g = TagGranularity.GENERIC;
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown DetailTag prefix: " + prefix);
+        }
+
+        return create(prefix, value, s, g);
+    }
+
+    private static DetailTag create(String prefix, String v, TagSource s, TagGranularity g) {
+        String normalizedPrefix = prefix == null ? null : prefix.trim();
+        String normalizedValue = v == null ? null : v.trim();
+        if (normalizedPrefix == null || normalizedPrefix.isEmpty()) {
             throw new IllegalArgumentException("DetailTag prefix must not be empty");
         }
-        if (value == null || value.isEmpty()) {
+        if (normalizedValue == null || normalizedValue.isEmpty()) {
             throw new IllegalArgumentException("DetailTag value must not be empty");
         }
-        return new DetailTag(prefix, value);
+        return new DetailTag(normalizedPrefix, normalizedValue, s, g);
     }
 
     // ═══════════════════════════════════════════════════════════════
     // Getters
     // ═══════════════════════════════════════════════════════════════
 
-    /** 获取前缀（如 {@code "entity"}, {@code "trait"}） */
     public String getPrefix() {
         return prefix;
     }
 
-    /** 获取具体值（如 {@code "minecraft:zombie"}, {@code "boss"}） */
     public String getValue() {
         return value;
+    }
+
+    public TagSource getSource() {
+        return source;
+    }
+
+    public TagGranularity getGranularity() {
+        return granularity;
+    }
+
+    public boolean isSpecific() {
+        return granularity == TagGranularity.SPECIFIC;
+    }
+
+    public boolean isGeneric() {
+        return granularity == TagGranularity.GENERIC;
     }
 
     // ═══════════════════════════════════════════════════════════════
     // Object 方法
     // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * 返回完整的标签字符串，格式为 {@code prefix:value}。
-     * <p>
-     * 示例：{@code "entity:minecraft:zombie"}, {@code "state:health_critical"}
-     */
     @Override
     public String toString() {
         return prefix + ":" + value;
@@ -137,10 +158,9 @@ public final class DetailTag {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (!(o instanceof DetailTag that))
-            return false;
+        if (this == o) return true;
+        if (!(o instanceof DetailTag)) return false;
+        DetailTag that = (DetailTag) o;
         return prefix.equals(that.prefix) && value.equals(that.value);
     }
 

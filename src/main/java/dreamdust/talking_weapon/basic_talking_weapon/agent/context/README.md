@@ -30,6 +30,8 @@
 
 > **亮点：**海量冗余方块采用了 `associativeOnly = true` 隐式标签。该方块标签仅参与第三层性格/记忆匹配查询。如若未命中，对大模型严格不可见，节约 tokens。
 
+> **补充：**`native_generic:*` 与 `associativeOnly` 是两套不同机制。前者会进入系统检索层，但在 Prompt 合成阶段默认隐藏；后者控制的是整条 `TaggedContextEntry` 是否默认对大模型可见。
+
 ### 3. 注意力过滤 (AttentionFilter)
 
 这是 **Phase 3** 加入的核心机制，它保证大模型不会被纷繁复杂的垃圾数据和信息冲毁思维 (Token Overflow)。
@@ -39,4 +41,15 @@
 ### 4. 字典转换注入 (LLMInteractionTask / Prompt Generation)
 
 最后，通过 Attention Filter 筛选下来的黄金信息，会进入提示词合成组装：
-经过 `TagDescriptionDictionary` 的翻译（将生硬的ID转换为人类自然语言如 `minecraft:diamond` -> `钻石`），并可牵引出字典内联想的 `extras` 特质。最终打印上“(主观重要度: 0.8)”丢给大模型推演。
+经过 `TagDescriptionDictionary` 的翻译（将生硬的 ID 转换为人类自然语言如 `minecraft:diamond` -> `钻石`），最终打印上“(主观重要度: 0.8)”丢给大模型推演。
+
+关系 fallback 不再由描述字典维护，而是转移至 `TagRelationDictionary`：
+
+- `tag_descriptions.json`：只维护描述文本
+- `tag_relations.json`：维护一对多、无环的语义关系图
+
+在 Prompt 阶段，系统会隐藏 `native_generic:*`，只向 LLM 暴露：
+
+- `native_specific:*`
+- `custom_specific:*`
+- `custom_generic:*`

@@ -101,7 +101,7 @@ public class NearbyStructureCollector implements IContextCollector {
 
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.of(DetailTag.STRUC, structureId))
+                    .detail(DetailTag.nativeSpecific(structureId))
                     .description(String.format("注意到%s的结构: %s", dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(distance), prettifyName(structureId)))
                     .importance(distance < 32 ? 0.8f : 0.5f) // 距离越近权重越高
                     .timestamp(now)

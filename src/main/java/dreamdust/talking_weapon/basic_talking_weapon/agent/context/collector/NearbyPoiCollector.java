@@ -98,7 +98,7 @@ public class NearbyPoiCollector implements IContextCollector {
 
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(focus)
-                    .detail(DetailTag.of(DetailTag.POI, prettifyName(poiName)))
+                    .detail(DetailTag.customSpecific(prettifyName(poiName)))
                     .description(String.format("注意到%s的特殊位置: %s", dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(distance), prettifyName(poiName)))
                     .importance(ImportanceRegistry.getInstance().get("poi:default", 0.6f))
                     .timestamp(now)

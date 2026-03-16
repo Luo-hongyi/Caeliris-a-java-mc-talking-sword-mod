@@ -14,7 +14,8 @@
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
 - **多厂商支持**：支持 OpenAI / Qwen / DeepSeek(无视觉) / Custom（通过 OpenAI 兼容接口）
 - **左键打断**：思考过程中可随时左键中断请求
-- **游戏内配置界面**：可滚动列表，per-trigger 采集器开关 / Agent 行为 / 厂商模型 / 截图分辨率
+- **游戏内前台设定与调试 GUI**：支持右下方界面查看和热更新 武器情绪、熟悉度、基础人格词条。
+- **跨地图设定植入 (Implanted Memory)**：允许通过 `LTMStorage` 保存和读取跨地图永恒人设。游戏内通过 OS 桥接跳转编辑器，免于前台版面臃肿，并在状态栏重新激活时底层自动热更！
 - **完全可自定义**：触发 / 打断 / 系统 Prompt / Per-Trigger Prompt / 输出长度 / 武器名称
 
 ## 📁 模块结构
@@ -29,6 +30,7 @@ agent/
 │   │   ├── BaseContextCollector.java — HP / 饥饿值 / 坐标 / 群系 / 天气 / 时间
 │   │   ├── ScreenshotCollector.java  — 截图 → Base64（受全局 ENABLE_SCREENSHOT 控制）
 │   │   ├── NearbyEntitiesCollector.java — 附近实体扫描（16格内，按类型分组）
+│   │   ├── SurroundingBlocksCollector.java — 周报方块统计与环境高阶推断（露天/洞穴/高空）
 │   │   ├── PlayerEnvironmentCollector.java — 维度 / 光照 / 持有物品 / 盔甲 / 准星目标
 │   │   └── README.md                — 采集器开发指南
 │   └── trigger/                     ← 触发器（定义事件 → 动态采集器列表 → 专属 prompt → 任务类型）
@@ -44,7 +46,6 @@ agent/
 ├── state/                          ← 显式状态
 │   └── AgentState.java              — 情绪 Mood 枚举 + 熟悉度 + 当前目标
 ├── memory/                         ← 记忆系统
-│   ├── AgentMsg.java                — 兼容的轻量消息体 (Role/Content)
 │   ├── AgentOutputRecord.java       — Agent 自身输出的行为记录 (语音/内心独白)
 │   ├── InteractionTurn.java         — 完整的单轮回合（含 TriggerSource、User Prompt 与产生的 Output 列表）
 │   ├── STMPool.java                 — 短期记忆聚合池：收集本纪元的全局 Context Entries + Interaction回合
@@ -52,6 +53,7 @@ agent/
 │   ├── ActionRecord.java            — 极轻量动作记录（TTL 刷新 + 全缓冲区扫描合并）
 │   ├── ActionBuffer.java            — 环形动作缓冲区（3min 滑动窗口淘汰，支持 drainTo 已读池）
 │   ├── LTMEntry.java                — 长期记忆切片（基于Tag检索，含重要度和清晰度衰减）
+│   ├── LTMStorage.java              — 长期记忆跨存档读取保存持久化服务
 │   └── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
@@ -67,7 +69,8 @@ agent/
 ├── runtime/                        ← Agent 运行时
 │   └── AgentRuntime.java            — 双队列双 worker（前台交互 + 后台反思）+ 全局 Memory/State
 ├── dictionary/                     ← 配置字典
-│   ├── TagDescriptionDictionary.java — DetailTag → 自然语言描述（从 config JSON 加载）
+│   ├── TagDescriptionDictionary.java — DetailTag → 自然语言描述（只负责描述文本）
+│   ├── TagRelationDictionary.java  — DetailTag 一对多关系图（匹配 / fallback，要求无环）
 │   └── LocationRegistry.java        — 关键地点注册表（运行时增删 + 即时持久化）
 └── llm_service/                    ← LLM 工具
     ├── LLMAgentService.java         — 纯工具类：buildModel()
@@ -142,6 +145,18 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - **RightClickTrigger** → 读取 `RIGHT_CLICK_PROMPT` 配置
 - **BiomeChangeTrigger** → 读取 `BIOME_CHANGE_PROMPT` 配置，替换 `{old_biome}` / `{new_biome}` 占位符
 - 新增触发器只需覆写 `getUserPrompt()` 即可拥有独立 prompt
+
+### DetailTag 可见性规范
+
+- `native_specific` 与全部 `custom_*`：允许进入 Prompt。
+- `native_generic`：Collector 会全量接收，进入 `TaggedContextEntry`、STM、Persona / Memory 检索，但在 Prompt 合成阶段默认隐藏。
+- `associativeOnly`：控制的是“整条 ContextEntry 默认是否可见”。
+- `native_generic` 隐藏：控制的是“条目可见时，哪些 detail tag 不输出给 LLM”。
+
+这两个机制是正交的：
+
+- `associativeOnly = true` 的条目，若未命中人格/记忆联想，整条不会进入 Prompt。
+- 某条条目即使进入 Prompt，其中的 `native_generic` 仍不会直接序列化给 LLM。
 
 ### 显示机制
 - 所有剑的发言在**快捷栏上方（Action Bar）**显示

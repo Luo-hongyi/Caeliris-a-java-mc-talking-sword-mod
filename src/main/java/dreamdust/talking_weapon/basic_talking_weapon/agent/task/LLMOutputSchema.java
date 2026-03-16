@@ -45,6 +45,9 @@ public enum LLMOutputSchema {
     /** 情绪更新：返回新情绪名和强度值，更新 AgentState */
     EMOTION_UPDATE,
 
+    /** 长期记忆合成：用于 ReflectionTask 生成纪元总结和提炼标签 */
+    LTM_SYNTHESIS,
+
     // ── 提示词段落开关（不影响 JSON 输出格式，仅控制 system prompt 中是否注入对应段落） ──
 
     /** 在 system prompt 中注入 FocusTag 领域说明段落 */

@@ -78,4 +78,9 @@ public class RightClickTrigger implements IAgentTrigger {
     public String getEventInstruction() {
         return PromptRegistry.getInstance().getTriggerEventInstruction(getSourceName());
     }
+
+    @Override
+    public List<String> getEnabledActions() {
+        return java.util.List.of("speech", "inner_monologue", "favorability_update");
+    }
 }

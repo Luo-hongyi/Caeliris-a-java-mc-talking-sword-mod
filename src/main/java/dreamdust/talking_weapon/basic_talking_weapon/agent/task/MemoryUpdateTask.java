@@ -25,9 +25,7 @@ public class MemoryUpdateTask extends AgentTask {
     public void execute() {
         if (isCancelled()) return;
 
-        // TODO: 实现记忆更新逻辑
-        // 1. 将 messageContent 包装为 AgentMsg 并追加到 AgentMemory.shortTerm
-        // 2. 根据 AgentContext 更新 AgentState (如 combatStreak, biome 变化等)
+        // TODO: 实现本地记忆/状态更新逻辑
     }
 
     @Override

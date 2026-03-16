@@ -79,7 +79,7 @@ public class BaseContextCollector implements IContextCollector {
             }
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.STATUS)
-                    .detail(DetailTag.STATE, healthState)
+                    .detail(DetailTag.CUSTOM_SPECIFIC, healthState)
                     .description(hpDesc)
                     .importance(healthImportance)
                     .build());
@@ -89,14 +89,14 @@ public class BaseContextCollector implements IContextCollector {
             if (food < 6) {
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.STATUS)
-                    .detail(DetailTag.STATE, "hungry_critical")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "hungry_critical")
                     .description("主人已经非常饥饿，甚至没有力气奔跑了！(饥饿值: " + food + ")")
                     .importance(ImportanceRegistry.getInstance().get("base:hunger_critical", 0.8f))
                     .build());
             } else if (food < 15) {
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.STATUS)
-                    .detail(DetailTag.STATE, "hungry_low")
+                    .detail(DetailTag.CUSTOM_SPECIFIC, "hungry_low")
                     .description("主人的体力消耗明显，肚子饿了。(饥饿值: " + food + ")")
                     .importance(ImportanceRegistry.getInstance().get("base:hunger_low", 0.4f))
                     .build());
@@ -116,7 +116,7 @@ public class BaseContextCollector implements IContextCollector {
             String timeState = categorizeTime(dayTime);
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.STATE, timeState)
+                    .detail(DetailTag.CUSTOM_SPECIFIC, timeState)
                     .description("感知到世界的时间是: " + timeDesc)
                     .importance(ImportanceRegistry.getInstance().get("base:time", 0.2f))
                     .associativeOnly(true)
@@ -129,7 +129,7 @@ public class BaseContextCollector implements IContextCollector {
                     : level.isRaining() ? ImportanceRegistry.getInstance().get("base:weather_bad", 0.3f) : ImportanceRegistry.getInstance().get("base:weather_good", 0.1f);
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
-                    .detail(DetailTag.STATE, weatherState)
+                    .detail(DetailTag.CUSTOM_SPECIFIC, weatherState)
                     .description("外面的天气: " + (level.isThundering() ? "正在电闪雷鸣的暴风雨" : level.isRaining() ? "正在下雨" : "晴朗万里"))
                     .importance(weatherImportance)
                     .build());
@@ -143,7 +143,7 @@ public class BaseContextCollector implements IContextCollector {
                     // ── 标签：群系 ──
                     builder.addTaggedEntry(TaggedContextEntry.builder()
                             .focus(FocusTag.LANDSCAPE)
-                            .detail(DetailTag.BIOME, biomeId)
+                            .detail(DetailTag.NATIVE_SPECIFIC, biomeId)
                             .description("主人正身处于群落: " + biomeId)
                             .importance(ImportanceRegistry.getInstance().get("base:biome", 0.2f))
                             .associativeOnly(true)

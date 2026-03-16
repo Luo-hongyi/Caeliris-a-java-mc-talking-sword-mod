@@ -117,7 +117,7 @@ public class TickEventWatcher {
                 && event.getSource().getEntity().getUUID().equals(playerUUID)) {
             String targetId = entityId(hurt);
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ENTITY, targetId));
+            tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(hurt, tags);
             ActionRecord record = ActionRecord.of(ActionType.ATTACK, targetId, tags);
             AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
@@ -129,7 +129,7 @@ public class TickEventWatcher {
                     ? entityId((LivingEntity) event.getSource().getEntity())
                     : "unknown";
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ENTITY, sourceId));
+            tags.add(DetailTag.nativeSpecific(sourceId));
             ActionRecord record = ActionRecord.of(ActionType.HURT_BY, sourceId, tags);
             AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
             logBufferAdd(record);
@@ -154,7 +154,7 @@ public class TickEventWatcher {
                 && !dead.getUUID().equals(playerUUID)) {
             String targetId = entityId(dead);
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ENTITY, targetId));
+            tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(dead, tags);
             ActionRecord record = ActionRecord.of(ActionType.KILL, targetId, tags);
             AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
@@ -193,7 +193,7 @@ public class TickEventWatcher {
         String id = blockId != null ? blockId.toString() : "unknown";
 
         Set<DetailTag> tags = new LinkedHashSet<>();
-        tags.add(DetailTag.of(DetailTag.BLOCK, id));
+        tags.add(DetailTag.nativeSpecific(id));
 
         ActionRecord record = ActionRecord.of(ActionType.MINE_BLOCK, id, tags);
         AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
@@ -218,7 +218,7 @@ public class TickEventWatcher {
         String id = blockId != null ? blockId.toString() : "unknown";
 
         Set<DetailTag> tags = new LinkedHashSet<>();
-        tags.add(DetailTag.of(DetailTag.BLOCK, id));
+        tags.add(DetailTag.nativeSpecific(id));
 
         ActionRecord record = ActionRecord.of(ActionType.PLACE_BLOCK, id, tags);
         AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
@@ -243,7 +243,7 @@ public class TickEventWatcher {
         String id = itemId != null ? itemId.toString() : "unknown";
 
         Set<DetailTag> tags = new LinkedHashSet<>();
-        tags.add(DetailTag.of(DetailTag.ITEM, id));
+        tags.add(DetailTag.nativeSpecific(id));
 
         // 判断是否为食物
         ActionType type = stack.getItem().isEdible() ? ActionType.EAT : ActionType.USE_ITEM;
@@ -283,10 +283,10 @@ public class TickEventWatcher {
 
             // 写入 ActionBuffer
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ACTION, "biome_change"));
-            tags.add(DetailTag.of(DetailTag.BIOME, currentBiome));
+            tags.add(DetailTag.customGeneric("biome_change"));
+            tags.add(DetailTag.nativeSpecific(currentBiome));
             if (lastKnownDim != null) {
-                tags.add(DetailTag.of(DetailTag.DIM, lastKnownDim));
+                tags.add(DetailTag.nativeSpecific(lastKnownDim));
             }
             ActionRecord record = ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags);
             buffer.add(record);
@@ -313,10 +313,10 @@ public class TickEventWatcher {
 
             // 写入 ActionBuffer
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ACTION, "dim_change"));
-            tags.add(DetailTag.of(DetailTag.DIM, currentDim));
+            tags.add(DetailTag.customGeneric("dim_change"));
+            tags.add(DetailTag.nativeSpecific(currentDim));
             if (lastKnownBiome != null) {
-                tags.add(DetailTag.of(DetailTag.BIOME, lastKnownBiome));
+                tags.add(DetailTag.nativeSpecific(lastKnownBiome));
             }
 
             ActionRecord record = ActionRecord.of(ActionType.DIM_CHANGE, currentDim, tags);
@@ -352,14 +352,14 @@ public class TickEventWatcher {
                     currentPos.getX(), currentPos.getY(), currentPos.getZ());
 
             Set<DetailTag> tags = new LinkedHashSet<>();
-            tags.add(DetailTag.of(DetailTag.ACTION, "travel"));
+            tags.add(DetailTag.customGeneric("travel"));
 
             // 将当前群系和维度写入标签
             if (lastKnownBiome != null) {
-                tags.add(DetailTag.of(DetailTag.BIOME, lastKnownBiome));
+                tags.add(DetailTag.nativeSpecific(lastKnownBiome));
             }
             String dim = player.level().dimension().location().toString();
-            tags.add(DetailTag.of(DetailTag.DIM, dim));
+            tags.add(DetailTag.nativeSpecific(dim));
 
             ActionRecord record = ActionRecord.of(ActionType.TRAVEL, direction, tags);
             buffer.add(record);
@@ -382,12 +382,15 @@ public class TickEventWatcher {
 
     /** 为实体添加 trait 标签（亡灵、节肢、Boss 等） */
     private void addTraitTags(LivingEntity entity, Set<DetailTag> tags) {
+        if (entity.getType().getCategory() == net.minecraft.world.entity.MobCategory.MONSTER) {
+            tags.add(DetailTag.customGeneric("monster"));
+        }
         if (entity.isInvertedHealAndHarm()) {
-            tags.add(DetailTag.of(DetailTag.TRAIT, "undead"));
+            tags.add(DetailTag.customGeneric("undead"));
         }
         // Forge MobType check for arthropod
         if (entity.getMobType() == net.minecraft.world.entity.MobType.ARTHROPOD) {
-            tags.add(DetailTag.of(DetailTag.TRAIT, "arthropod"));
+            tags.add(DetailTag.customGeneric("arthropod"));
         }
     }
 

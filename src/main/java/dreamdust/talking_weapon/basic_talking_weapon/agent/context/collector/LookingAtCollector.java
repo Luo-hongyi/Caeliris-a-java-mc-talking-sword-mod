@@ -17,6 +17,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * 注视目标采集器：获取玩家准心（crosshair）当前对准的方块或实体。
@@ -62,8 +63,8 @@ public class LookingAtCollector implements IContextCollector {
                 sb.append(" 名称: \"").append(crosshairEntity.getCustomName().getString()).append("\"");
             }
 
-            String detailPrefix = DetailTag.ENTITY;
-            String detailValue = name;
+            String detailPrefix = DetailTag.NATIVE_SPECIFIC;
+            String detailValue = resolveEntityId(crosshairEntity);
 
             // 处理展示框特殊情况：获取内部物品
             if (crosshairEntity instanceof ItemFrame itemFrame) {
@@ -71,12 +72,8 @@ public class LookingAtCollector implements IContextCollector {
                 if (!framedItem.isEmpty()) {
                     String itemName = framedItem.getHoverName().getString();
                     sb.append(" [展示框内物品: ").append(itemName).append("]");
-                    detailValue = itemName;
-                    if (framedItem.getItem() instanceof BlockItem) {
-                        detailPrefix = DetailTag.BLOCK;
-                    } else {
-                        detailPrefix = DetailTag.ITEM;
-                    }
+                    detailValue = resolveItemId(framedItem);
+                    detailPrefix = DetailTag.NATIVE_SPECIFIC;
                 }
             }
 
@@ -96,6 +93,7 @@ public class LookingAtCollector implements IContextCollector {
             BlockPos pos = blockHit.getBlockPos();
             BlockState blockState = level.getBlockState(pos);
             String blockName = blockState.getBlock().getName().getString();
+            String blockId = resolveBlockId(blockState);
 
             double dist = Math.sqrt(player.blockPosition().distSqr(pos));
 
@@ -107,7 +105,7 @@ public class LookingAtCollector implements IContextCollector {
 
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.COMMON)
-                    .detail(DetailTag.BLOCK, blockName)
+                    .detail(DetailTag.NATIVE_SPECIFIC, blockId)
                     .description(sb.toString())
                     .importance(ImportanceRegistry.getInstance().get("look:block", 1.0f))
                     .build());
@@ -116,5 +114,29 @@ public class LookingAtCollector implements IContextCollector {
 
         // ── 什么也没看 ──
         builder.extra("looking_at", "正在看: 天空/远方(无目标)");
+    }
+
+    private String resolveEntityId(Entity entity) {
+        var id = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+        return id != null ? id.toString() : entity.getType().toString();
+    }
+
+    private String resolveItemId(ItemStack stack) {
+        var id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        if (id != null) {
+            return id.toString();
+        }
+        if (stack.getItem() instanceof BlockItem blockItem) {
+            var blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
+            if (blockId != null) {
+                return blockId.toString();
+            }
+        }
+        return stack.getHoverName().getString();
+    }
+
+    private String resolveBlockId(BlockState blockState) {
+        var id = ForgeRegistries.BLOCKS.getKey(blockState.getBlock());
+        return id != null ? id.toString() : blockState.getBlock().getName().getString();
     }
 }

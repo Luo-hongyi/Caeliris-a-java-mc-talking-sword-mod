@@ -1,0 +1,8 @@
+{
+  "_comment": "DetailTag 的一对多语义关系图。该图用于程序侧匹配与 fallback，不直接决定 Prompt 输出。",
+  "_comment2": "图必须无环。native_generic 会保留在系统内部，但默认不会直接暴露给 LLM Prompt。",
+  "custom_generic:boss": [
+    "custom_generic:dangerous",
+    "custom_generic:epic_encounter"
+  ]
+}

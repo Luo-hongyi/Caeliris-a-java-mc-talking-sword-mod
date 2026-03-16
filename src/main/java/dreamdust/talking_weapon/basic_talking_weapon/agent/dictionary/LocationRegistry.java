@@ -18,7 +18,7 @@ import java.util.*;
  * 从 {@code config/talking_weapon/location_registry.json} 加载，
  * 首次运行时自动从 jar 内资源复制默认配置。
  * <p>
- * <b>用途</b>：当 Collector 或触发器产出 {@code loc:*} 类型的 DetailTag 时，
+ * <b>用途</b>：当 Collector 或触发器产出 {@code custom_specific:*} 且值命中地点名时，
  * 可在此查询地标对应的坐标与维度，并注入 LLM Prompt。
  * 也可用于未来的"返回家"等指令。
  * <p>
@@ -45,7 +45,7 @@ public final class LocationRegistry {
         public String dim; // 维度 ID，如 "minecraft:overworld"
         public String note; // 备注
         public String focusTag; // 关联的 FocusTag 名称（如 "LANDSCAPE"），可为空
-        public String detailTags; // 逗号分隔的 DetailTag 列表（如 "trait:safe,env:base"），可为空
+        public String detailTags; // 逗号分隔的 DetailTag 列表（如 "custom_generic:safe"），可为空
 
         public LocationEntry() {
         }

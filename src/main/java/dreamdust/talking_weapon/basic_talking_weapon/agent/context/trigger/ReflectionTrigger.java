@@ -36,8 +36,12 @@ public class ReflectionTrigger implements IAgentTrigger {
 
     @Override
     public AgentTask createTask(AgentContext context) {
-        // TODO: 后续迭代实现 ReflectionTask
-        return null;
+        return new dreamdust.talking_weapon.basic_talking_weapon.agent.task.ReflectionTask(context);
+    }
+
+    @Override
+    public List<String> getEnabledActions() {
+        return List.of("favorability_settlement");
     }
 
     @Override

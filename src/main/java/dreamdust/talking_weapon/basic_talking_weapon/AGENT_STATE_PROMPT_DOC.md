@@ -67,7 +67,7 @@
     分化成多级 Context：
     *   `[Context]` 基本的世界参数（所处维度，所在相对位置）。
     *   `[Extra Context]` 从外部传入的非对象化附加参数。
-    *   `[Tagged Context]` 这里包含周围环境物块和生物的字典查阅结果。例如捕捉到地标属性，系统在入模前会主动查询 `LocationRegistry` 获取详细描述并替代其 ID（`loc:家` -> `家: 床和箱子的栖息地`），配合计算出来的 `(重要度修正)` 大幅提升大模型对当前位置的沉浸理解能力。
+    *   `[Tagged Context]` 这里包含周围环境物块和生物的字典查阅结果。例如捕捉到地标属性，系统在入模前会主动查询 `LocationRegistry` 获取详细描述并替代其 ID（`custom_specific:家` -> `家: 床和箱子的栖息地`），配合计算出来的 `(重要度修正)` 大幅提升大模型对当前位置的沉浸理解能力。
 5.  **按需构建输出模式 `[Output Format]`**
     由 `buildOutputFormatInstruction` 控制的 JSON 模式构造器。
 

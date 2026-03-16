@@ -57,11 +57,36 @@ public final class AgentResponse {
     }
 
     /**
+     * 长期记忆合成（可选）。
+     * 仅用于 ReflectionTask 周期总结。
+     */
+    public static class LtmSynthesis {
+        public String description;
+        public java.util.List<String> focus_tags;
+        public java.util.List<String> detail_tags;
+        public float importance = 0.5f;
+
+        public boolean isValid() {
+            return description != null && !description.isBlank();
+        }
+
+        @Override
+        public String toString() {
+            return "LtmSynthesis{desc='" + description + "', importance=" + importance + "}";
+        }
+    }
+
+    private LtmSynthesis ltm_synthesis;
+
+    /**
      * Agent 动作请求。
      */
     public static class ActionRequest {
         public String type;
         public String content;
+        
+        /** 用于 favorability_update 类型动作的特定金额字段 */
+        public Integer change_amount;
 
         public ActionRequest() {}
 
@@ -107,6 +132,14 @@ public final class AgentResponse {
         this.emotion_update = v;
     }
 
+    public LtmSynthesis getLtmSynthesis() {
+        return ltm_synthesis;
+    }
+
+    public void setLtmSynthesis(LtmSynthesis v) {
+        this.ltm_synthesis = v;
+    }
+
     // ─────────────────────────────────────────────
     // 便捷查询
     // ─────────────────────────────────────────────
@@ -119,6 +152,11 @@ public final class AgentResponse {
     /** 是否携带情绪更新 */
     public boolean hasEmotionUpdate() {
         return emotion_update != null && emotion_update.isValid();
+    }
+
+    /** 是否携带LTM摘要 */
+    public boolean hasLtmSynthesis() {
+        return ltm_synthesis != null && ltm_synthesis.isValid();
     }
 
     /** 是否有非空的动作列表 */

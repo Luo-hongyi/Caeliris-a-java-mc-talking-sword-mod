@@ -109,6 +109,7 @@ public class AttentionFilter {
                 case MOVEMENT: return TalkingWeaponConfig.WEIGHT_MOVEMENT.get();
                 case LABOR: return TalkingWeaponConfig.WEIGHT_LABOR.get();
                 case CREATION: return TalkingWeaponConfig.WEIGHT_CREATION.get();
+                case CREATURE: return TalkingWeaponConfig.WEIGHT_CREATURE.get();
                 case SOCIAL: return TalkingWeaponConfig.WEIGHT_SOCIAL.get();
                 case LANDSCAPE: return TalkingWeaponConfig.WEIGHT_LANDSCAPE.get();
                 case HAZARD: return TalkingWeaponConfig.WEIGHT_HAZARD.get();

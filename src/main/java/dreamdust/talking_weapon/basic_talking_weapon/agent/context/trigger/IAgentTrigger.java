@@ -82,4 +82,16 @@ public interface IAgentTrigger {
     default EnumSet<LLMOutputSchema> getOutputSchema() {
         return LLMOutputSchema.defaultSchema();
     }
+
+    /**
+     * 声明此触发器所允许的大模型行为类别（对应 ActionRegistry 中注册的 type）。
+     * <p>
+     * {@code LLMInteractionTask} 在构建请求时，只会将这里声明的动作暴露给大模型。
+     * 默认只包含基本的 {@code speech} 和 {@code inner_monologue}。
+     *
+     * @return 此触发器启用的大模型动作列表
+     */
+    default List<String> getEnabledActions() {
+        return List.of("speech", "inner_monologue");
+    }
 }

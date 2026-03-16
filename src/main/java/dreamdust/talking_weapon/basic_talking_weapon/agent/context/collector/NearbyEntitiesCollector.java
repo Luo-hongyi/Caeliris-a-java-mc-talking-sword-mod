@@ -7,8 +7,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedCon
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -16,25 +17,13 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.*;
 
 /**
  * 附近实体采集器：扫描玩家周围一定半径内的实体，
- * 将<b>生物</b>（{@link LivingEntity}）与<b>其他实体</b>（掉落物、展示框、矿车等）
- * 分开统计，按类型分组计数后分别写入：
- * <ul>
- * <li>{@code extras["nearby_creatures"]} — 生物（怪物、动物、NPC 等）</li>
- * <li>{@code extras["nearby_objects"]} — 非生物实体（掉落物、展示框、船、矿车等）</li>
- * </ul>
- *
- * <h3>可选功能（通过配置控制）</h3>
- * <ul>
- * <li><b>视线检测</b> ({@code entity.lineOfSight}) — 仅对生物生效，过滤被方块遮挡的生物</li>
- * <li><b>模糊数量</b> ({@code entity.fuzzyCount}) — 用"一个/一些/大量"代替精确数字</li>
- * </ul>
- *
- * 使用原版 {@link Level#getEntities(Entity, AABB)} API，无需任何外部依赖。
+ * 采用原生 EntityType 与 Tag 收集，防大包噪声机制。
  */
 public class NearbyEntitiesCollector implements IContextCollector {
 
@@ -66,12 +55,12 @@ public class NearbyEntitiesCollector implements IContextCollector {
         AABB area = player.getBoundingBox().inflate(radius);
         List<Entity> entities = level.getEntities(player, area);
 
-        // 生物（LivingEntity，排除玩家自身）
         Map<String, Integer> creatureCounts = new LinkedHashMap<>();
-        // 非生物实体（掉落物、展示框、矿车、船等）
         Map<String, Integer> objectCounts = new LinkedHashMap<>();
+        Map<String, EntityType<?>> nameToType = new HashMap<>();
+        Map<String, LivingEntity> nameToLiving = new HashMap<>();
 
-        // ── 视线检测预处理：仅对生物，按距离排序后取前 N 个 ──
+        // ── 视线检测预处理 ──
         Vec3 eyePos = null;
         Set<Integer> occludedIds = Collections.emptySet();
         if (lineOfSight) {
@@ -81,10 +70,8 @@ public class NearbyEntitiesCollector implements IContextCollector {
                 if (e instanceof LivingEntity)
                     creatures.add(e);
             }
-            // 按距离排序
             final Vec3 pos = eyePos;
             creatures.sort(Comparator.comparingDouble(e -> e.distanceToSqr(pos)));
-            // 仅对最近的 losMaxCheck 个做射线检测
             int limit = Math.min(creatures.size(), losMaxCheck);
             occludedIds = new HashSet<>();
             for (int i = 0; i < limit; i++) {
@@ -93,13 +80,11 @@ public class NearbyEntitiesCollector implements IContextCollector {
                     occludedIds.add(e.getId());
                 }
             }
-            // 超出检测上限的生物不做过滤（保守策略：假设可见）
         }
 
         hostileNames.clear();
 
         for (Entity entity : entities) {
-            // 视线检测仅过滤生物
             if (lineOfSight && entity instanceof LivingEntity && occludedIds.contains(entity.getId())) {
                 continue;
             }
@@ -107,8 +92,10 @@ public class NearbyEntitiesCollector implements IContextCollector {
             String name = entity.getType().getDescription().getString();
             if (entity instanceof LivingEntity) {
                 creatureCounts.merge(name, 1, Integer::sum);
-                // 判断是否为敌对生物：Mob 且以玩家为攻击目标
-                if (entity instanceof Mob mob && mob.getTarget() == player) {
+                nameToType.putIfAbsent(name, entity.getType());
+                nameToLiving.putIfAbsent(name, (LivingEntity) entity);
+                // 判断是否敌对，使用原生的 MobCategory.MONSTER
+                if (entity.getType().getCategory() == MobCategory.MONSTER) {
                     hostileNames.add(name);
                 }
             } else {
@@ -116,14 +103,13 @@ public class NearbyEntitiesCollector implements IContextCollector {
             }
         }
 
-        // ── 生物 ──
+        // ── 记录文本描述 ──
         if (creatureCounts.isEmpty()) {
             builder.extra("nearby_creatures", "附近没有生物");
         } else {
             builder.extra("nearby_creatures", formatCounts(creatureCounts, fuzzy));
         }
 
-        // ── 非生物实体（受配置控制） ──
         if (!TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.get()) {
             if (objectCounts.isEmpty()) {
                 builder.extra("nearby_objects", "附近没有其他实体");
@@ -132,117 +118,107 @@ public class NearbyEntitiesCollector implements IContextCollector {
             }
         }
 
-        // ── 标签：为每种被检测到的生物类型生成标签条目 ──
+        // ── 生成结构化标签条目 ──
         int totalHostile = 0;
         for (Map.Entry<String, Integer> entry : creatureCounts.entrySet()) {
             String name = entry.getKey();
             int count = entry.getValue();
+            EntityType<?> type = nameToType.get(name);
+            LivingEntity representative = nameToLiving.get(name);
 
-            // 尝试获取实体的 Registry ID——由于我们仅存储了显示名，这里用显示名做 description
-            // 检查是否为敌对生物（通过 entityTypeCountsHostile 字典）
             boolean isHostile = hostileNames.contains(name);
-            if (isHostile)
+            if (isHostile) {
                 totalHostile += count;
+            }
 
-            FocusTag focus = isHostile ? FocusTag.COMBAT : FocusTag.SOCIAL;
-            float imp = isHostile ? ImportanceRegistry.getInstance().get("entity:hostile_base", 0.6f) : ImportanceRegistry.getInstance().get("entity:passive_base", 0.2f);
+            float imp = isHostile ? ImportanceRegistry.getInstance().get("native_specific:hostile_base", 0.6f) : ImportanceRegistry.getInstance().get("native_specific:passive_base", 0.2f);
 
             TaggedContextEntry.Builder tagBuilder = TaggedContextEntry.builder()
-                    .focus(focus)
                     .description((fuzzy ? fuzzyQuantity(count) : count + "只") + name)
                     .importance(imp);
 
-            // 尝试用实体名称生成标签（纯文本形式，无法获得 Registry ID）
-            tagBuilder.detail(DetailTag.ENTITY, name);
+            if (isHostile) {
+                tagBuilder.focus(FocusTag.CREATURE, FocusTag.HAZARD);
+            } else {
+                tagBuilder.focus(FocusTag.CREATURE);
+            }
 
+            // 单点原生标签 (Registry ID)
+            if (type != null) {
+                String registryId = ForgeRegistries.ENTITY_TYPES.getKey(type).toString();
+                tagBuilder.detail(DetailTag.nativeSpecific(registryId));
+
+                // 概括原生标签 (DataPack Tags)
+                var reverseTagOption = ForgeRegistries.ENTITY_TYPES.tags().getReverseTag(type);
+                if (reverseTagOption.isPresent()) {
+                    for (var tagKey : reverseTagOption.get().getTagKeys().toList()) {
+                        tagBuilder.detail(DetailTag.nativeGeneric(tagKey.location().toString()));
+                    }
+                }
+            } else {
+                // fallback
+                tagBuilder.detail(DetailTag.nativeSpecific(name));
+            }
+
+            addSemanticTags(tagBuilder, representative, isHostile);
             builder.addTaggedEntry(tagBuilder.build());
         }
 
-        // ── 标签：战斗烈度 ──
         if (totalHostile >= 5) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.COMBAT, FocusTag.HAZARD)
-                    .detail(DetailTag.STATE, "combat_intense")
+                    .detail(DetailTag.customGeneric("combat_intense"))
                     .description("附近有大量敌对生物（" + totalHostile + "只），战斗激烈")
-                    .importance(ImportanceRegistry.getInstance().get("entity:combat_intense", 0.9f))
+                    .importance(ImportanceRegistry.getInstance().get("native_specific:combat_intense", 0.9f))
                     .build());
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 射线检测
+    // 辅助方法
     // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * 使用射线追踪检测玩家眼部到实体中心之间是否有不透明方块遮挡。
-     * 命中点距实体中心 < 1 格时容忍为"可见"。
-     */
     private boolean hasLineOfSight(Level level, Vec3 eyePos, Entity entity) {
         Vec3 entityCenter = entity.getBoundingBox().getCenter();
-
         ClipContext context = new ClipContext(
-                eyePos,
-                entityCenter,
-                ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE,
-                null);
+                eyePos, entityCenter,
+                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, null);
         BlockHitResult result = level.clip(context);
 
-        if (result.getType() == HitResult.Type.MISS) {
-            return true; // 无遮挡
-        }
-        // 命中点距目标中心 < 1 格，视为可见
-        double hitDistSq = result.getLocation().distanceToSqr(entityCenter);
-        return hitDistSq < 1.0;
+        if (result.getType() == HitResult.Type.MISS) return true;
+        return result.getLocation().distanceToSqr(entityCenter) < 1.0;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // 格式化
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * 将 {名称 → 数量} 格式化为可读字符串。
-     *
-     * @param counts 分组计数
-     * @param fuzzy  true 时使用模糊描述，false 时使用精确数量
-     */
     private String formatCounts(Map<String, Integer> counts, boolean fuzzy) {
         StringBuilder sb = new StringBuilder();
         counts.forEach((name, count) -> {
-            if (sb.length() > 0)
-                sb.append(", ");
-            if (fuzzy) {
-                sb.append(fuzzyQuantity(count)).append(name);
-            } else {
-                sb.append(name).append("×").append(count);
-            }
+            if (sb.length() > 0) sb.append(", ");
+            if (fuzzy) sb.append(fuzzyQuantity(count)).append(name);
+            else sb.append(name).append("×").append(count);
         });
         return sb.toString();
     }
 
-    /**
-     * 将精确数量转换为模糊描述词。
-     * <ul>
-     * <li>1 → "一个"</li>
-     * <li>2–5 → "一些"</li>
-     * <li>6+ → "大量"</li>
-     * </ul>
-     */
     private String fuzzyQuantity(int count) {
-        if (count <= 1)
-            return "一个";
-        if (count <= 5)
-            return "一些";
+        if (count <= 1) return "一个";
+        if (count <= 5) return "一些";
         return "大量";
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // 敌对生物判定
-    // ═══════════════════════════════════════════════════════════════
+    private void addSemanticTags(TaggedContextEntry.Builder tagBuilder, LivingEntity entity, boolean isHostile) {
+        if (isHostile) {
+            tagBuilder.detail(DetailTag.customGeneric("monster"));
+        }
+        if (entity == null) {
+            return;
+        }
+        if (entity.isInvertedHealAndHarm()) {
+            tagBuilder.detail(DetailTag.customGeneric("undead"));
+        }
+        if (entity.getMobType() == net.minecraft.world.entity.MobType.ARTHROPOD) {
+            tagBuilder.detail(DetailTag.customGeneric("arthropod"));
+        }
+    }
 
-    /**
-     * 记录本次采集中被判定为敌对生物的显示名集合。
-     * 在遍历实体时填充，用于后续给标签打注 FocusTag.COMBAT。
-     */
     private final Set<String> hostileNames = new HashSet<>();
 }

@@ -1,14 +1,17 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.action.ActionRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.PersonaMatcher;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.SubconsciousBooster;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponseParser;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
@@ -20,7 +23,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.TraitEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -32,7 +34,6 @@ import dev.langchain4j.model.output.Response;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -55,6 +56,9 @@ public class LLMInteractionTask extends AgentTask {
 
     /** 前台交互任务默认优先级 */
     public static final int DEFAULT_PRIORITY = 10;
+
+    /** 存放本次构建 System Prompt 时最终经过注意力过滤暴露给模型看的上下文，供动作结算追踪使用 */
+    private List<TaggedContextEntry> visibleContexts = new ArrayList<>();
 
     public LLMInteractionTask(AgentContext context) {
         super(DEFAULT_PRIORITY, context);
@@ -189,23 +193,44 @@ public class LLMInteractionTask extends AgentTask {
             STMPool stmPool = AgentRuntime.getInstance().getMemory().getSTMPool();
             String triggerSrc = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
             List<AgentOutputRecord> records = new java.util.ArrayList<>();
-            
+
             boolean spoke = false;
             if (agentResponse.hasActions()) {
                 for (AgentResponse.ActionRequest req : agentResponse.getActions()) {
-                    if (req.type == null || req.content == null) continue;
+                    if (req.type == null)
+                        continue;
                     String t = req.type.toLowerCase();
-                    
+
                     if ("speech".equals(t)) {
-                        new SpeechAction("剑：" + req.content).perform();
-                        AgentLogger.logAction("speech", req.content);
-                        records.add(new AgentOutputRecord(AgentOutputRecord.Type.SPEECH, req.content));
-                        spoke = true;
+                        if (req.content != null) {
+                            new SpeechAction("剑：" + req.content).perform();
+                            AgentLogger.logAction("speech", req.content);
+                            records.add(new AgentOutputRecord(AgentOutputRecord.Type.SPEECH, req.content));
+                            spoke = true;
+                        }
                     } else if ("inner_monologue".equals(t)) {
-                        AgentLogger.logThinking("[inner_monologue]\n" + req.content);
-                        records.add(new AgentOutputRecord(AgentOutputRecord.Type.INNER_MONOLOGUE, req.content));
+                        if (req.content != null) {
+                            AgentLogger.logThinking("[inner_monologue]\n" + req.content);
+                            records.add(new AgentOutputRecord(AgentOutputRecord.Type.INNER_MONOLOGUE, req.content));
+                        }
+                    } else if ("favorability_update".equals(t)) {
+                        if (req.change_amount != null && req.change_amount != 0) {
+                            int appliedChange = stmPool.requestFavorabilityChange(req.change_amount,
+                                    this.visibleContexts);
+                            if (appliedChange != 0) {
+                                persona.adjustFavorability(appliedChange);
+                                AgentLogger.logAction("favorability_update",
+                                        String.format("Request: %d, Applied: %d, Total: %d", req.change_amount,
+                                                appliedChange, persona.getFavorability()));
+                            } else {
+                                AgentLogger.logDebug("好感度变动被限界拦截或截断：" + req.change_amount);
+                            }
+                        }
                     } else {
-                        AgentLogger.logAction(t, req.content);
+                        AgentLogger.logAction(t,
+                                req.content != null ? req.content
+                                        : (req.change_amount != null ? String.valueOf(req.change_amount)
+                                                : "unknown parameter"));
                         // 未来扩展其他 action 会在此做分支，暂只记录日志
                     }
                 }
@@ -219,8 +244,7 @@ public class LLMInteractionTask extends AgentTask {
                     triggerSrc,
                     eventInstruction,
                     screenshotBase64,
-                    records
-            );
+                    records);
             stmPool.pushInteractionTurn(turn);
 
         } catch (Throwable e) {
@@ -259,58 +283,14 @@ public class LLMInteractionTask extends AgentTask {
         // 认知规则
         sb.append(PromptRegistry.getInstance().getSystemCognitionRule()).append("\n\n");
 
-        // 长期记忆摘要
-        if (!memory.getLongTerm().isEmpty()) {
-            sb.append("[Long-term Memory]\n");
-            for (String entry : memory.getLongTerm()) {
-                sb.append("- ").append(entry).append("\n");
-            }
-            sb.append("\n");
-        }
-
         // Agent 运行时状态
         sb.append(state.toPromptSnippet()).append("\n");
 
-        // 收集当前帧所有活跃的 FocusTag 和 DetailTag，供 Persona 词条与隐式记忆筛选使用
-        Set<FocusTag> activeFocusTags = new HashSet<>();
-        Set<String> activeDetailTags = new HashSet<>();
-        TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
+        List<TaggedContextEntry> rawEntries = ctx.getTaggedEntries();
 
-        for (TaggedContextEntry entry : ctx.getTaggedEntries()) {
-            activeFocusTags.addAll(entry.getFocusTags());
-            for (DetailTag dt : entry.getDetailTags()) {
-                String rawTag = dt.toString();
-                activeDetailTags.add(rawTag);
-                // 展开预设的额外环境语义（Extras）供记忆联想匹配
-                activeDetailTags.addAll(tagDict.getExtras(rawTag));
-            }
-        }
-
-        // 找到哪些 DetailTag 成功触发了性格词条联想
-        Set<String> triggeringDetailTags = new HashSet<>();
-        List<TraitEntry> activeTraits = new ArrayList<>();
-        for (TraitEntry t : persona.getTraits()) {
-            boolean triggered = false;
-            // 1. 通过 FocusTag 触发
-            if (t.getAssociatedTag() != null && activeFocusTags.contains(t.getAssociatedTag())) {
-                triggered = true;
-            }
-            // 2. 通过 DetailTag 联想触发
-            for (String dt : t.getDetailTags()) {
-                if (activeDetailTags.contains(dt)) {
-                    triggered = true;
-                    triggeringDetailTags.add(dt);
-                }
-            }
-            if (triggered) {
-                activeTraits.add(t);
-            }
-        }
-
-        // Agent 人格画像（直接传入筛选好的词条）
-        String personaSnippet = persona.toPromptSnippet(activeTraits);
-        if (!personaSnippet.isBlank()) {
-            sb.append(personaSnippet).append("\n");
+        // ── STM 写入：将所有采集到的上下文条目（原始未加成）推入短期记忆池 ──
+        if (!rawEntries.isEmpty()) {
+            AgentRuntime.getInstance().getMemory().getSTMPool().pushContextAll(rawEntries);
         }
 
         // 事件指令与当前任务（归因到触发源，而不是玩家发言）
@@ -359,13 +339,7 @@ public class LLMInteractionTask extends AgentTask {
             sb.append("\n");
         }
 
-        // 标签化上下文（结构化信息，经过注意力过滤后注入）
-        List<TaggedContextEntry> rawEntries = ctx.getTaggedEntries();
-
-        // ── STM 写入：将所有采集到的上下文条目（未过滤）推入短期记忆池 ──
-        if (!rawEntries.isEmpty()) {
-            AgentRuntime.getInstance().getMemory().getSTMPool().pushContextAll(rawEntries);
-        }
+        // 标签化上下文（结构化信息，经过认知管线 v4 处理后注入）
 
         // ── 日志：打印所有采集到的 extras 供调试分析 ──
         if (!ctx.getExtras().isEmpty()) {
@@ -385,30 +359,51 @@ public class LLMInteractionTask extends AgentTask {
             String dimension = ctx.getExtra("dimension");
             String biome = ctx.getBiome();
 
-            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null || timeDesc != null || biome != null || dimension != null) {
+            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null
+                    || timeDesc != null || biome != null || dimension != null) {
                 sb.append("[Supplementary Info]\n");
                 if (timeDesc != null || biome != null || dimension != null) {
                     sb.append("- 环境: ");
-                    if (timeDesc != null) sb.append("时间为").append(timeDesc).append("  ");
-                    if (dimension != null) sb.append("身处维度:").append(dimension).append("  ");
-                    if (biome != null) sb.append("群系:").append(biome);
+                    if (timeDesc != null)
+                        sb.append("时间为").append(timeDesc).append("  ");
+                    if (dimension != null)
+                        sb.append("身处维度:").append(dimension).append("  ");
+                    if (biome != null)
+                        sb.append("群系:").append(biome);
                     sb.append("\n");
                 }
                 if (playerPos != null) {
                     sb.append("- 主人当前坐标: ").append(playerPos);
-                    if (groundLevel != null) sb.append("  地面高度Y=").append(groundLevel);
+                    if (groundLevel != null)
+                        sb.append("  地面高度Y=").append(groundLevel);
                     sb.append("\n");
                 }
-                if (nearbyCreatures != null) sb.append("- 附近生物: ").append(nearbyCreatures).append("\n");
-                if (nearbyObjects != null) sb.append("- 附近实体: ").append(nearbyObjects).append("\n");
-                if (blocksSummary != null) sb.append("- ").append(blocksSummary).append("\n");
+                if (nearbyCreatures != null)
+                    sb.append("- 附近生物: ").append(nearbyCreatures).append("\n");
+                if (nearbyObjects != null)
+                    sb.append("- 附近实体: ").append(nearbyObjects).append("\n");
+                if (blocksSummary != null)
+                    sb.append("- ").append(blocksSummary).append("\n");
                 sb.append("\n");
             }
         }
 
         if (!rawEntries.isEmpty()) {
             LocationRegistry locationReg = LocationRegistry.getInstance();
-            
+
+            // ── Phase 1: 潜意识直通 (0~2 条绕过 Top-K) ──
+            List<TaggedContextEntry> subconsciousPicks = SubconsciousBooster.pick(rawEntries, state.getConcentration());
+            if (!subconsciousPicks.isEmpty()) {
+                StringBuilder scLog = new StringBuilder("[潜意识直通] 抽取了 " + subconsciousPicks.size() + " 条直通条目:\n");
+                for (TaggedContextEntry sc : subconsciousPicks) {
+                    scLog.append("  → ").append(sc.getDescription()).append(" (importance=").append(String.format("%.2f", sc.getBaseImportance())).append(")\n");
+                }
+                AgentLogger.logDebug(scLog.toString());
+            } else {
+                AgentLogger.logDebug("[潜意识直通] 本轮无直通条目");
+            }
+
+            // ── Phase 2: Top-K 截断 (在原始未扰动的列表上执行) ──
             int topK = TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get();
             String source = ctx.getTriggerSource();
             if ("biome_change".equals(source)) {
@@ -416,11 +411,55 @@ public class LLMInteractionTask extends AgentTask {
             } else if ("player_chat".equals(source)) {
                 topK = TalkingWeaponConfig.TOP_K_CHAT.get();
             }
-            
-            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK, TalkingWeaponConfig.NOISE_THRESHOLD.get().floatValue(), state.getConcentration());
+
+            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK,
+                    TalkingWeaponConfig.NOISE_THRESHOLD.get().floatValue(), state.getConcentration());
+
+            // ── Phase 3: 合并去重 (Top-K + 潜意识直通) ──
+            java.util.LinkedHashSet<TaggedContextEntry> visibleSet = new java.util.LinkedHashSet<>(filteredEntries);
+            visibleSet.addAll(subconsciousPicks);
+            List<TaggedContextEntry> mergedVisible = new ArrayList<>(visibleSet);
+
+            // 记录最终可见层，供动作结算追踪使用
+            this.visibleContexts.clear();
+            this.visibleContexts.addAll(mergedVisible);
+
+            // ── Phase 4: 偏好确定性全量匹配 (PersonaMatcher) ──
+            PersonaMatcher.MatchResult personaResult = PersonaMatcher.match(mergedVisible, persona);
+            Set<String> triggeringDetailTags = personaResult.triggeringDetailTags;
+
+            if (!personaResult.activeTraits.isEmpty()) {
+                StringBuilder pmLog = new StringBuilder("[偏好匹配] 激发了 " + personaResult.activeTraits.size() + " 条偏好:\n");
+                for (var trait : personaResult.activeTraits) {
+                    pmLog.append("  ★ ").append(trait.getTrait()).append("\n");
+                }
+                for (var trigger : personaResult.triggeredTraits) {
+                    pmLog.append("    <- context: ").append(trigger.contextEntry.getDescription()).append("\n");
+                    pmLog.append("       persona: ").append(trigger.trait.getTrait()).append("\n");
+                    pmLog.append("       match_mode: ").append(trigger.matchMode).append("\n");
+                    if (!trigger.matchedContextTags.isEmpty()) {
+                        pmLog.append("       context_tags: ").append(trigger.matchedContextTags).append("\n");
+                    }
+                    if (!trigger.matchedTraitTags.isEmpty()) {
+                        pmLog.append("       trait_tags: ").append(trigger.matchedTraitTags).append("\n");
+                    }
+                }
+                if (!triggeringDetailTags.isEmpty()) {
+                    pmLog.append("  触发标签: ").append(triggeringDetailTags).append("\n");
+                }
+                AgentLogger.logDebug(pmLog.toString());
+            }
+
+            // Agent 人格画像（直接传入筛选好的词条）
+            String personaSnippet = persona.toPromptSnippet(personaResult.activeTraits);
+            if (!personaSnippet.isBlank()) {
+                sb.append(personaSnippet).append("\n");
+            }
+
+            TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
 
             sb.append("[Tagged Context]\n");
-            for (TaggedContextEntry entry : filteredEntries) {
+            for (TaggedContextEntry entry : mergedVisible) {
                 // 如果是隐式标签，且它的 detailTags 没有一个命中 triggeringDetailTags，则完全跳过
                 if (entry.isAssociativeOnly()) {
                     boolean triggered = false;
@@ -444,26 +483,23 @@ public class LLMInteractionTask extends AgentTask {
                 if (!entry.getDetailTags().isEmpty()) {
                     java.util.List<String> translated = new java.util.ArrayList<>();
                     for (DetailTag dt : entry.getDetailTags()) {
+                        if (!TagPolicy.isPromptVisible(dt)) {
+                            continue;
+                        }
                         String raw = dt.toString();
-                        if (raw.startsWith("loc:")) {
-                            String locName = raw.substring(4);
+                        if (dt.getPrefix().equals(DetailTag.CUSTOM_SPECIFIC)
+                                && locationReg.contains(dt.getValue())) {
+                            String locName = dt.getValue();
                             String locDesc = locationReg.describeLocation(locName);
                             translated.add(locDesc != null ? locName + ": " + locDesc : raw);
                         } else {
                             String desc = tagDict.describe(raw);
                             translated.add(desc != null ? desc : raw);
-
-                            // 若存在衍生的 Extras 预设标签，也尝试输出其自然语言描述
-                            List<String> extras = tagDict.getExtras(raw);
-                            if (!extras.isEmpty()) {
-                                List<String> extraDescs = tagDict.describeAll(extras);
-                                if (!extraDescs.isEmpty()) {
-                                    translated.add("附带特征: " + String.join(", ", extraDescs));
-                                }
-                            }
                         }
                     }
-                    sb.append(" (").append(String.join("; ", translated)).append(")");
+                    if (!translated.isEmpty()) {
+                        sb.append(" (").append(String.join("; ", translated)).append(")");
+                    }
                 }
                 sb.append("\n");
             }
@@ -478,16 +514,16 @@ public class LLMInteractionTask extends AgentTask {
         }
 
         // 动态 JSON 输出格式指令（根据 outputSchema 拼装）
-        sb.append(buildOutputFormatInstruction(outputSchema));
+        sb.append(buildOutputFormatInstruction(outputSchema, ctx));
 
         return sb.toString();
     }
 
     /**
-     * 根据 outputSchema 动态拼装 JSON 输出格式指令。
+     * 根据 outputSchema 和允许的动作列表动态拼装 JSON 输出格式指令。
      * 仅将 schema 中声明的字段列入 JSON 属性，其余字段不出现在指令中。
      */
-    private static String buildOutputFormatInstruction(EnumSet<LLMOutputSchema> schema) {
+    private static String buildOutputFormatInstruction(EnumSet<LLMOutputSchema> schema, AgentContext ctx) {
         StringBuilder sb = new StringBuilder();
         sb.append("\n[Output Format]\n");
         sb.append("你必须严格以下面的 JSON 格式回复，JSON 之外不得有任何多余文字：\n");
@@ -499,10 +535,35 @@ public class LLMInteractionTask extends AgentTask {
             first = false;
         }
         if (schema.contains(LLMOutputSchema.ACTIONS)) {
-            if (!first) sb.append(",\n");
+            if (!first)
+                sb.append(",\n");
             sb.append("  \"actions\": [\n");
-            sb.append("    { \"type\": \"inner_monologue\", \"content\": \"(剑灵的内心独白，对持有者不可见)\" },\n");
-            sb.append("    { \"type\": \"speech\", \"content\": \"(对持有者说出口的话)\" }\n");
+
+            String enabledStr = ctx.getExtra("enabled_actions");
+            java.util.Set<String> allowedSet = new java.util.HashSet<>();
+            if (enabledStr != null && !enabledStr.isBlank()) {
+                for (String s : enabledStr.split(","))
+                    allowedSet.add(s.trim().toLowerCase());
+            } else {
+                allowedSet.add("speech");
+                allowedSet.add("inner_monologue");
+            }
+
+            java.util.List<ActionRegistry.LLMActionType> activeActions = new java.util.ArrayList<>();
+            for (ActionRegistry.LLMActionType act : ActionRegistry.getRegisteredActions()) {
+                if (allowedSet.contains(act.getName().toLowerCase())) {
+                    activeActions.add(act);
+                }
+            }
+
+            for (int i = 0; i < activeActions.size(); i++) {
+                sb.append("    ").append(activeActions.get(i).getFormatInstruction());
+                if (i < activeActions.size() - 1) {
+                    sb.append(",");
+                }
+                sb.append("\n");
+            }
+
             sb.append("  ]");
             first = false;
         }
@@ -513,9 +574,10 @@ public class LLMInteractionTask extends AgentTask {
             sb.append("\"emotion\": \"(其中一种: FEARFUL/HAPPY/ANGRY/EXCITED/BORED/SAD/CURIOUS/ANXIOUS/NEUTRAL)\",");
             sb.append(" \"intensity\": 0-100的整数 ");
             sb.append("}");
+            first = false;
         }
         sb.append("\n}\n");
         return sb.toString();
     }
 
-    }
+}
