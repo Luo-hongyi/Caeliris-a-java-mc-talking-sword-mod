@@ -88,6 +88,15 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.BooleanValue ENABLE_PROACTIVE_TRIGGERS;
         public static final ForgeConfigSpec.BooleanValue ENABLE_BIOME_DETECTION;
 
+        // —— LTM 召回 ——
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_SEED_ENTRY_COUNT;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_TAGS_PER_ENTRY;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_MEMORY_PICK_PER_SEED;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_MAX_DEPTH;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_BRANCH_PER_MEMORY;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_FINAL_MEMORY_CAP;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW;
+
         // —— 注意力偏好（测试版） ——
         public static final ForgeConfigSpec.DoubleValue WEIGHT_COMBAT;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_MOVEMENT;
@@ -276,6 +285,30 @@ public final class TalkingWeaponConfig {
                 ENABLE_BIOME_DETECTION = builder
                                 .comment("启用被动群系变化检测（玩家进入新群系时自动触发）")
                                 .define("enableBiomeDetection", true);
+
+                builder.push("memory_recall");
+                LTM_RECALL_SEED_ENTRY_COUNT = builder
+                                .comment("CUSTOM 联想模式：从多少条当前 context entry 中挑选记忆起点")
+                                .defineInRange("seedEntryCount", 3, 1, 12);
+                LTM_RECALL_TAGS_PER_ENTRY = builder
+                                .comment("CUSTOM 联想模式：每条 entry 最多抽取多少个 seed tags")
+                                .defineInRange("tagsPerEntry", 2, 1, 6);
+                LTM_RECALL_MEMORY_PICK_PER_SEED = builder
+                                .comment("CUSTOM 联想模式：每个 seed tag 最多召回多少条长期记忆")
+                                .defineInRange("memoryPickPerSeed", 1, 1, 6);
+                LTM_RECALL_MAX_DEPTH = builder
+                                .comment("CUSTOM 联想模式：联想链最大深度")
+                                .defineInRange("maxDepth", 1, 0, 4);
+                LTM_RECALL_BRANCH_PER_MEMORY = builder
+                                .comment("CUSTOM 联想模式：每条被召回记忆最多继续派生多少个下一层 seed")
+                                .defineInRange("branchPerMemory", 1, 0, 4);
+                LTM_RECALL_FINAL_MEMORY_CAP = builder
+                                .comment("CUSTOM 联想模式：最终最多注入到 prompt 的长期记忆条数")
+                                .defineInRange("finalMemoryCap", 3, 0, 8);
+                LTM_RECALL_RECENT_WINDOW = builder
+                                .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆")
+                                .defineInRange("recentRecallWindow", 6, 1, 20);
+                builder.pop();
                 builder.pop();
 
                 SPEC = builder.build();

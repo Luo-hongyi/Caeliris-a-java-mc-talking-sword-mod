@@ -52,6 +52,7 @@ public class AgentStateScreen extends Screen {
 
     // 思维特性编辑引用
     private EditBox wanderingMindBox;
+    private EditBox nostalgiaBox;
     private EditBox desireDescBox;
     private int associationModeIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
@@ -173,6 +174,9 @@ public class AgentStateScreen extends Screen {
         wanderingMindBox = editBox("随想值", String.format("%.2f", state.getWanderingMind()), 4);
         scrollList.addEntry(new BoxRow("随想值 (0.00~1.00)", left, rowWidth, wanderingMindBox));
 
+        nostalgiaBox = editBox("忆旧值", String.format("%.2f", state.getNostalgia()), 4);
+        scrollList.addEntry(new BoxRow("忆旧值 (0.00~1.00)", left, rowWidth, nostalgiaBox));
+
         // 联想模式选择器
         Button prevAssoc = Button.builder(Component.literal("<"), btn -> {
             associationModeIndex = (associationModeIndex - 1 + ASSOC_MODES.length) % ASSOC_MODES.length;
@@ -279,6 +283,17 @@ public class AgentStateScreen extends Screen {
             persona.setFavorability(Integer.parseInt(favorabilityBox.getValue().trim()));
         } catch (NumberFormatException ignored) {
         }
+        try {
+            state.setWanderingMind(Float.parseFloat(wanderingMindBox.getValue().trim()));
+        } catch (NumberFormatException ignored) {
+        }
+        try {
+            state.setNostalgia(Float.parseFloat(nostalgiaBox.getValue().trim()));
+        } catch (NumberFormatException ignored) {
+        }
+        state.setAssociationMode(ASSOC_MODES[associationModeIndex]);
+        state.setCurrentDesireTag(desireTagIndex == 0 ? null : DESIRE_TAGS[desireTagIndex - 1]);
+        state.setDesireDescription(desireDescBox.getValue().trim());
 
         // 注意力权重→写入配置
         setWeight(TalkingWeaponConfig.WEIGHT_COMBAT, wCombat);

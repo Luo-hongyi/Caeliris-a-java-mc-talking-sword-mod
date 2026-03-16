@@ -209,6 +209,10 @@ public final class AgentLogger {
         w.println("  情绪:     " + state.getPrimaryEmotion().name()
                 + " (强度: " + state.getEmotionIntensity() + "/100)");
         w.println("  熟悉度:   " + state.getFamiliarity());
+        w.println("  专注度:   " + String.format("%.2f", state.getConcentration()));
+        w.println("  随想值:   " + String.format("%.2f", state.getWanderingMind()));
+        w.println("  忆旧值:   " + String.format("%.2f", state.getNostalgia()));
+        w.println("  联想模式: " + state.getAssociationMode().name());
         w.println();
 
         w.println("记忆:");
@@ -229,6 +233,15 @@ public final class AgentLogger {
         } else {
             for (int i = 0; i < memory.getLtmRecords().size(); i++) {
                 w.println("    [" + i + "] " + memory.getLtmRecords().get(i));
+            }
+        }
+        java.util.List<java.util.UUID> recentRecallIds = memory.getRecentRecalledMemoryIds();
+        w.println("  最近召回窗口 (" + recentRecallIds.size() + "/" + memory.getRecentRecallWindow() + "):");
+        if (recentRecallIds.isEmpty()) {
+            w.println("    (空)");
+        } else {
+            for (int i = 0; i < recentRecallIds.size(); i++) {
+                w.println("    [" + i + "] " + recentRecallIds.get(i));
             }
         }
         w.println();

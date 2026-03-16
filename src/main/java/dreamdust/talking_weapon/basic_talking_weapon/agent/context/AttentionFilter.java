@@ -79,11 +79,31 @@ public class AttentionFilter {
         }
 
         List<ScoredEntry> scoredList = new ArrayList<>();
+        List<ScoredEntry> scoredAll = new ArrayList<>();
         for (TaggedContextEntry entry : inputs) {
             float score = calculateFinalScore(entry, concentration);
+            scoredAll.add(new ScoredEntry(entry, score));
             if (score >= noiseThreshold) {
                 scoredList.add(new ScoredEntry(entry, score));
             }
+        }
+
+        // 若本轮所有条目都低于噪声阈值，仍保底保留 1~2 条，避免上下文与记忆起点彻底断流。
+        if (scoredList.isEmpty() && !scoredAll.isEmpty()) {
+            scoredAll.sort((a, b) -> {
+                boolean aHasDetail = !a.entry.getDetailTags().isEmpty();
+                boolean bHasDetail = !b.entry.getDetailTags().isEmpty();
+                if (aHasDetail != bHasDetail) {
+                    return aHasDetail ? -1 : 1;
+                }
+                return Float.compare(b.score, a.score);
+            });
+            int fallbackLimit = Math.min(Math.min(2, maxCount), scoredAll.size());
+            List<TaggedContextEntry> fallbackResults = new ArrayList<>(fallbackLimit);
+            for (int i = 0; i < fallbackLimit; i++) {
+                fallbackResults.add(scoredAll.get(i).entry);
+            }
+            return fallbackResults;
         }
 
         // 按 score 降序排

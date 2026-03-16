@@ -77,7 +77,15 @@ public class SubconsciousBooster {
                 if (used[i]) continue;
                 cumulative += weights[i];
                 if (cumulative >= target) {
-                    picked.add(allContexts.get(i));
+                    TaggedContextEntry selected = allContexts.get(i);
+                    // 潜意识直通是 associativeOnly 唯一的解锁点：
+                    // 一旦隐藏条目被选中，它就被提升为可见条目进入后续链路。
+                    if (selected.isAssociativeOnly()) {
+                        selected = selected.toBuilder()
+                                .associativeOnly(false)
+                                .build();
+                    }
+                    picked.add(selected);
                     used[i] = true;
                     totalWeight -= weights[i];
                     break;

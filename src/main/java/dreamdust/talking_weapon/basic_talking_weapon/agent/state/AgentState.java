@@ -67,6 +67,13 @@ public class AgentState {
     private volatile float wanderingMind;
 
     /**
+     * 忆旧值（0.0 ~ 1.0）。
+     * <p>
+     * 越高越容易让久远记忆保留影响力；越低越偏向新近经历。
+     */
+    private volatile float nostalgia;
+
+    /**
      * 联想模式：控制记忆和性格词条召回的深度与广度。
      *
      * @see AssociationMode
@@ -95,6 +102,7 @@ public class AgentState {
         this.familiarity = 0;
         this.concentration = 0.5f;
         this.wanderingMind = 0.1f;
+        this.nostalgia = 0.5f;
         this.associationMode = AssociationMode.BALANCED;
         this.currentDesireTag = null;
         this.desireDescription = "";
@@ -182,6 +190,17 @@ public class AgentState {
         this.wanderingMind = Math.max(0f, Math.min(1f, value));
     }
 
+    // ── Nostalgia ──────────────────────────────────────────────────────
+
+    public float getNostalgia() {
+        return nostalgia;
+    }
+
+    /** 设置忆旧值，自动 clamped 至 [0.0, 1.0]。 */
+    public void setNostalgia(float value) {
+        this.nostalgia = Math.max(0f, Math.min(1f, value));
+    }
+
     // ── AssociationMode ───────────────────────────────────────────────
 
     public AssociationMode getAssociationMode() {
@@ -230,6 +249,9 @@ public class AgentState {
                 .append(" (intensity=").append(emotionIntensity).append("/100)")
                 .append(", familiarity=").append(familiarity)
                 .append(", concentration=").append(String.format("%.2f", concentration))
+                .append(", wandering=").append(String.format("%.2f", wanderingMind))
+                .append(", nostalgia=").append(String.format("%.2f", nostalgia))
+                .append(", associationMode=").append(associationMode != null ? associationMode.name() : "BALANCED")
                 .append(", 对玩家称呼=").append(getPlayerAddress());
 
         return sb.toString();
@@ -272,18 +294,21 @@ public class AgentState {
      * 联想模式：决定记忆与性格词条召回的深度和每层宽度。
      *
      * <ul>
-     * <li>{@link #DIVERGENT} — 发散：深度 0 层，宽度大（4 条），快速铺开</li>
-     * <li>{@link #BALANCED} — 均衡：深度 0~1 层（50% 概率触发一次追溯），宽度适中（2 条）</li>
-     * <li>{@link #DEEP} — 深度：深度 1~2 层（必定追溯），宽度极小（1 条），沿单一路线深挖</li>
+     * <li>{@link #DIVERGENT} — 发散：从更多当前条目起跳，浅层铺开</li>
+     * <li>{@link #BALANCED} — 均衡：少量起点，有限追溯</li>
+     * <li>{@link #DEEP} — 深度：少量起点，沿更深层联想链追溯</li>
+     * <li>{@link #CUSTOM} — 自定义：具体参数读取配置文件</li>
      * </ul>
      */
     public enum AssociationMode {
-        /** 发散：联想深度 0，每次召回 4 条，快速铺开相关内容 */
+        /** 发散：从更多当前条目起跳，快速铺开少数回忆 */
         DIVERGENT(0, 4),
-        /** 均衡：联想深度 0~1（50% 概率再走一层），每次召回 2 条 */
+        /** 均衡：默认模式，做少量层级联想 */
         BALANCED(1, 2),
-        /** 深度：联想深度 1~2（必定追溯），每次召回 1 条，单线深挖 */
-        DEEP(2, 1);
+        /** 深度：少量起点，但更愿意沿单条链深入 */
+        DEEP(2, 1),
+        /** 自定义：召回参数完全由配置文件控制 */
+        CUSTOM(0, 0);
 
         /** 最大联想深度（层数） */
         public final int maxDepth;

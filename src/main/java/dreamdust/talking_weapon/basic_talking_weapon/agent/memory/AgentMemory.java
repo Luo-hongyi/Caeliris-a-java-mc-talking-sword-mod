@@ -1,7 +1,11 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Agent 记忆系统：三池架构。
@@ -44,6 +48,8 @@ public class AgentMemory {
 
     private final List<LTMEntry> ltmRecords;
     private int ltmRecordsCapacity;
+    private final Deque<UUID> recentRecalledMemoryIds;
+    private int recentRecallWindow;
 
     public AgentMemory() {
         this.identity = "";
@@ -51,6 +57,8 @@ public class AgentMemory {
         this.stmPool = new STMPool();
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
+        this.recentRecalledMemoryIds = new ArrayDeque<>();
+        this.recentRecallWindow = 6;
 
         // 加载外部的静态植入记忆
         try {
@@ -118,11 +126,59 @@ public class AgentMemory {
         this.ltmRecordsCapacity = capacity;
     }
 
+    public synchronized void setRecentRecallWindow(int window) {
+        this.recentRecallWindow = Math.max(1, window);
+        trimRecentRecallQueue();
+    }
+
+    public synchronized int getRecentRecallWindow() {
+        return recentRecallWindow;
+    }
+
+    public synchronized void noteRecalledMemories(List<LTMEntry> recalledEntries) {
+        if (recalledEntries == null || recalledEntries.isEmpty()) {
+            return;
+        }
+        for (LTMEntry entry : recalledEntries) {
+            if (entry == null || entry.getId() == null) {
+                continue;
+            }
+            recentRecalledMemoryIds.remove(entry.getId());
+            recentRecalledMemoryIds.addFirst(entry.getId());
+        }
+        trimRecentRecallQueue();
+    }
+
+    public synchronized int getRecentRecallRank(UUID memoryId) {
+        if (memoryId == null) {
+            return -1;
+        }
+        int rank = 0;
+        for (UUID id : recentRecalledMemoryIds) {
+            if (memoryId.equals(id)) {
+                return rank;
+            }
+            rank++;
+        }
+        return -1;
+    }
+
+    public synchronized List<UUID> getRecentRecalledMemoryIds() {
+        return Collections.unmodifiableList(new ArrayList<>(recentRecalledMemoryIds));
+    }
+
+    private void trimRecentRecallQueue() {
+        while (recentRecalledMemoryIds.size() > recentRecallWindow) {
+            recentRecalledMemoryIds.removeLast();
+        }
+    }
+
     @Override
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
                 + ", actionBuffer=" + actionBuffer.size()
                 + ", stmPool=" + stmPool
-                + ", ltmRecords=" + ltmRecords.size() + "}";
+                + ", ltmRecords=" + ltmRecords.size()
+                + ", recentRecall=" + recentRecalledMemoryIds.size() + "}";
     }
 }

@@ -19,6 +19,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMRecallEngine;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
@@ -33,6 +35,7 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -412,7 +415,14 @@ public class LLMInteractionTask extends AgentTask {
                 topK = TalkingWeaponConfig.TOP_K_CHAT.get();
             }
 
-            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(rawEntries, topK,
+            List<TaggedContextEntry> promptEligibleEntries = new ArrayList<>();
+            for (TaggedContextEntry entry : rawEntries) {
+                if (!entry.isAssociativeOnly()) {
+                    promptEligibleEntries.add(entry);
+                }
+            }
+
+            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(promptEligibleEntries, topK,
                     TalkingWeaponConfig.NOISE_THRESHOLD.get().floatValue(), state.getConcentration());
 
             // ── Phase 3: 合并去重 (Top-K + 潜意识直通) ──
@@ -450,6 +460,19 @@ public class LLMInteractionTask extends AgentTask {
                 AgentLogger.logDebug(pmLog.toString());
             }
 
+            // ── Phase 5: 长期记忆联想召回 ──
+            LTMRecallEngine.RecallResult recallResult = LTMRecallEngine.recall(mergedVisible, memory, state);
+            if (!recallResult.traceLines.isEmpty()) {
+                StringBuilder recallLog = new StringBuilder("[记忆召回]\n");
+                for (String line : recallResult.traceLines) {
+                    recallLog.append("  ").append(line).append("\n");
+                }
+                if (!recallResult.triggerTags.isEmpty()) {
+                    recallLog.append("  触发标签: ").append(recallResult.triggerTags).append("\n");
+                }
+                AgentLogger.logDebug(recallLog.toString());
+            }
+
             // Agent 人格画像（直接传入筛选好的词条）
             String personaSnippet = persona.toPromptSnippet(personaResult.activeTraits);
             if (!personaSnippet.isBlank()) {
@@ -458,22 +481,21 @@ public class LLMInteractionTask extends AgentTask {
 
             TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
 
+            if (!recallResult.recalledMemories.isEmpty()) {
+                sb.append("[Recalled Long-Term Memories]\n");
+                for (LTMEntry ltm : recallResult.recalledMemories) {
+                    sb.append("- ").append(ltm.getDescription());
+                    List<String> cues = describePromptVisibleDetails(ltm.getDetailTags(), tagDict, locationReg);
+                    if (!cues.isEmpty()) {
+                        sb.append(" (线索: ").append(String.join("; ", cues)).append(")");
+                    }
+                    sb.append("\n");
+                }
+                sb.append("\n");
+            }
+
             sb.append("[Tagged Context]\n");
             for (TaggedContextEntry entry : mergedVisible) {
-                // 如果是隐式标签，且它的 detailTags 没有一个命中 triggeringDetailTags，则完全跳过
-                if (entry.isAssociativeOnly()) {
-                    boolean triggered = false;
-                    for (DetailTag dt : entry.getDetailTags()) {
-                        if (triggeringDetailTags.contains(dt.toString())) {
-                            triggered = true;
-                            break;
-                        }
-                    }
-                    if (!triggered) {
-                        continue;
-                    }
-                }
-
                 float finalScore = AttentionFilter.calculateFinalScore(entry, state.getConcentration());
 
                 sb.append("- [").append(entry.getFocusTags()).append("] ");
@@ -481,22 +503,7 @@ public class LLMInteractionTask extends AgentTask {
                 sb.append(String.format(" (客观重要度: %.2f -> 主观得分: %.2f)", entry.getBaseImportance(), finalScore));
 
                 if (!entry.getDetailTags().isEmpty()) {
-                    java.util.List<String> translated = new java.util.ArrayList<>();
-                    for (DetailTag dt : entry.getDetailTags()) {
-                        if (!TagPolicy.isPromptVisible(dt)) {
-                            continue;
-                        }
-                        String raw = dt.toString();
-                        if (dt.getPrefix().equals(DetailTag.CUSTOM_SPECIFIC)
-                                && locationReg.contains(dt.getValue())) {
-                            String locName = dt.getValue();
-                            String locDesc = locationReg.describeLocation(locName);
-                            translated.add(locDesc != null ? locName + ": " + locDesc : raw);
-                        } else {
-                            String desc = tagDict.describe(raw);
-                            translated.add(desc != null ? desc : raw);
-                        }
-                    }
+                    List<String> translated = describePromptVisibleDetails(entry.getDetailTags(), tagDict, locationReg);
                     if (!translated.isEmpty()) {
                         sb.append(" (").append(String.join("; ", translated)).append(")");
                     }
@@ -517,6 +524,29 @@ public class LLMInteractionTask extends AgentTask {
         sb.append(buildOutputFormatInstruction(outputSchema, ctx));
 
         return sb.toString();
+    }
+
+    private static List<String> describePromptVisibleDetails(Collection<DetailTag> detailTags,
+            TagDescriptionDictionary tagDict, LocationRegistry locationReg) {
+        List<String> translated = new ArrayList<>();
+        if (detailTags == null) {
+            return translated;
+        }
+        for (DetailTag dt : detailTags) {
+            if (!TagPolicy.isPromptVisible(dt)) {
+                continue;
+            }
+            String raw = dt.toString();
+            if (dt.getPrefix().equals(DetailTag.CUSTOM_SPECIFIC) && locationReg.contains(dt.getValue())) {
+                String locName = dt.getValue();
+                String locDesc = locationReg.describeLocation(locName);
+                translated.add(locDesc != null ? locName + ": " + locDesc : raw);
+            } else {
+                String desc = tagDict.describe(raw);
+                translated.add(desc != null ? desc : raw);
+            }
+        }
+        return translated;
     }
 
     /**

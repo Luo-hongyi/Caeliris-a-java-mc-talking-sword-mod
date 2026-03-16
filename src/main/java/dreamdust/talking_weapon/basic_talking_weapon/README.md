@@ -150,13 +150,22 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 
 - `native_specific` 与全部 `custom_*`：允许进入 Prompt。
 - `native_generic`：Collector 会全量接收，进入 `TaggedContextEntry`、STM、Persona / Memory 检索，但在 Prompt 合成阶段默认隐藏。
-- `associativeOnly`：控制的是“整条 ContextEntry 默认是否可见”。
+- `associativeOnly`：控制的是“整条 ContextEntry 默认是否可见”，且仅能由 `SubconsciousBooster` 直通提升为可见。
 - `native_generic` 隐藏：控制的是“条目可见时，哪些 detail tag 不输出给 LLM”。
 
 这两个机制是正交的：
 
-- `associativeOnly = true` 的条目，若未命中人格/记忆联想，整条不会进入 Prompt。
+- `associativeOnly = true` 的条目默认不会进入 Prompt；只有被 `SubconsciousBooster` 选中后，才会以可见条目的身份进入后续 Persona / Memory 流程。
 - 某条条目即使进入 Prompt，其中的 `native_generic` 仍不会直接序列化给 LLM。
+
+### 长期记忆召回
+
+- `LLMInteractionTask` 会先从当前 `visibleContexts` 中采样少量 seed entries，再从其中采样 seed tags，逐层联想到少量 `LTMEntry`。
+- 长期记忆不是全量匹配，而是“focus 导向 + 温度采样”的召回链：`wanderingMind` 提供随机温度，`concentration` 与当前 Focus 压力共同决定联想方向和联想深度。
+- 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
+- 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；`nostalgia` 则控制旧记忆随时间衰退的力度。
+- 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
+- `AssociationMode.CUSTOM` 的具体参数由 `talking_weapon-client.toml` 中的 `agent.memory_recall` 配置控制，其中包含 seed 数、联想深度、最终记忆上限和最近召回窗口。
 
 ### 显示机制
 - 所有剑的发言在**快捷栏上方（Action Bar）**显示

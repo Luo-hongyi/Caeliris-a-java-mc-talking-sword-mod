@@ -28,9 +28,11 @@
 一旦被触发，事件对应的多个 `IContextCollector` 会被一并在主线程运行。
 它们将周围的物体、环境、结构提取成 `TaggedContextEntry`，并将数据塞入 `AgentContext`（本次上下文的一个完整快照）。
 
-> **亮点：**海量冗余方块采用了 `associativeOnly = true` 隐式标签。该方块标签仅参与第三层性格/记忆匹配查询。如若未命中，对大模型严格不可见，节约 tokens。
+> **亮点：**海量冗余方块采用了 `associativeOnly = true` 隐式标签。它们默认不会进入 Prompt，只有在 `SubconsciousBooster` 把某条隐藏条目直通提升后，才会进入后续人格与记忆流程，对大模型保持严格限流。
 
 > **补充：**`native_generic:*` 与 `associativeOnly` 是两套不同机制。前者会进入系统检索层，但在 Prompt 合成阶段默认隐藏；后者控制的是整条 `TaggedContextEntry` 是否默认对大模型可见。
+
+> **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力、随想值和忆旧值共同影响联想方向、采样随机性与时间衰退。
 
 ### 3. 注意力过滤 (AttentionFilter)
 
