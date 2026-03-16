@@ -96,7 +96,9 @@ public class PersonaMatcher {
                     List<String> matchedEnvRawTags = new ArrayList<>();
                     List<String> matchedTraitRawTags = new ArrayList<>();
 
-                    // 探索环境与偏好的交集
+                    // 探索环境与偏好的交集。
+                    // 关键规则：specific 命中必须来自“交集里真的出现了 specific 标签”，
+                    // 不能因为双方仅共享某个 generic 落点，就把 trait 的 specific 约束视为满足。
                     for (DetailTag tTag : traitTags) {
                         String tTagStr = tTag.toString();
                         Set<String> traitClosure = relationDict.expand(tTagStr);
@@ -106,8 +108,25 @@ public class PersonaMatcher {
                             Set<String> overlap = new LinkedHashSet<>(traitClosure);
                             overlap.retainAll(envClosure);
                             if (!overlap.isEmpty()) {
-                                if (tTag.isSpecific()) sharesSpecific = true;
-                                else sharesGeneric = true;
+                                boolean overlapHasSpecific = false;
+                                boolean overlapHasGeneric = false;
+                                for (String overlapTag : overlap) {
+                                    DetailTag overlapDetail = DetailTag.parse(overlapTag);
+                                    if (overlapDetail.isSpecific()) {
+                                        overlapHasSpecific = true;
+                                    } else {
+                                        overlapHasGeneric = true;
+                                    }
+                                    if (overlapHasSpecific && overlapHasGeneric) {
+                                        break;
+                                    }
+                                }
+
+                                if (overlapHasSpecific) {
+                                    sharesSpecific = true;
+                                } else if (overlapHasGeneric) {
+                                    sharesGeneric = true;
+                                }
                                 matchedEnvRawTags.add(rawEnv);
                                 matchedTraitRawTags.add(tTagStr);
                             }
