@@ -194,7 +194,8 @@ public final class LTMRecallEngine {
         }
     }
 
-    public static RecallResult recall(List<TaggedContextEntry> visibleContexts, AgentMemory memory, AgentState state) {
+    public static RecallResult recall(List<TaggedContextEntry> visibleContexts, AgentMemory memory, AgentState state,
+            long currentGameTime) {
         if (visibleContexts == null || visibleContexts.isEmpty() || memory == null || memory.getLtmRecords().isEmpty()) {
             return new RecallResult(Collections.emptyList(), Collections.emptySet(), Collections.emptyList());
         }
@@ -246,7 +247,7 @@ public final class LTMRecallEngine {
 
             traceLines.add(String.format("[联想层 %d] frontier=%d", depth, layerSeeds.size()));
             List<MemoryCandidate> candidates = collectLayerCandidates(
-                    layerSeeds, memory, recalledIds, relationDict, focusProfile, state, now, nostalgia);
+                    layerSeeds, memory, recalledIds, relationDict, focusProfile, state, now, nostalgia, currentGameTime);
             if (candidates.isEmpty()) {
                 traceLines.add(String.format("[联想层 %d] no candidate memories", depth));
                 break;
@@ -385,7 +386,7 @@ public final class LTMRecallEngine {
 
     private static List<MemoryCandidate> collectLayerCandidates(List<Seed> layerSeeds, AgentMemory memory,
             Set<UUID> recalledIds, TagRelationDictionary relationDict, FocusProfile focusProfile,
-            AgentState state, long now, float nostalgia) {
+            AgentState state, long now, float nostalgia, long currentGameTime) {
         Map<UUID, MemoryCandidate> candidateMap = new LinkedHashMap<>();
         List<LTMEntry> allMemories = memory.getLtmRecords();
 
@@ -399,7 +400,7 @@ public final class LTMRecallEngine {
                 double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
                 double seedFocusAlignment = computeSeedFocusAlignment(seed.focusTags, entry.getFocusTags());
                 double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
-                double ageFactor = computeAgeFactor(entry, nostalgia, now);
+                double ageFactor = computeAgeFactor(entry, nostalgia, currentGameTime, now);
                 double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
 
                 boolean hasSemanticSignal = semanticMatch.score > 0.0;
@@ -491,8 +492,18 @@ public final class LTMRecallEngine {
         return Math.max(1, Math.min(branchPerMemory, branchCount));
     }
 
-    private static double computeAgeFactor(LTMEntry entry, float nostalgia, long now) {
-        if (entry.getSourceType() == LTMEntry.SourceType.IMPLANTED || entry.getTimestamp() <= 0L) {
+    private static double computeAgeFactor(LTMEntry entry, float nostalgia, long currentGameTime, long now) {
+        if (entry.getSourceType() == LTMEntry.SourceType.IMPLANTED) {
+            return 1.0;
+        }
+        if (currentGameTime > 0L && entry.getOccurredGameTime() >= 0L) {
+            double ageDays = Math.max(0.0, (currentGameTime - entry.getOccurredGameTime())
+                    / (double) dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSemantics.TICKS_PER_DAY);
+            double halfLifeDays = 6.0 + nostalgia * 114.0;
+            double decay = Math.exp(-ageDays / Math.max(1.0, halfLifeDays));
+            return clamp(0.15, 1.0, decay);
+        }
+        if (entry.getTimestamp() <= 0L) {
             return 1.0;
         }
         double ageHours = Math.max(0.0, (now - entry.getTimestamp()) / 3_600_000.0);

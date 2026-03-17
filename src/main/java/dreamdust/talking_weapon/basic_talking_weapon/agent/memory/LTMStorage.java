@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * LTMStorage：处理长期记忆的本地化存储。
@@ -55,6 +56,28 @@ public final class LTMStorage {
                         .sourceType(LTMEntry.SourceType.IMPLANTED)
                         .description(raw.description != null ? raw.description : "")
                         .importance(raw.importance > 0 ? raw.importance : 1.0f);
+
+                    if (raw.id != null && !raw.id.isBlank()) {
+                        try {
+                            builder.id(UUID.fromString(raw.id));
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                    }
+                    if (raw.occurred_game_time >= 0L) {
+                        builder.occurredGameTime(raw.occurred_game_time);
+                    }
+                    if (raw.time_label != null && !raw.time_label.isBlank()) {
+                        builder.semanticTimeLabel(raw.time_label);
+                    }
+                    if (raw.dimension_id != null && !raw.dimension_id.isBlank()) {
+                        builder.dimensionId(raw.dimension_id);
+                    }
+                    if (raw.biome_id != null && !raw.biome_id.isBlank()) {
+                        builder.biomeId(raw.biome_id);
+                    }
+                    if (raw.raining != null) {
+                        builder.raining(raw.raining);
+                    }
                     
                     if (raw.focus_tags != null) {
                         for (String fStr : raw.focus_tags) {
@@ -110,8 +133,14 @@ public final class LTMStorage {
 
         // 构造序列化对象
         ImplantedJsonEntry newJson = new ImplantedJsonEntry();
+        newJson.id = entry.getId().toString();
         newJson.description = entry.getDescription();
         newJson.importance = entry.getImportance();
+        newJson.occurred_game_time = entry.getOccurredGameTime();
+        newJson.time_label = entry.getSemanticTimeLabel();
+        newJson.dimension_id = entry.getDimensionId();
+        newJson.biome_id = entry.getBiomeId();
+        newJson.raining = entry.getRaining();
         newJson.focus_tags = new ArrayList<>();
         for (FocusTag f : entry.getFocusTags()) newJson.focus_tags.add(f.name());
         newJson.detail_tags = new ArrayList<>();
@@ -158,9 +187,15 @@ public final class LTMStorage {
 
     /** 专用用于反序列化的中间结构体 */
     private static class ImplantedJsonEntry {
+        public String id;
         public String description;
         public List<String> focus_tags;
         public List<String> detail_tags;
         public float importance = 1.0f;
+        public long occurred_game_time = -1L;
+        public String time_label;
+        public String dimension_id;
+        public String biome_id;
+        public Boolean raining;
     }
 }

@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSemantics;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
@@ -109,11 +110,11 @@ public class BaseContextCollector implements IContextCollector {
                     .raining(level.isRaining());
 
             // 将 tick 转为直观的时段描述
-            String timeDesc = describeTimeOfDay(dayTime);
+            String timeDesc = WorldTimeSemantics.describeTimeOfDay(dayTime);
             builder.extra("time_desc", timeDesc);
 
             // ── 标签：时间状态 ──
-            String timeState = categorizeTime(dayTime);
+            String timeState = WorldTimeSemantics.categorizeTime(dayTime);
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, timeState)
@@ -153,52 +154,4 @@ public class BaseContextCollector implements IContextCollector {
         }
     }
 
-    /**
-     * 将 Minecraft dayTime (tick) 转为可读的时段描述。
-     * 细分版本：深夜，凌晨，日出，早晨，中午，下午，日落，夜晚
-     * <p>
-     * Minecraft 一天 = 24000 tick，0 tick = 早上 6:00。
-     * - 0–2000 (06:00–07:12) → 日出
-     * - 2000–5000 (07:12–11:00) → 早晨
-     * - 5000–7000 (11:00–13:12) → 中午
-     * - 7000–11000 (13:12–17:24) → 下午
-     * - 11000–13000 (17:24–19:48) → 日落
-     * - 13000–18000 (19:48–00:48) → 夜晚
-     * - 18000–22000 (00:48–04:48) → 深夜
-     * - 22000–24000 (04:48–06:00) → 凌晨
-     */
-    private String describeTimeOfDay(long dayTime) {
-        long time = dayTime % 24000;
-        long totalMinutes = (time * 60) / 1000; // 每 1000 tick = 1 小时 = 60 分钟
-        long hour = (6 + totalMinutes / 60) % 24;
-        long minute = totalMinutes % 60;
-        String clock = String.format("%02d:%02d", hour, minute);
-
-        String period;
-        if (time < 2000) period = "日出";
-        else if (time < 5000) period = "早晨";
-        else if (time < 7000) period = "中午";
-        else if (time < 11000) period = "下午";
-        else if (time < 13000) period = "日落";
-        else if (time < 18000) period = "夜晚";
-        else if (time < 22000) period = "深夜";
-        else period = "凌晨";
-
-        return period + " (" + clock + ")";
-    }
-
-    /**
-     * 将 Minecraft dayTime (tick) 转为时间状态标签。
-     */
-    private String categorizeTime(long dayTime) {
-        long time = dayTime % 24000;
-        if (time < 2000) return "time_sunrise";
-        if (time < 5000) return "time_morning";
-        if (time < 7000) return "time_noon";
-        if (time < 11000) return "time_afternoon";
-        if (time < 13000) return "time_sunset";
-        if (time < 18000) return "time_night";
-        if (time < 22000) return "time_midnight";
-        return "time_dawn";
-    }
 }

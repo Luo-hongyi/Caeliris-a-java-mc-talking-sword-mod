@@ -461,7 +461,7 @@ public class LLMInteractionTask extends AgentTask {
             }
 
             // ── Phase 5: 长期记忆联想召回 ──
-            LTMRecallEngine.RecallResult recallResult = LTMRecallEngine.recall(mergedVisible, memory, state);
+            LTMRecallEngine.RecallResult recallResult = LTMRecallEngine.recall(mergedVisible, memory, state, ctx.getDayTime());
             if (!recallResult.traceLines.isEmpty()) {
                 StringBuilder recallLog = new StringBuilder("[记忆召回]\n");
                 for (String line : recallResult.traceLines) {
@@ -485,6 +485,10 @@ public class LLMInteractionTask extends AgentTask {
                 sb.append("[Recalled Long-Term Memories]\n");
                 for (LTMEntry ltm : recallResult.recalledMemories) {
                     sb.append("- ").append(ltm.getDescription());
+                    String anchor = ltm.describeSemanticAnchor();
+                    if (!anchor.isBlank()) {
+                        sb.append(" [").append(anchor).append("]");
+                    }
                     List<String> cues = describePromptVisibleDetails(ltm.getDetailTags(), tagDict, locationReg);
                     if (!cues.isEmpty()) {
                         sb.append(" (线索: ").append(String.join("; ", cues)).append(")");

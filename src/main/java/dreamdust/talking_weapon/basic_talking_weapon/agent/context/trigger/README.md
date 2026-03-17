@@ -14,13 +14,13 @@
 | `RightClickTrigger` | 玩家右键使用武器 | Base + 截图 + 实体 + 环境... | `LLMInteractionTask` | `TOP_K_RIGHT_CLICK` |
 | `BiomeChangeTrigger` | 进入新群系（由 TickEventWatcher 检测） | Base + 按配置动态组合 | `LLMInteractionTask` | `TOP_K_BIOME_CHANGE` |
 
-### 记忆/反思触发器（骨架，待实现 Task）
+### 记忆/反思触发器（过渡骨架，尚未完成当前路线接线）
 
 | 类名 | 触发条件 | 用途 |
 |---|---|---|
-| `ReflectionTrigger` | 距上次反思超过 N 分钟 | 定时沉思，生成 LTMEntry |
-| `CombatRecapTrigger` | ActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾 |
-| `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗深刻记忆 |
+| `ReflectionTrigger` | 计划中的低频反思时机 | 旧版 LTM 合成入口骨架，尚未接入当前自动调度链 |
+| `CombatRecapTrigger` | ActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾骨架 |
+| `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗记忆骨架 |
 
 ### 事件感知器
 
@@ -42,6 +42,8 @@
 | Tick 采样：群系差分 | `BIOME_CHANGE` + fire BiomeChangeTrigger |
 
 > **重要**：所有新增的事件监听方法仅向 ActionBuffer 写入记录，不直接触发 LLM。
+
+> **当前状态**：`TickEventWatcher` 目前没有自动派发 `ReflectionTrigger`。因此，长期记忆生成虽然保留了旧版 `ReflectionTask` 代码，但并未形成一条已经投入当前设计使用的稳定触发链。
 
 ## 如何新增触发器
 

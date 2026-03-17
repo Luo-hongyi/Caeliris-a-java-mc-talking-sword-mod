@@ -2,6 +2,19 @@
 
 一个 Minecraft Forge 1.20.1 模组，让你的铁剑拥有视觉和语言——它会"看到"你的游戏画面并用 LLM 生成的文字回应你。采用 Embodied Agent 架构，具备感知、记忆、状态和动作系统，支持模块化的触发器和采集器扩展。
 
+## 当前开发状态
+
+截至 `2026-03-16`，当前分支的认知与记忆架构状态如下：
+
+- `DetailTag` 新架构已落地：`native_specific` / `native_generic` / `custom_specific` / `custom_generic` 四类标签已经统一。
+- `native_generic` 已全量进入 Collector、Context、STM、Persona 匹配和 LTM 检索层，但在 Prompt 合成阶段默认隐藏，不直接暴露给 LLM。
+- `TagDescriptionDictionary` 与 `TagRelationDictionary` 已拆分：前者只负责描述文本，后者维护一对多、无环的语义关系图。
+- `PersonaMatcher` 已按最新定义修正 `specific` / `generic` 匹配逻辑。
+- 长期记忆召回链已按“visible context 起点 + focus 导向 + 温度采样 + recent recall 抑制 + nostalgia 时间衰退”的新方案重构完成。
+- `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
+- 全局植入记忆 (`implanted memories`) 的读写链路可用。
+- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。仓库中仍保留旧版 `ReflectionTask` / `ReflectionTrigger` 骨架，但它还没有完成最新设计下的稳定接线、筛选策略与生成质量约束，因此不能视为该阶段已经彻底完成。
+
 ## ✨ 核心特性
 
 - **多模态 AI 交互**：右键持剑即可截图并发送给 LLM，获得基于画面的个性化回复
@@ -54,13 +67,14 @@ agent/
 │   ├── ActionBuffer.java            — 环形动作缓冲区（3min 滑动窗口淘汰，支持 drainTo 已读池）
 │   ├── LTMEntry.java                — 长期记忆切片（基于Tag检索，含重要度和清晰度衰减）
 │   ├── LTMStorage.java              — 长期记忆跨存档读取保存持久化服务
-│   └── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
+│   ├── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
+│   └── README.md                    — 记忆系统现状与设计边界
 ├── task/                           ← 任务调度
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
 │   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆
 │   ├── MemoryUpdateTask.java        — 零网络开销的本地记忆更新
 │   ├── AgentStateUpdateTask.java    — 零网络开销的状态更新（含 description）
-│   └── ReflectionTask.java          — 后台记忆压缩/反思
+│   └── ReflectionTask.java          — 旧版后台反思 / LTM 合成骨架（待按新架构重做）
 ├── action/                         ← 动作执行
 │   ├── AgentAction.java             — 抽象基类 (perform/estimatedDuration)
 │   ├── SpeechAction.java            — ActionBar 逐行文字展示
@@ -164,8 +178,15 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - 长期记忆不是全量匹配，而是“focus 导向 + 温度采样”的召回链：`wanderingMind` 提供随机温度，`concentration` 与当前 Focus 压力共同决定联想方向和联想深度。
 - 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
 - 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；`nostalgia` 则控制旧记忆随时间衰退的力度。
+- `LTMEntry` 现在会记录轻量的游戏内时间锚点（如“第 N 天的深夜”），并在召回时优先按游戏内时间而不是现实时间计算记忆老化。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
 - `AssociationMode.CUSTOM` 的具体参数由 `talking_weapon-client.toml` 中的 `agent.memory_recall` 配置控制，其中包含 seed 数、联想深度、最终记忆上限和最近召回窗口。
+
+### 长期记忆生成
+
+- 当前代码库中保留了一个旧版 `ReflectionTask` / `ReflectionTrigger` 路线，用于把一个纪元内的 STM 压缩为 `LTMEntry`。
+- 但这条生成链还没有完成与最新 detail-tag 语义、噪声过滤、visible context 设计、recent recall 策略的统一，因此当前阶段不应视为“LTM 生成系统已完成”。
+- 当前开发的关键缺口是：构建一个与新召回方案对齐的 LTM 生成闭环，包括何时结算、如何从 STM 提炼 detail tags / focus tags、如何控制植入与生成记忆的质量边界，以及如何与 persona / favorability 的低频更新协同。
 
 ### 显示机制
 - 所有剑的发言在**快捷栏上方（Action Bar）**显示
@@ -293,7 +314,7 @@ IContextCollector (采集器)
 | 5 | `MemoryUpdateTask` | 本地记忆更新，零网络开销 |
 | 5 | `AgentStateUpdateTask` | 本地状态更新，零网络开销 |
 | 10 | `LLMInteractionTask` | 需要 LLM 调用的核心交互 |
-| 50 | `ReflectionTask` | 后台记忆压缩，空闲时执行 |
+| 50 | `ReflectionTask` | 旧版后台反思骨架，尚未完成与当前记忆架构的统一 |
 
 ## 🛠️ 技术栈
 

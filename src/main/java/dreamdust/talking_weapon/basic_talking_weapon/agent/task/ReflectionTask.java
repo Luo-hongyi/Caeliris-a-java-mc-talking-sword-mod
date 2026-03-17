@@ -6,6 +6,7 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSemantics;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
@@ -83,7 +84,12 @@ public class ReflectionTask extends AgentTask {
                 LTMEntry.Builder builder = LTMEntry.builder()
                         .sourceType(LTMEntry.SourceType.SYNTHESIZED)
                         .description(synth.description)
-                        .importance(synth.importance);
+                        .importance(synth.importance)
+                        .occurredGameTime(ctx.getDayTime())
+                        .semanticTimeLabel(WorldTimeSemantics.describeMemoryTimeAnchor(ctx.getDayTime()))
+                        .dimensionId(ctx.getExtra("dimension"))
+                        .biomeId(ctx.getBiome())
+                        .raining(ctx.isRaining());
 
                 if (synth.focus_tags != null) {
                     for (String fStr : synth.focus_tags) {
