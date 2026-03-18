@@ -31,6 +31,8 @@ public final class LTMEntry {
     private final String description;       // 记忆的实质文本
     private final EnumSet<FocusTag> focusTags;  // 主检索标签 (如 COMBAT, SOCIAL)
     private final Set<DetailTag> detailTags; // 细节交叉标签 (如 ZOMBIE, CAVE)
+    private final DetailTag semanticTimeTag; // 独立时间语义标签（不并入普通 detail cue）
+    private final Set<DetailTag> associativeDetailTags; // 联想图使用的标签视图（detailTags + semanticTimeTag）
 
     // ═══════════════════════════════════════════════════════════════
     // 2. 生命与归属区 (区分行为模式)
@@ -57,6 +59,12 @@ public final class LTMEntry {
                 ? EnumSet.noneOf(FocusTag.class)
                 : EnumSet.copyOf(builder.focusTags);
         this.detailTags = Collections.unmodifiableSet(new LinkedHashSet<>(builder.detailTags));
+        this.semanticTimeTag = builder.semanticTimeTag;
+        LinkedHashSet<DetailTag> associativeTags = new LinkedHashSet<>(builder.detailTags);
+        if (builder.semanticTimeTag != null) {
+            associativeTags.add(builder.semanticTimeTag);
+        }
+        this.associativeDetailTags = Collections.unmodifiableSet(associativeTags);
         
         this.sourceType = builder.sourceType;
         this.timestamp = builder.sourceType == SourceType.IMPLANTED ? -1L : builder.timestamp;
@@ -80,6 +88,8 @@ public final class LTMEntry {
     public String getDescription() { return description; }
     public Set<FocusTag> getFocusTags() { return Collections.unmodifiableSet(focusTags); }
     public Set<DetailTag> getDetailTags() { return detailTags; }
+    public DetailTag getSemanticTimeTag() { return semanticTimeTag; }
+    public Set<DetailTag> getAssociativeDetailTags() { return associativeDetailTags; }
     public SourceType getSourceType() { return sourceType; }
     public long getTimestamp() { return timestamp; }
     public long getOccurredGameTime() { return occurredGameTime; }
@@ -154,6 +164,7 @@ public final class LTMEntry {
                 + ", type=" + sourceType
                 + ", focus=" + focusTags
                 + ", imp=" + importance
+                + (semanticTimeTag != null ? ", semanticTimeTag=" + semanticTimeTag : "")
                 + (semanticTimeLabel != null && !semanticTimeLabel.isBlank() ? ", time='" + semanticTimeLabel + "'" : "")
                 + ", desc='" + (description != null && description.length() > 20 ? description.substring(0, 20) + "..." : description) + "'"
                 + "}";
@@ -170,6 +181,7 @@ public final class LTMEntry {
         private String description = "";
         private final EnumSet<FocusTag> focusTags = EnumSet.noneOf(FocusTag.class);
         private final Set<DetailTag> detailTags = new LinkedHashSet<>();
+        private DetailTag semanticTimeTag;
         private SourceType sourceType = SourceType.SYNTHESIZED;
         private long timestamp = System.currentTimeMillis();
         private long occurredGameTime = -1L;
@@ -189,6 +201,7 @@ public final class LTMEntry {
         public Builder timestamp(long ts) { this.timestamp = ts; return this; }
         public Builder occurredGameTime(long gameTime) { this.occurredGameTime = gameTime; return this; }
         public Builder semanticTimeLabel(String label) { this.semanticTimeLabel = label; return this; }
+        public Builder semanticTimeTag(DetailTag tag) { this.semanticTimeTag = tag; return this; }
         public Builder dimensionId(String dimensionId) { this.dimensionId = dimensionId; return this; }
         public Builder biomeId(String biomeId) { this.biomeId = biomeId; return this; }
         public Builder raining(Boolean raining) { this.raining = raining; return this; }

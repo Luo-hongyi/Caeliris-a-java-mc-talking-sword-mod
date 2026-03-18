@@ -3,6 +3,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.config;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.config.ModConfigEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +14,9 @@ import java.util.Map;
  * 全局配置：基于 Forge Config 系统，对应 talking_weapon-client.toml。
  */
 public final class TalkingWeaponConfig {
+
+        private static final String DEFAULT_WEAPON_NAME = "塞勒瑞斯";
+        private static volatile String resolvedWeaponName = DEFAULT_WEAPON_NAME;
 
         // ═══════════════════════════════════════════════════════════════
         // 厂商 / 模型预设
@@ -156,7 +161,7 @@ public final class TalkingWeaponConfig {
                 builder.push("text");
                 WEAPON_NAME = builder
                                 .comment("武器显示名称")
-                                .define("weaponName", "塞勒瑞斯");
+                                .define("weaponName", DEFAULT_WEAPON_NAME);
                 builder.pop();
 
                 // ── 实体探查 ──────────────────────────────────────────
@@ -322,5 +327,36 @@ public final class TalkingWeaponConfig {
          */
         public static void register() {
                 ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC, "talking_weapon-client.toml");
+        }
+
+        public static String getResolvedWeaponName() {
+                return resolvedWeaponName;
+        }
+
+        @SubscribeEvent
+        public static void onConfigLoading(ModConfigEvent.Loading event) {
+                syncResolvedValues(event);
+        }
+
+        @SubscribeEvent
+        public static void onConfigReloading(ModConfigEvent.Reloading event) {
+                syncResolvedValues(event);
+        }
+
+        private static void syncResolvedValues(ModConfigEvent event) {
+                if (event.getConfig().getSpec() != SPEC) {
+                        return;
+                }
+
+                try {
+                        resolvedWeaponName = sanitizeWeaponName(WEAPON_NAME.get());
+                } catch (Throwable t) {
+                        resolvedWeaponName = DEFAULT_WEAPON_NAME;
+                        System.err.println("[TalkingWeapon] Failed to resolve weaponName from config: " + t);
+                }
+        }
+
+        private static String sanitizeWeaponName(String value) {
+                return value == null ? "" : value;
         }
 }

@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/native_catalog.snapshot.schema.json",
+  "title": "Talking Weapon Native Catalog Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "generator",
+    "instance",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "description": "ISO-8601 generation timestamp in real time, only for debugging/export bookkeeping."
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modVersion"
+      ],
+      "properties": {
+        "modVersion": {
+          "type": "string"
+        },
+        "minecraftVersion": {
+          "type": "string"
+        },
+        "forgeVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId"
+      ],
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "description": "Stable identifier for this modpack / instance."
+        },
+        "instanceName": {
+          "type": "string"
+        },
+        "packVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/catalogEntry"
+      }
+    }
+  },
+  "$defs": {
+    "catalogEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "kind",
+        "registryType",
+        "namespace",
+        "path",
+        "sourceMod",
+        "discoveredFrom"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "pattern": "^(native_specific|native_generic):.+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "native_specific",
+            "native_generic"
+          ]
+        },
+        "registryType": {
+          "type": "string",
+          "enum": [
+            "item",
+            "block",
+            "entity_type",
+            "biome",
+            "structure",
+            "poi",
+            "dimension",
+            "damage_type",
+            "fluid",
+            "enchantment",
+            "effect",
+            "other"
+          ]
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sourceMod": {
+          "type": "string",
+          "description": "Usually the namespace/mod id that contributed the tag or registry object."
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "discoveredFrom": {
+          "type": "string",
+          "enum": [
+            "registry",
+            "datapack_tag",
+            "collector_seen",
+            "manual_seed"
+          ]
+        },
+        "promptVisible": {
+          "type": "boolean",
+          "description": "Derived read-only visibility for prompt composition."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional exporter-specific hints, not used for matching semantics. Common keys include translationKey, iconKind, iconId, iconRelativePath.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

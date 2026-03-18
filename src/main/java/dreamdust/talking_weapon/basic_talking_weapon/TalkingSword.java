@@ -25,11 +25,16 @@ public class TalkingSword extends SwordItem {
 
     @Override
     public Component getName(ItemStack stack) {
-        String customName = TalkingWeaponConfig.WEAPON_NAME.get();
+        String customName = TalkingWeaponConfig.getResolvedWeaponName();
         if (customName == null || customName.isBlank()) {
             return super.getName(stack);
         }
-        return Component.literal(customName);
+        try {
+            return Component.literal(customName);
+        } catch (Throwable t) {
+            System.err.println("[TalkingWeapon] Failed to build custom talking_sword name, falling back: " + t);
+            return super.getName(stack);
+        }
     }
 
     @Override

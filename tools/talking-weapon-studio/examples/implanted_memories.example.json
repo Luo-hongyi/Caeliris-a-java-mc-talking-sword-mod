@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "memories": [
+    {
+      "id": "9b7ab0e7-8c10-4f31-91ab-0fdf0f2e53df",
+      "label": "初始故乡记忆",
+      "enabled": true,
+      "description": "我最初被锻造于亚尔夫海姆最北端的雪原。那里沉默、寒冷，却有一种近乎神圣的光。",
+      "focus_tags": [
+        "LANDSCAPE",
+        "CREATION"
+      ],
+      "semantic_time_tag": "custom_generic:ancient_past",
+      "detail_tags": [
+        "custom_specific:亚尔夫海姆",
+        "custom_generic:homeland"
+      ],
+      "importance": 1.0,
+      "occurred_game_time": -1,
+      "time_label": "发生在极久远过去、难以用精确日数标定的往昔阶段。",
+      "notes": "典型的植入式背景记忆。"
+    },
+    {
+      "description": "我曾在一座废弃矿井里听见过持有者的誓言，从那时起我开始相信他并不只是把我当作工具。",
+      "focus_tags": [
+        "SOCIAL",
+        "LABOR"
+      ],
+      "semantic_time_tag": "custom_generic:trust_early_days",
+      "detail_tags": [
+        "native_specific:minecraft:mineshaft",
+        "custom_generic:trust_beginning"
+      ],
+      "importance": 0.78,
+      "occurred_game_time": 48231,
+      "time_label": "与主人关系刚刚开始松动、信任仍在萌芽中的早期阶段。"
+    }
+  ]
+}

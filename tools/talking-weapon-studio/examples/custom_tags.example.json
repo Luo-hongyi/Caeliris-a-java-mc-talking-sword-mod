@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "tags": [
+    {
+      "tag": "custom_specific:亚尔夫海姆",
+      "kind": "custom_specific",
+      "label": "亚尔夫海姆",
+      "aliases": [
+        "妖精乡",
+        "精灵故土"
+      ],
+      "notes": "作为角色背景中的专有地点名词。",
+      "group": "landmark"
+    },
+    {
+      "tag": "custom_generic:homeland",
+      "kind": "custom_generic",
+      "label": "故乡",
+      "aliases": [
+        "家园",
+        "出身地"
+      ],
+      "group": "memory"
+    },
+    {
+      "tag": "custom_generic:trust_beginning",
+      "kind": "custom_generic",
+      "label": "信任萌芽",
+      "notes": "用于标记主人与武器关系第一次改善的记忆。",
+      "group": "relationship"
+    },
+    {
+      "tag": "custom_generic:homestead",
+      "kind": "custom_generic",
+      "label": "家园建造",
+      "group": "creation"
+    },
+    {
+      "tag": "custom_specific:health_critical",
+      "kind": "custom_specific",
+      "label": "濒危状态",
+      "group": "status"
+    },
+    {
+      "tag": "custom_generic:ancient_past",
+      "kind": "custom_generic",
+      "label": "久远往昔",
+      "group": "time"
+    },
+    {
+      "tag": "custom_generic:trust_early_days",
+      "kind": "custom_generic",
+      "label": "信任萌芽时期",
+      "group": "time"
+    }
+  ]
+}

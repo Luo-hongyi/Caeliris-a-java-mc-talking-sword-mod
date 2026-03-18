@@ -2,10 +2,12 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 
+import java.util.function.Predicate;
+
 /**
  * DetailTag 的系统策略：
  * <ul>
- * <li>自定义标签必须先在描述字典中登记，才能进入 Persona / Memory。</li>
+ * <li>自定义标签必须先在 custom_tags.json 中登记，才能进入 Persona / Memory。</li>
  * <li>{@code native_generic:*} 允许进入系统检索层，但不应直接暴露给 LLM Prompt。</li>
  * </ul>
  */
@@ -23,15 +25,25 @@ public final class TagPolicy {
         return tag;
     }
 
+    public static DetailTag parseRegisteredTag(String rawTag, Predicate<String> customTagLookup) {
+        DetailTag tag = DetailTag.parse(rawTag);
+        requireRegisteredCustomTag(tag, customTagLookup);
+        return tag;
+    }
+
     /**
-     * 自定义标签必须先在 tag_descriptions.json 中登记。
+     * 自定义标签必须先在 custom_tags.json 中登记。
      */
     public static void requireRegisteredCustomTag(DetailTag tag) {
+        requireRegisteredCustomTag(tag, CustomTagRegistry.getInstance().asLookup());
+    }
+
+    public static void requireRegisteredCustomTag(DetailTag tag, Predicate<String> customTagLookup) {
         if (tag == null || tag.getSource() != DetailTag.TagSource.CUSTOM) {
             return;
         }
         String raw = tag.toString();
-        if (!TagDescriptionDictionary.getInstance().contains(raw)) {
+        if (customTagLookup == null || !customTagLookup.test(raw)) {
             throw new IllegalArgumentException("Unregistered custom DetailTag: " + raw);
         }
     }

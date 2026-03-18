@@ -30,3 +30,11 @@ forge*changelog.txt
 
 # ds_store
 .DS_Store
+
+# Talking Weapon Studio
+tools/talking-weapon-studio/node_modules/
+tools/talking-weapon-studio/dist/
+tools/talking-weapon-studio/desktop-dist/
+tools/talking-weapon-studio/*.tsbuildinfo
+tools/talking-weapon-studio/vite.config.js
+tools/talking-weapon-studio/vite.config.d.ts

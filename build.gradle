@@ -3,7 +3,6 @@ plugins {
     id 'idea'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 version = "1.4.1"
@@ -132,12 +131,6 @@ dependencies {
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
-    // shadow = 编译时可用 + 只有这些依赖会被打包进 shadowJar
-    shadow "dev.langchain4j:langchain4j:${langchain4j_version}"
-    shadow "dev.langchain4j:langchain4j-open-ai:${langchain4j_version}"
-    implementation "dev.langchain4j:langchain4j:${langchain4j_version}"
-    implementation "dev.langchain4j:langchain4j-open-ai:${langchain4j_version}"
-
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
@@ -189,35 +182,6 @@ tasks.named('jar', Jar).configure {
 
     // This is the preferred method to reobfuscate your jar file
     finalizedBy 'reobfJar'
-}
-
-tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar).configure {
-    archiveClassifier.set('all')
-    // 只打包通过 shadow 配置声明的依赖，完全不碰 Forge/MC 的任何传递依赖
-    configurations = [project.configurations.shadow]
-    minimize()
-    exclude 'module-info.class'
-    exclude 'META-INF/versions/**'
-
-    // 将第三方依赖 relocate 到独立命名空间，避免与其他模组冲突
-    relocate 'dev.langchain4j',        'dreamdust.shadow.langchain4j'
-    relocate 'com.openai',             'dreamdust.shadow.openai'
-    relocate 'okhttp3',                'dreamdust.shadow.okhttp3'
-    relocate 'okio',                   'dreamdust.shadow.okio'
-    relocate 'retrofit2',              'dreamdust.shadow.retrofit2'
-    relocate 'com.fasterxml.jackson',  'dreamdust.shadow.jackson'
-    relocate 'com.google.gson',        'dreamdust.shadow.gson'
-    relocate 'com.google.common',      'dreamdust.shadow.guava'
-    relocate 'org.slf4j',              'dreamdust.shadow.slf4j'
-    relocate 'org.apache',             'dreamdust.shadow.apache'
-}
-
-reobf {
-    shadowJar {}
-}
-
-tasks.named('build').configure {
-    dependsOn 'reobfShadowJar'
 }
 
 // However if you are in a multi-project build, dev time needs unobfed jar files, so you can delay the obfuscation until publishing by doing:

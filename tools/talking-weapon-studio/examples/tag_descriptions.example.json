@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "descriptions": {
+    "custom_specific:亚尔夫海姆": {
+      "description": "武器记忆中的古老故乡，一片寒冷而带有神圣魔力的土地。",
+      "aliases": [
+        "妖精乡",
+        "精灵故土"
+      ],
+      "searchText": "故乡 北境 冰原 神圣 魔力 锻造起源",
+      "source": "user"
+    },
+    "custom_generic:homeland": {
+      "description": "与故乡、出身或精神归属地相关的一组概念标签。",
+      "searchText": "故乡 家园 出身 起源 精神归属",
+      "source": "user"
+    },
+    "custom_generic:trust_beginning": {
+      "description": "表示武器与持有者关系开始转向信任的早期阶段。",
+      "searchText": "关系改善 初次信任 情感转折",
+      "source": "user"
+    },
+    "custom_generic:homestead": {
+      "description": "与建造住所、整理营地、营造安定环境相关的行为集合。",
+      "searchText": "住所 营地 房屋 家园 建造 安定感",
+      "source": "user"
+    },
+    "custom_specific:health_critical": {
+      "description": "生命值极低、随时可能倒下的危险状态。",
+      "searchText": "濒死 危急 残血 生命见底",
+      "source": "user"
+    },
+    "custom_generic:ancient_past": {
+      "description": "发生在极久远过去、难以用精确日数标定的往昔阶段。",
+      "searchText": "远古 往昔 很久以前 古老年代",
+      "source": "user"
+    },
+    "custom_generic:trust_early_days": {
+      "description": "与主人关系刚刚开始松动、信任仍在萌芽中的早期阶段。",
+      "searchText": "初识 早期 信任萌芽 关系转折",
+      "source": "user"
+    },
+    "native_specific:minecraft:mineshaft": {
+      "description": "原版世界中的废弃矿井结构。",
+      "aliases": [
+        "废弃矿井"
+      ],
+      "source": "generated"
+    },
+    "native_specific:minecraft:lava": {
+      "description": "原版岩浆方块或流体，对生物和玩家具有高危伤害性。",
+      "aliases": [
+        "岩浆"
+      ],
+      "source": "generated"
+    },
+    "native_generic:minecraft:is_overworld": {
+      "description": "属于主世界生态与维度语义的一组原生 generic 标签。",
+      "source": "user"
+    }
+  }
+}

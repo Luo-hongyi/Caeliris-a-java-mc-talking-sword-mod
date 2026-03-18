@@ -15,12 +15,22 @@ import net.minecraftforge.fml.loading.FMLPaths;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeCatalogIconExporter;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeCatalogSnapshotExporter;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeTagDescriptionSeeder;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePublisher;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeTagViewExporter;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 游戏内配置界面：在 Mod 列表点击「配置」时弹出。
@@ -346,6 +356,106 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         configList.addEntry(new TwoButtonEntry(left, rowWidth, openImportance, reloadImportance));
 
+        // ── Studio 快照导出 ──
+        configList.addEntry(new LabelEntry("§e▸ Studio 快照"));
+
+        Button exportNativeCatalog = Button.builder(Component.literal("导出 Native Tag 快照"), btn -> {
+            try {
+                NativeCatalogSnapshotExporter.ExportResult result = NativeCatalogSnapshotExporter.exportSnapshot();
+                btn.setMessage(Component.literal("§a已导出 " + result.entryCount + " 条"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "export native catalog", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button openNativeCatalog = Button.builder(Component.literal("打开快照文件"), btn -> {
+            Util.getPlatform().openUri(NativeCatalogSnapshotExporter.getSnapshotPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportNativeCatalog, openNativeCatalog));
+
+        Button exportRuntimeTagView = Button.builder(Component.literal("导出 Tag 合并视图"), btn -> {
+            try {
+                StudioRuntimeTagViewExporter.ExportResult result = StudioRuntimeTagViewExporter.exportMergedView();
+                btn.setMessage(Component.literal("§a" + result.tagCount + " 条 / " + result.issueCount + " 问题"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "export runtime tag view", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button openRuntimeTagView = Button.builder(Component.literal("打开合并视图"), btn -> {
+            Util.getPlatform().openUri(StudioRuntimeTagViewExporter.getOutputPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportRuntimeTagView, openRuntimeTagView));
+
+        Button seedNativeDescriptions = Button.builder(Component.literal("补全 Native 描述"), btn -> {
+            try {
+                NativeTagDescriptionSeeder.SeedResult result = NativeTagDescriptionSeeder.seedMissingNativeDescriptions();
+                btn.setMessage(Component.literal("§a新增 " + result.addedCount + " 条"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "seed native descriptions", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button openTagDescriptions = Button.builder(Component.literal("打开描述文件"), btn -> {
+            Util.getPlatform().openUri(TagDescriptionDictionary.getConfigPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, seedNativeDescriptions, openTagDescriptions));
+
+        Button exportNativeIcons = Button.builder(Component.literal("导出 Native 图标"), btn -> {
+            try {
+                NativeCatalogIconExporter.ExportResult result = NativeCatalogIconExporter.exportAllIcons();
+                btn.setMessage(Component.literal("§a" + result.renderedCount + "+" + result.placeholderCount));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "export native icons", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button openNativeIcons = Button.builder(Component.literal("打开图标目录"), btn -> {
+            Util.getPlatform().openUri(NativeCatalogSnapshotExporter.getIconDirectory().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportNativeIcons, openNativeIcons));
+
+        Button exportStudioWorkspace = Button.builder(Component.literal("刷新 Studio 文件夹"), btn -> {
+            try {
+                StudioWorkspaceExporter.ExportResult result = StudioWorkspaceExporter.exportWorkspace();
+                btn.setMessage(Component.literal("§a" + result.fileCount + " 文件已就位"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "export studio workspace", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button openStudioWorkspace = Button.builder(Component.literal("打开 Studio 文件夹"), btn -> {
+            Util.getPlatform().openUri(StudioWorkspaceExporter.getWorkspaceRoot().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportStudioWorkspace, openStudioWorkspace));
+
+        Button publishStudioWorkspace = Button.builder(Component.literal("§b应用 Studio 工作区"), btn -> {
+            try {
+                StudioWorkspacePublisher.PublishResult result = StudioWorkspacePublisher.publishWorkspace();
+                btn.setMessage(Component.literal("§a已重载 " + result.publishedFiles.size() + " 文件"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "publish studio workspace", e);
+            }
+        }).bounds(0, 0, rowWidth - 8, 20).build();
+
+        configList.addEntry(new SingleWidgetEntry(left, rowWidth, publishStudioWorkspace));
+
+        Button openStudioErrorLog = Button.builder(Component.literal("打开 Studio 错误日志"), btn -> {
+            Path latestLog = StudioErrorLogger.getLatestLogPath().toAbsolutePath();
+            if (Files.isRegularFile(latestLog)) {
+                Util.getPlatform().openUri(latestLog.toUri());
+            } else {
+                btn.setMessage(Component.literal("§7暂无 Studio 错误日志"));
+            }
+        }).bounds(0, 0, rowWidth - 8, 20).build();
+
+        configList.addEntry(new SingleWidgetEntry(left, rowWidth, openStudioErrorLog));
+
         // ── 日志管理 ──
         configList.addEntry(new LabelEntry("§e▸ 日志管理"));
 
@@ -470,6 +580,41 @@ public class TalkingWeaponConfigScreen extends Screen {
         Path configFile = FMLPaths.CONFIGDIR.get().resolve("talking_weapon-client.toml");
         TalkingWeaponConfig.SPEC.save();
         Util.getPlatform().openUri(configFile.toUri());
+    }
+
+    private static void handleStudioActionError(Button button, String action, Exception error) {
+        Path studioLogPath = StudioErrorLogger.log(action, error);
+        String reason = shortErrorReason(error);
+        button.setMessage(Component.literal("§c失败: " + reason));
+        if (studioLogPath != null) {
+            System.err.println("[TalkingWeapon/Studio] Failed to " + action + ": " + error
+                    + " | detailed log: " + studioLogPath.toAbsolutePath());
+        } else {
+            System.err.println("[TalkingWeapon/Studio] Failed to " + action + ": " + error);
+        }
+        error.printStackTrace();
+    }
+
+    private static String shortErrorReason(Throwable error) {
+        if (error == null) {
+            return "unknown";
+        }
+
+        Throwable leaf = error;
+        while (leaf.getCause() != null && leaf.getCause() != leaf) {
+            leaf = leaf.getCause();
+        }
+
+        String message = leaf.getMessage();
+        if (message == null || message.isBlank()) {
+            message = leaf.getClass().getSimpleName();
+        }
+
+        message = message.replace('\n', ' ').replace('\r', ' ').trim().toLowerCase(Locale.ROOT);
+        if (message.length() > 18) {
+            message = message.substring(0, 18);
+        }
+        return message;
     }
 
     private void trySetInt(net.minecraftforge.common.ForgeConfigSpec.IntValue cfg,

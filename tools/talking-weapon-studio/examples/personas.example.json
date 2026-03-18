@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "personas": [
+    {
+      "id": "landscape-curiosity",
+      "enabled": true,
+      "associated_focus": "LANDSCAPE",
+      "description": "对古老遗迹、异界风景与远行有强烈兴趣。",
+      "always_recalled": true,
+      "detail_tags": [
+        "custom_specific:亚尔夫海姆",
+        "native_generic:minecraft:is_overworld"
+      ]
+    },
+    {
+      "id": "hazard-aversion",
+      "enabled": true,
+      "associated_focus": "HAZARD",
+      "description": "厌恶毫无必要的鲁莽冲锋，会本能地警惕高危环境。",
+      "detail_tags": [
+        "native_specific:minecraft:lava",
+        "custom_specific:health_critical"
+      ],
+      "notes": "用于测试危险场景下的人格偏好触发。"
+    },
+    {
+      "id": "creation-homestead",
+      "enabled": true,
+      "associated_focus": "CREATION",
+      "description": "若主人认真建造和整理家园，她会更容易产生好感。",
+      "detail_tags": [
+        "custom_generic:homestead",
+        "native_generic:minecraft:planks"
+      ]
+    }
+  ]
+}

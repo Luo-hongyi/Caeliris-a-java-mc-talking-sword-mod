@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/tag_descriptions.schema.json",
+  "title": "Talking Weapon Tag Descriptions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "descriptions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "descriptions": {
+      "type": "object",
+      "description": "Map from full DetailTag string to description entry.",
+      "propertyNames": {
+        "pattern": "^(native_specific|native_generic|custom_specific|custom_generic):.+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/descriptionEntry"
+      }
+    }
+  },
+  "$defs": {
+    "descriptionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Primary natural-language description."
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Optional synonyms used by Studio search."
+        },
+        "searchText": {
+          "type": "string",
+          "description": "Optional extended semantic text for vector search and retrieval."
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "user",
+            "generated"
+          ]
+        }
+      }
+    }
+  }
+}

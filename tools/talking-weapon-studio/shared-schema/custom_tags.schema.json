@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/custom_tags.schema.json",
+  "title": "Talking Weapon Custom Tags",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "tags"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/customTagEntry"
+      }
+    }
+  },
+  "$defs": {
+    "customTagEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "kind",
+        "label"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "pattern": "^(custom_specific|custom_generic):.+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "custom_specific",
+            "custom_generic"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-facing short label for Studio browsing."
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "notes": {
+          "type": "string",
+          "description": "Editor-facing note, not necessarily injected to prompt."
+        },
+        "group": {
+          "type": "string",
+          "description": "Optional UI grouping such as combat, status, landmark."
+        },
+        "hiddenFromPrompt": {
+          "type": "boolean",
+          "description": "Normally false for custom tags, reserved for future use."
+        }
+      }
+    }
+  }
+}

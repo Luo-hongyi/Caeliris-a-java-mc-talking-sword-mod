@@ -14,7 +14,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescrip
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponseParser;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMChatClient;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
@@ -26,13 +28,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
-
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ImageContent;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.output.Response;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -135,7 +130,7 @@ public class LLMInteractionTask extends AgentTask {
             AgentLogger.logAgentState(memory, state);
 
             // 3. 构建 LLM 请求
-            ChatLanguageModel model = LLMAgentService.buildModel();
+            LLMChatClient client = LLMAgentService.buildClient();
 
             // 触发器的事件指令（归因到触发源），应作为 system prompt 的 [Event] 段落注入，
             // 避免被模型误判为“玩家说的话”。
@@ -150,13 +145,12 @@ public class LLMInteractionTask extends AgentTask {
             // 只有在 player_chat 场景下，才将其视为真实的玩家输入。
             String userText = isPlayerChat ? eventInstruction : "[OBSERVATION]";
 
-            UserMessage message;
+            List<LLMMessage> messages = new ArrayList<>();
+            messages.add(LLMMessage.system(systemPrompt));
             if (screenshotBase64 != null) {
-                message = UserMessage.from(
-                        ImageContent.from(screenshotBase64, "image/png"),
-                        TextContent.from(userText));
+                messages.add(LLMMessage.userWithImage(userText, screenshotBase64, "image/png"));
             } else {
-                message = UserMessage.from(TextContent.from(userText));
+                messages.add(LLMMessage.user(userText));
             }
 
             if (isCancelled())
@@ -166,10 +160,7 @@ public class LLMInteractionTask extends AgentTask {
             AgentLogger.logPrompts(systemPrompt, userText, eventInstruction, screenshotBase64 != null);
 
             // 4. 调用 LLM
-            Response<AiMessage> response = model.generate(
-                    dev.langchain4j.data.message.SystemMessage.from(systemPrompt),
-                    message);
-            String rawReply = response.content().text().trim();
+            String rawReply = client.generate(messages).trim();
             AgentLogger.logRawResponse(rawReply);
 
             if (isCancelled())
@@ -441,11 +432,11 @@ public class LLMInteractionTask extends AgentTask {
             if (!personaResult.activeTraits.isEmpty()) {
                 StringBuilder pmLog = new StringBuilder("[偏好匹配] 激发了 " + personaResult.activeTraits.size() + " 条偏好:\n");
                 for (var trait : personaResult.activeTraits) {
-                    pmLog.append("  ★ ").append(trait.getTrait()).append("\n");
+                    pmLog.append("  ★ ").append(trait.getDescription()).append("\n");
                 }
                 for (var trigger : personaResult.triggeredTraits) {
                     pmLog.append("    <- context: ").append(trigger.contextEntry.getDescription()).append("\n");
-                    pmLog.append("       persona: ").append(trigger.trait.getTrait()).append("\n");
+                    pmLog.append("       persona: ").append(trigger.trait.getDescription()).append("\n");
                     pmLog.append("       match_mode: ").append(trigger.matchMode).append("\n");
                     if (!trigger.matchedContextTags.isEmpty()) {
                         pmLog.append("       context_tags: ").append(trigger.matchedContextTags).append("\n");
@@ -485,9 +476,13 @@ public class LLMInteractionTask extends AgentTask {
                 sb.append("[Recalled Long-Term Memories]\n");
                 for (LTMEntry ltm : recallResult.recalledMemories) {
                     sb.append("- ").append(ltm.getDescription());
-                    String anchor = ltm.describeSemanticAnchor();
-                    if (!anchor.isBlank()) {
-                        sb.append(" [").append(anchor).append("]");
+                    String timeSemantic = describePromptMemoryTimeSemantic(ltm, tagDict);
+                    if (!timeSemantic.isBlank()) {
+                        sb.append(" (时间语义: ").append(timeSemantic).append(")");
+                    }
+                    String environmentAnchor = describePromptEnvironmentAnchor(ltm);
+                    if (!environmentAnchor.isBlank()) {
+                        sb.append(" [").append(environmentAnchor).append("]");
                     }
                     List<String> cues = describePromptVisibleDetails(ltm.getDetailTags(), tagDict, locationReg);
                     if (!cues.isEmpty()) {
@@ -551,6 +546,39 @@ public class LLMInteractionTask extends AgentTask {
             }
         }
         return translated;
+    }
+
+    private static String describePromptMemoryTimeSemantic(LTMEntry ltm, TagDescriptionDictionary tagDict) {
+        if (ltm == null) {
+            return "";
+        }
+        DetailTag semanticTimeTag = ltm.getSemanticTimeTag();
+        if (semanticTimeTag != null && TagPolicy.isPromptVisible(semanticTimeTag)) {
+            String desc = tagDict.describeOrRaw(semanticTimeTag.toString());
+            if (desc != null && !desc.isBlank()) {
+                return desc;
+            }
+        }
+        String semanticTimeLabel = ltm.getSemanticTimeLabel();
+        return semanticTimeLabel != null ? semanticTimeLabel : "";
+    }
+
+    private static String describePromptEnvironmentAnchor(LTMEntry ltm) {
+        if (ltm == null) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        if (Boolean.TRUE.equals(ltm.getRaining())) {
+            parts.add("雨中");
+        }
+        if (ltm.getDimensionId() != null && !ltm.getDimensionId().isBlank()) {
+            parts.add("维度:" + ltm.getDimensionId());
+        }
+        if (ltm.getBiomeId() != null && !ltm.getBiomeId().isBlank()
+                && !"unknown".equalsIgnoreCase(ltm.getBiomeId())) {
+            parts.add("群系:" + ltm.getBiomeId());
+        }
+        return String.join(" / ", parts);
     }
 
     /**

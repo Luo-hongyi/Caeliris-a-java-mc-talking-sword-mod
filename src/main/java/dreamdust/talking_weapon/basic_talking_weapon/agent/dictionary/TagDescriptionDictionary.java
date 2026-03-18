@@ -2,11 +2,13 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-import net.minecraftforge.fml.loading.FMLPaths;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceManifestFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
 
 import java.io.*;
-import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +34,6 @@ public final class TagDescriptionDictionary {
             .create();
 
     /** 配置文件相对于 Forge config 目录的路径 */
-    private static final String CONFIG_SUBDIR = "talking_weapon";
     private static final String CONFIG_FILENAME = "tag_descriptions.json";
 
     /** jar 内默认资源路径 */
@@ -144,34 +145,64 @@ public final class TagDescriptionDictionary {
         Path configPath = getConfigPath();
         ensureConfigExists(configPath);
 
-        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
-            Type type = new TypeToken<Map<String, TagDefinition>>() {
-            }.getType();
-            Map<String, TagDefinition> raw = GSON.fromJson(reader, type);
-
-            // 过滤掉以 "_comment" 开头的注释键
-            Map<String, TagDefinition> filtered = new LinkedHashMap<>();
-            if (raw != null) {
-                raw.forEach((k, v) -> {
-                    if (!k.startsWith("_comment")) {
-                        filtered.put(k, v);
-                    }
-                });
-            }
-
+        try {
+            Map<String, TagDefinition> filtered = readDefinitions(configPath);
             System.out.println(LOG_PREFIX + "加载完成，共 " + filtered.size() + " 条映射：" + configPath);
             return new TagDescriptionDictionary(filtered);
-
         } catch (Exception e) {
             System.err.println(LOG_PREFIX + "加载失败，使用空字典：" + e.getMessage());
             return new TagDescriptionDictionary(Collections.emptyMap());
         }
     }
 
-    private static Path getConfigPath() {
-        return FMLPaths.CONFIGDIR.get()
-                .resolve(CONFIG_SUBDIR)
-                .resolve(CONFIG_FILENAME);
+    public static Path getConfigPath() {
+        return StudioWorkspacePaths.getAuthoredFilePath(CONFIG_FILENAME);
+    }
+
+    public static Map<String, TagDefinition> readDefinitions(Path configPath) throws IOException {
+        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
+            JsonElement root = JsonParser.parseReader(reader);
+            if (root == null || root.isJsonNull()) {
+                return Collections.emptyMap();
+            }
+            if (!root.isJsonObject()) {
+                throw new IllegalArgumentException("tag_descriptions.json root must be an object");
+            }
+
+            JsonObject object = root.getAsJsonObject();
+            JsonElement descriptionsElement = object.get("descriptions");
+            Map<String, TagDefinition> filtered = new LinkedHashMap<>();
+            JsonObject source = descriptionsElement != null && descriptionsElement.isJsonObject()
+                    ? descriptionsElement.getAsJsonObject()
+                    : object;
+
+            for (Map.Entry<String, JsonElement> entry : source.entrySet()) {
+                String key = entry.getKey();
+                if (key.startsWith("_comment") || "schemaVersion".equals(key)) {
+                    continue;
+                }
+
+                JsonElement value = entry.getValue();
+                if (value == null || value.isJsonNull()) {
+                    filtered.put(key, new TagDefinition(""));
+                    continue;
+                }
+
+                if (value.isJsonObject()) {
+                    filtered.put(key, GSON.fromJson(value, TagDefinition.class));
+                    continue;
+                }
+
+                if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+                    filtered.put(key, new TagDefinition(value.getAsString()));
+                    continue;
+                }
+
+                throw new IllegalArgumentException(
+                        "tag_descriptions.json entry '" + key + "' must be an object or string");
+            }
+            return filtered;
+        }
     }
 
     /**
@@ -180,6 +211,11 @@ public final class TagDescriptionDictionary {
     private static void ensureConfigExists(Path configPath) {
         if (Files.exists(configPath))
             return;
+        StudioWorkspacePaths.migrateLegacyFileIfMissing(configPath,
+                StudioWorkspacePaths.getLegacyConfigPath(CONFIG_FILENAME), LOG_PREFIX);
+        if (Files.exists(configPath)) {
+            return;
+        }
         try {
             Files.createDirectories(configPath.getParent());
             try (InputStream in = TagDescriptionDictionary.class.getResourceAsStream(DEFAULT_RESOURCE)) {
@@ -208,6 +244,8 @@ public final class TagDescriptionDictionary {
             Gson serializer = new GsonBuilder().setPrettyPrinting().create();
             definitions.forEach((key, def) -> root.add(key, serializer.toJsonTree(def)));
             serializer.toJson(root, writer);
+            StudioWorkspaceManifestFile.markVersionUpdated("descriptions",
+                    StudioWorkspaceManifestFile.UPDATED_BY_MINECRAFT);
         } catch (IOException e) {
             System.err.println(LOG_PREFIX + "保存失败：" + e.getMessage());
         }

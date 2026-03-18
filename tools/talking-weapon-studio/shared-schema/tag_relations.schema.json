@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/tag_relations.schema.json",
+  "title": "Talking Weapon Tag Relations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "relations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "relations": {
+      "type": "object",
+      "description": "Directed one-to-many relation graph. Runtime must additionally validate DAG/no-cycle constraints.",
+      "propertyNames": {
+        "pattern": "^(native_specific|native_generic|custom_specific|custom_generic):.+$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^(native_specific|native_generic|custom_specific|custom_generic):.+$"
+        },
+        "uniqueItems": true
+      }
+    }
+  }
+}

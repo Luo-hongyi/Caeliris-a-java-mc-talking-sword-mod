@@ -1,10 +1,5 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.output.Response;
-
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSemantics;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
@@ -12,7 +7,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponseParser;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMChatClient;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
@@ -64,13 +61,12 @@ public class ReflectionTask extends AgentTask {
 
         // 2. 调用 LLM
         try {
-            ChatLanguageModel model = LLMAgentService.buildModel();
-            List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
-            messages.add(dev.langchain4j.data.message.SystemMessage.from(systemPrompt));
-            messages.add(new UserMessage("开始回忆总结吧。"));
+            LLMChatClient client = LLMAgentService.buildClient();
+            List<LLMMessage> messages = new ArrayList<>();
+            messages.add(LLMMessage.system(systemPrompt));
+            messages.add(LLMMessage.user("开始回忆总结吧。"));
 
-            Response<AiMessage> response = model.generate(messages);
-            String responseText = response.content().text();
+            String responseText = client.generate(messages);
             
             AgentLogger.logAction("ReflectionTask", "LLM Reply: \n" + responseText);
 
@@ -144,7 +140,7 @@ public class ReflectionTask extends AgentTask {
         
         sb.append(memory.getIdentity()).append("\n\n");
         sb.append("[System Persona]\n");
-        sb.append(persona.toPromptSnippet(persona.getTraits())).append("\n\n");
+        sb.append(persona.toPromptSnippet(persona.getPersonaEntries())).append("\n\n");
         
         sb.append("[Reflection Instructions]\n");
         sb.append("你现在的任务是开始“长梦反思”。你需要仔细审视过去这段时间（此纪元）内你们之间发生的所有互动，用你的主观视角提取并合成一份记忆切片。\n");

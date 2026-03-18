@@ -293,9 +293,9 @@ public final class LTMRecallEngine {
                 }
 
                 int branchCount = computeBranchCount(profile.branchPerMemory, candidate.bestFocusAlignment, concentration);
-                List<DetailTag> branchTags = pickSeedTags(candidate.entry.getDetailTags(), branchCount, wanderingMind);
+                List<DetailTag> branchTags = pickSeedTags(candidate.entry.getAssociativeDetailTags(), branchCount, wanderingMind);
                 if (branchTags.isEmpty()) {
-                    traceLines.add("    branch_skipped(no detail tags)");
+                    traceLines.add("    branch_skipped(no associative tags)");
                     continue;
                 }
 
@@ -396,7 +396,7 @@ public final class LTMRecallEngine {
                     continue;
                 }
 
-                SemanticMatch semanticMatch = findBestSemanticMatch(seed.tag, entry.getDetailTags(), relationDict);
+                SemanticMatch semanticMatch = findBestSemanticMatch(seed.tag, entry.getAssociativeDetailTags(), relationDict);
                 double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
                 double seedFocusAlignment = computeSeedFocusAlignment(seed.focusTags, entry.getFocusTags());
                 double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());

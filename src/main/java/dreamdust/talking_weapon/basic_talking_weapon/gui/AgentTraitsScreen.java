@@ -3,7 +3,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.gui;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.TraitEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaStorage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -87,7 +88,7 @@ public class AgentTraitsScreen extends Screen {
         addWidget(scrollList);
 
         AgentPersona persona = AgentRuntime.getInstance().getPersona();
-        for (TraitEntry trait : persona.getTraitsByTag(TAGS[tagIndex])) {
+        for (PersonaEntry trait : persona.getPersonaEntriesByFocus(TAGS[tagIndex])) {
             TraitEditRow row = new TraitEditRow(trait, left, rowWidth);
             editRows.add(row);
             scrollList.addEntry(row);
@@ -98,8 +99,11 @@ public class AgentTraitsScreen extends Screen {
         int bx = (width - 290) / 2;
 
         addRenderableWidget(Button.builder(Component.literal("§a+ 新增"), btn -> {
+            if (!save()) {
+                return;
+            }
             AgentPersona p = AgentRuntime.getInstance().getPersona();
-            p.addTrait(new TraitEntry("新词条", TAGS[tagIndex]));
+            p.addPersonaEntry(new PersonaEntry("新词条", TAGS[tagIndex]));
             rebuildList();
         }).bounds(bx, btnY, 86, 20).build());
 
@@ -118,15 +122,17 @@ public class AgentTraitsScreen extends Screen {
         try {
             for (TraitEditRow row : editRows) {
                 if (!row.deleted) {
-                    row.trait.setTrait(row.traitBox.getValue());
+                    row.trait.setDescription(row.traitBox.getValue());
                     row.trait.setDetailTagsFromString(row.detailTagsBox.getValue());
                 }
             }
             AgentPersona persona = AgentRuntime.getInstance().getPersona();
             for (TraitEditRow row : editRows) {
                 if (row.deleted)
-                    persona.removeTrait(row.trait);
+                    persona.removePersonaEntry(row.trait);
             }
+            PersonaStorage.saveEntries(persona.getPersonaEntries());
+            persona.reloadStudioPersonaEntries();
             return true;
         } catch (IllegalArgumentException e) {
             saveError = e.getMessage();
@@ -191,14 +197,14 @@ public class AgentTraitsScreen extends Screen {
     // ═══════════════════════════════════════════════════════════════
 
     private class TraitEditRow extends TraitScrollList.Row {
-        final TraitEntry trait;
+        final PersonaEntry trait;
         final EditBox traitBox;
         final EditBox detailTagsBox;
         boolean deleted = false;
         private final Button deleteBtn;
         private final int rowWidth;
 
-        TraitEditRow(TraitEntry trait, int rowLeft, int rowWidth) {
+        TraitEditRow(PersonaEntry trait, int rowLeft, int rowWidth) {
             this.trait = trait;
             this.rowWidth = rowWidth;
 
@@ -206,7 +212,7 @@ public class AgentTraitsScreen extends Screen {
             traitBox = new EditBox(minecraft.font, 0, 0, rowWidth - 36, 18, Component.literal(""));
             traitBox.setMaxLength(128);
             traitBox.setCanLoseFocus(true);
-            traitBox.setValue(trait.getTrait());
+            traitBox.setValue(trait.getDescription());
 
             // 第二行：DetailTag 编辑框
             detailTagsBox = new EditBox(minecraft.font, 0, 0, rowWidth - 36, 18, Component.literal(""));
@@ -224,7 +230,7 @@ public class AgentTraitsScreen extends Screen {
         public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
                 int mx, int my, boolean hov, float delta) {
             if (deleted) {
-                g.drawString(minecraft.font, "§7§m" + trait.getTrait(), left + 4, top + 7, 0xFF666666);
+                g.drawString(minecraft.font, "§7§m" + trait.getDescription(), left + 4, top + 7, 0xFF666666);
                 return;
             }
             // 行一：词条文本 + 删除按钮

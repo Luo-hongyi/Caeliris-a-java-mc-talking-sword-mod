@@ -8,6 +8,7 @@
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
 - 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：从 `visibleContexts` 中抽取 seed entry / seed tag，按 focus、温度、recent recall 和 nostalgia 进行联想式召回。
 - `LTMEntry` 已补入可持久化的游戏内语义时间锚点，用于叙事展示与基于游戏时间的衰退计算。
+- `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue。
 - 当前仍未完成的关键环节，是和这套新 recall 架构一致的 **LTM 生成闭环**。
 
 ## 记忆分层
@@ -42,6 +43,7 @@
 - 时间衰退优先根据游戏内时间推进，而不是现实时钟。
 - 不同 seed 可以共同支持同一条记忆，证据会在 memory layer 聚合。
 - `native_generic` 可以参与内部检索，但不会直接进入 Prompt。
+- `semantic_time_tag` 会加入记忆的 associative tag 视图，因此可以成为记忆到记忆的联想边；但它仍然保持为独立时间语义，不会被塞进普通 detail cue 列表。
 
 ## 当前缺口：LTM 生成
 

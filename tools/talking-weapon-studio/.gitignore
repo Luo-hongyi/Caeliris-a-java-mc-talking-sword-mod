@@ -1,0 +1,7 @@
+node_modules/
+dist/
+desktop-dist/
+node_modules/escalade_backup/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

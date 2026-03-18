@@ -3,12 +3,16 @@ package dreamdust.talking_weapon.basic_talking_weapon;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.TickEventWatcher;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfigScreen;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceAutoPublisher;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioHttpBridgeServer;
 import net.minecraft.world.item.Item;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -27,6 +31,7 @@ public class basic_talking_weapon {
 
                 ITEMS.register(modEventBus);
                 TalkingWeaponConfig.register();
+                modEventBus.register(TalkingWeaponConfig.class);
 
                 // 注册 Mod 列表中的「配置」按钮 → 打开自定义界面
                 ModLoadingContext.get().registerExtensionPoint(
@@ -37,6 +42,11 @@ public class basic_talking_weapon {
                 MinecraftForge.EVENT_BUS.register(this);
                 MinecraftForge.EVENT_BUS.register(new ClientEventHandler());
                 MinecraftForge.EVENT_BUS.register(new TickEventWatcher());
+                MinecraftForge.EVENT_BUS.register(new StudioWorkspaceAutoPublisher());
+
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                        StudioHttpBridgeServer.startIfNeeded();
+                }
 
                 // KeyMapping 必须在 mod event bus 上注册
                 modEventBus.addListener(ClientEventHandler::onRegisterKeys);

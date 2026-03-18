@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/implanted_memories.schema.json",
+  "title": "Talking Weapon Implanted Memories",
+  "description": "Accepts both the new Studio envelope object and the current legacy runtime top-level array format.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "memories"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "memories": {
+          "type": "array",
+          "description": "Studio-managed implanted long-term memory entries.",
+          "items": {
+            "$ref": "#/$defs/implantedMemoryEntry"
+          }
+        }
+      }
+    },
+    {
+      "type": "array",
+      "description": "Legacy runtime format currently consumed by LTMStorage.",
+      "items": {
+        "$ref": "#/$defs/implantedMemoryEntry"
+      }
+    }
+  ],
+  "$defs": {
+    "focusTag": {
+      "type": "string",
+      "enum": [
+        "COMBAT",
+        "MOVEMENT",
+        "LABOR",
+        "CREATION",
+        "CREATURE",
+        "SOCIAL",
+        "LANDSCAPE",
+        "HAZARD",
+        "STATUS",
+        "CONSUMABLE",
+        "BLOCK",
+        "TOOL",
+        "COMMON"
+      ]
+    },
+    "detailTag": {
+      "type": "string",
+      "pattern": "^(native_specific|native_generic|custom_specific|custom_generic):.+$"
+    },
+    "customTag": {
+      "type": "string",
+      "pattern": "^custom_(specific|generic):.+$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "implantedMemoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid",
+          "description": "Optional stable UUID. Runtime may generate one if omitted."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional short editor-facing title."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Optional Studio flag for disabling a memory without deleting it."
+        },
+        "description": {
+          "type": "string",
+          "description": "The actual memory text injected into long-term memory."
+        },
+        "focus_tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/focusTag"
+          },
+          "uniqueItems": true,
+          "description": "Primary semantic retrieval anchors."
+        },
+        "semantic_time_tag": {
+          "$ref": "#/$defs/customTag",
+          "description": "Optional time-related custom tag used as a narrative time anchor. It participates in associative memory edges and prompt time semantics, but is kept out of the normal detail_tags cue pool."
+        },
+        "detail_tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detailTag"
+          },
+          "uniqueItems": true,
+          "description": "Specific or generic detail tags attached to this memory."
+        },
+        "importance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Initial recall weight."
+        },
+        "occurred_game_time": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional absolute in-game tick anchor. For implanted memories, prefer semantic time labels over raw ticks."
+        },
+        "time_label": {
+          "type": "string",
+          "description": "Compatibility text anchor currently consumed by runtime. Studio may derive it from semantic_time_tag."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Editor-facing note, not injected to runtime memory text."
+        }
+      }
+    }
+  }
+}

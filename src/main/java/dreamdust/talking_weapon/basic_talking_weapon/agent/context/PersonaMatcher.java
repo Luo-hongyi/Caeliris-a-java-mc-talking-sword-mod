@@ -4,7 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagRelationDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.TraitEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaEntry;
 
 import java.util.*;
 
@@ -25,13 +25,13 @@ public class PersonaMatcher {
 
     public static class MatchResult {
         /** 被激发的性格词条 */
-        public final List<TraitEntry> activeTraits;
+        public final List<PersonaEntry> activeTraits;
         /** 哪些环境 DetailTag 触发了联想（用于后续 associativeOnly 过滤判定） */
         public final Set<String> triggeringDetailTags;
         /** 每条上下文分别是如何触发人格词条的 */
         public final List<TriggeredTrait> triggeredTraits;
 
-        public MatchResult(List<TraitEntry> activeTraits, Set<String> triggeringDetailTags,
+        public MatchResult(List<PersonaEntry> activeTraits, Set<String> triggeringDetailTags,
                 List<TriggeredTrait> triggeredTraits) {
             this.activeTraits = activeTraits;
             this.triggeringDetailTags = triggeringDetailTags;
@@ -40,13 +40,13 @@ public class PersonaMatcher {
     }
 
     public static class TriggeredTrait {
-        public final TraitEntry trait;
+        public final PersonaEntry trait;
         public final TaggedContextEntry contextEntry;
         public final List<String> matchedContextTags;
         public final List<String> matchedTraitTags;
         public final String matchMode;
 
-        public TriggeredTrait(TraitEntry trait, TaggedContextEntry contextEntry,
+        public TriggeredTrait(PersonaEntry trait, TaggedContextEntry contextEntry,
                 List<String> matchedContextTags, List<String> matchedTraitTags, String matchMode) {
             this.trait = trait;
             this.contextEntry = contextEntry;
@@ -64,17 +64,20 @@ public class PersonaMatcher {
      * @return 匹配结果
      */
     public static MatchResult match(List<TaggedContextEntry> visibleContexts, AgentPersona persona) {
-        if (visibleContexts == null || visibleContexts.isEmpty() || persona.getTraits().isEmpty()) {
+        if (visibleContexts == null || visibleContexts.isEmpty() || persona.getPersonaEntries().isEmpty()) {
             return new MatchResult(Collections.emptyList(), Collections.emptySet(), Collections.emptyList());
         }
 
-        Set<TraitEntry> activeTraits = new LinkedHashSet<>();
+        Set<PersonaEntry> activeTraits = new LinkedHashSet<>();
         Set<String> triggeringDetailTags = new LinkedHashSet<>();
         List<TriggeredTrait> triggeredTraits = new ArrayList<>();
         TagRelationDictionary relationDict = TagRelationDictionary.getInstance();
 
-        for (TraitEntry trait : persona.getTraits()) {
-            boolean requiresExactDetail = !trait.getDetailTags().isEmpty();
+        for (PersonaEntry trait : persona.getPersonaEntries()) {
+            if (!trait.isEnabled()) {
+                continue;
+            }
+            boolean requiresExactDetail = !trait.isFocusConstant() && !trait.getDetailTags().isEmpty();
             boolean traitTriggered = false;
             List<DetailTag> traitTags = new ArrayList<>();
             boolean hasTraitSpecifics = false;
@@ -152,16 +155,16 @@ public class PersonaMatcher {
                                 matchedTraitRawTags,
                                 matchMode));
                     }
-                } else if (trait.getAssociatedTag() != null) {
-                    // 无 Detail 约束的泛用偏好：FocusTag 命中即可
-                    if (source.hasFocus(trait.getAssociatedTag())) {
+                } else if (trait.getAssociatedFocus() != null) {
+                    // 无 Detail 约束或标记为 always_recalled 的 persona：按 focus 域恒定触发
+                    if (shouldTriggerFocusConstant(trait, source)) {
                         traitTriggered = true;
                         triggeredTraits.add(new TriggeredTrait(
                                 trait,
                                 source,
                                 Collections.emptyList(),
                                 Collections.emptyList(),
-                                "focus"));
+                                trait.isAlwaysRecalled() ? "always_recalled" : "focus_constant"));
                     }
                 }
             }
@@ -172,5 +175,15 @@ public class PersonaMatcher {
         }
 
         return new MatchResult(new ArrayList<>(activeTraits), triggeringDetailTags, triggeredTraits);
+    }
+
+    private static boolean shouldTriggerFocusConstant(PersonaEntry trait, TaggedContextEntry source) {
+        if (trait == null || source == null || trait.getAssociatedFocus() == null) {
+            return false;
+        }
+        if (trait.getAssociatedFocus() == dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag.COMMON) {
+            return true;
+        }
+        return source.hasFocus(trait.getAssociatedFocus());
     }
 }

@@ -2,11 +2,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service;
 
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
-
 /**
- * LLM 服务工具类：仅负责根据配置构建 {@link ChatLanguageModel} 实例。
+ * LLM 服务工具类：仅负责根据配置构建内部的聊天客户端实例。
  * <p>
  * 具体的请求发送、响应处理、ActionBar 展示等逻辑已迁移至：
  * <ul>
@@ -21,20 +18,12 @@ public final class LLMAgentService {
     } // 不可实例化
 
     /**
-     * 根据当前配置构建 {@link ChatLanguageModel}。
-     * <p>
-     * 所有 Provider 均通过 OpenAI 兼容接口调用：
-     * <ul>
-     * <li>OpenAI: https://api.openai.com/v1/</li>
-     * <li>Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1/</li>
-     * <li>Claude / Gemini: 通过第三方代理</li>
-     * </ul>
+     * 根据当前配置构建 OpenAI-compatible 聊天客户端。
      */
-    public static ChatLanguageModel buildModel() {
-        return OpenAiChatModel.builder()
-                .apiKey(TalkingWeaponConfig.OPENAI_API_KEY.get())
-                .baseUrl(TalkingWeaponConfig.BASE_URL.get())
-                .modelName(TalkingWeaponConfig.MODEL_NAME.get())
-                .build();
+    public static LLMChatClient buildClient() {
+        return new OpenAiCompatibleChatClient(
+                TalkingWeaponConfig.OPENAI_API_KEY.get(),
+                TalkingWeaponConfig.BASE_URL.get(),
+                TalkingWeaponConfig.MODEL_NAME.get());
     }
 }

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/personas.schema.json",
+  "title": "Talking Weapon Personas",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "personas"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "personas": {
+      "type": "array",
+      "description": "Studio-managed persona preference entries, grouped by focus in the editor.",
+      "items": {
+        "$ref": "#/$defs/personaEntry"
+      }
+    }
+  },
+  "$defs": {
+    "focusTag": {
+      "type": "string",
+      "enum": [
+        "COMBAT",
+        "MOVEMENT",
+        "LABOR",
+        "CREATION",
+        "CREATURE",
+        "SOCIAL",
+        "LANDSCAPE",
+        "HAZARD",
+        "STATUS",
+        "CONSUMABLE",
+        "BLOCK",
+        "TOOL",
+        "COMMON"
+      ]
+    },
+    "detailTag": {
+      "type": "string",
+      "pattern": "^(native_specific|native_generic|custom_specific|custom_generic):.+$"
+    },
+    "personaEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "associated_focus",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "description": "Stable Studio-side identifier for this persona entry."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Optional Studio-side enable flag."
+        },
+        "associated_focus": {
+          "$ref": "#/$defs/focusTag"
+        },
+        "description": {
+          "type": "string",
+          "description": "Natural-language persona or preference statement."
+        },
+        "always_recalled": {
+          "type": "boolean",
+          "description": "If true, this persona entry should be treated as always remembered. Use sparingly because too many always-recalled personas can inflate prompt tokens."
+        },
+        "detail_tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detailTag"
+          },
+          "uniqueItems": true,
+          "description": "Optional detail-tag anchors used by persona recall and trait triggering."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Editor-facing note, not necessarily injected to prompt."
+        }
+      }
+    }
+  }
+}

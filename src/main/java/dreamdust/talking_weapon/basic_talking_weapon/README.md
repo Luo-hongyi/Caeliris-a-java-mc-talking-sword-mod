@@ -9,10 +9,14 @@
 - `DetailTag` 新架构已落地：`native_specific` / `native_generic` / `custom_specific` / `custom_generic` 四类标签已经统一。
 - `native_generic` 已全量进入 Collector、Context、STM、Persona 匹配和 LTM 检索层，但在 Prompt 合成阶段默认隐藏，不直接暴露给 LLM。
 - `TagDescriptionDictionary` 与 `TagRelationDictionary` 已拆分：前者只负责描述文本，后者维护一对多、无环的语义关系图。
+- Studio runtime 导出链已具备两层输出：`native_catalog.snapshot.json` 用于导出实例中的 native tag/registry 视图，`studio_runtime_tag_view.json` 用于导出 description/relation 的合并视图与基础校验结果。
+- `native_catalog.snapshot.json` 现在会尽可能附带本地化 `displayName`，并为可渲染对象附带轻量图标提示（如 item / block item / spawn egg）。
+- native icon 导出链已落地：`native_catalog_icons/` 只为 `native_specific` 导出 PNG 图标；`native_generic` 不导出图标文件。图标路径直接写入 `native_catalog.snapshot.json` 的 metadata，workspace 协议不再依赖额外的 `icons.json`。
 - `PersonaMatcher` 已按最新定义修正 `specific` / `generic` 匹配逻辑。
 - 长期记忆召回链已按“visible context 起点 + focus 导向 + 温度采样 + recent recall 抑制 + nostalgia 时间衰退”的新方案重构完成。
 - `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
 - 全局植入记忆 (`implanted memories`) 的读写链路可用。
+- 植入记忆支持独立的 `semantic_time_tag`：它会参与记忆之间的联想边，并在 Prompt 中以独立时间语义输出，但不会并入普通 `detail_tags` 的 cue 列表。
 - 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。仓库中仍保留旧版 `ReflectionTask` / `ReflectionTrigger` 骨架，但它还没有完成最新设计下的稳定接线、筛选策略与生成质量约束，因此不能视为该阶段已经彻底完成。
 
 ## ✨ 核心特性
@@ -179,6 +183,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
 - 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；`nostalgia` 则控制旧记忆随时间衰退的力度。
 - `LTMEntry` 现在会记录轻量的游戏内时间锚点（如“第 N 天的深夜”），并在召回时优先按游戏内时间而不是现实时间计算记忆老化。
+- 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，Prompt 中会单独显示为“时间语义”。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
 - `AssociationMode.CUSTOM` 的具体参数由 `talking_weapon-client.toml` 中的 `agent.memory_recall` 配置控制，其中包含 seed 数、联想深度、最终记忆上限和最近召回窗口。
 
@@ -216,6 +221,16 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
      - 主动触发（总开关）
      - 群系变化检测
 4. 点击 "打开配置文件(.toml)" 按钮编辑文本配置（包括 prompt、API Key 等长文本字段）
+5. 在 Studio 快照区可以额外：
+   - 导出 `native_catalog.snapshot.json`
+   - 导出 `studio_runtime_tag_view.json`
+   - 导出 / 打开 `custom_tags.json` 所在的 Studio 工作区整包目录
+   - 用当前实例的 native 显示名补全缺失的 `tag_descriptions.json`
+   - 导出全量 `native_catalog_icons/` 图标包
+   - 导出 `studio_workspace/` 整包目录，供 Talking Weapon Studio 直接按文件夹导入
+   - 将 `studio_workspace/` 中编辑完成的 `custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json` 发布回运行时配置
+   - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时自动发布回运行时
+   - 直接打开这些运行时导出文件 / 图标目录进行检查
 
 ### 方式二：直接编辑配置文件
 编辑 `config/talking_weapon-client.toml`（首次启动后自动生成）：
@@ -319,18 +334,17 @@ IContextCollector (采集器)
 ## 🛠️ 技术栈
 
 - **Minecraft Forge** `1.20.1-47.4.10`
-- **LangChain4j** `0.31.0`（核心 + OpenAI 模块）
-- **Shadow Plugin** `8.1.1`（依赖打包与 relocate）
+- **LLM 接口** 自研 OpenAI-compatible 抽象层（基于 JDK `HttpClient`）
 
-所有第三方依赖通过 Shadow Plugin 打包进 jar 并 relocate 至 `dreamdust.shadow.*`，避免与 Forge 模块冲突。
+LLM 调用不再依赖 `langchain4j` 或 fat-jar 打包链，运行时直接向 OpenAI-compatible `/chat/completions` 接口发送请求。
 
 ## 📦 构建
 
 ```bash
-./gradlew shadowJar
+./gradlew build
 ```
 
-生成产物：`build/libs/basic_talking_weapon-1.0.0-all.jar`
+生成产物：`build/libs/basic_talking_weapon-1.4.1.jar`
 
 放入 `.minecraft/mods/` 文件夹即可。
 

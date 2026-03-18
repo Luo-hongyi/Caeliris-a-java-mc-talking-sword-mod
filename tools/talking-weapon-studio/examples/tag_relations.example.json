@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "relations": {
+    "custom_specific:亚尔夫海姆": [
+      "custom_generic:homeland",
+      "native_generic:minecraft:is_overworld"
+    ],
+    "custom_specific:health_critical": [
+      "native_generic:minecraft:is_overworld"
+    ],
+    "native_specific:minecraft:mineshaft": [
+      "custom_generic:trust_beginning"
+    ],
+    "custom_generic:homestead": [
+      "custom_generic:homeland"
+    ],
+    "native_specific:minecraft:lava": [
+      "custom_specific:health_critical"
+    ]
+  }
+}
