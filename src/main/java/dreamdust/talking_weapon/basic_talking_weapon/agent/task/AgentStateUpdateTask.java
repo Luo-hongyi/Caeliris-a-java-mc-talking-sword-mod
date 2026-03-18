@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 
 /**
  * Agent 状态更新任务：不需要 LLM 调用的本地操作。
@@ -81,6 +82,10 @@ public class AgentStateUpdateTask extends AgentTask {
             System.out.println("[TalkingWeapon] AgentStateUpdate: " + description
                     + " | familiarity=" + state.getFamiliarity()
                     + " | emotion=" + state.getPrimaryEmotion() + "(" + state.getEmotionIntensity() + ")");
+        }
+
+        if (familiarityDelta != 0 || suggestedEmotion != null || suggestedIntensity >= 0) {
+            AgentStateStorage.requestSaveRuntimeState(state, AgentRuntime.getInstance().getPersona());
         }
     }
 

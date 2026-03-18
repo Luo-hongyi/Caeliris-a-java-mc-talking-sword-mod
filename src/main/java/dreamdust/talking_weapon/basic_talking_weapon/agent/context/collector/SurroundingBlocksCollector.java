@@ -6,11 +6,13 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -135,6 +137,22 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // ═══════════════════════════════════════════════════
         List<String> features = new ArrayList<>();
         boolean canSeeSky = level.canSeeSky(playerPos.above());
+        int blockLight = level.getBrightness(LightLayer.BLOCK, playerPos);
+        int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
+        int surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, playerPos.getX(), playerPos.getZ());
+        int depthBelowSurface = Math.max(0, surfaceY - playerPos.getY());
+        int naturalNearbyBlocks = 0;
+        int structuralNearbyBlocks = 0;
+
+        for (Map.Entry<String, Integer> entry : blockCounts.entrySet()) {
+            String blockId = entry.getKey();
+            int count = entry.getValue();
+            if (isNaturalCaveBlock(blockId)) {
+                naturalNearbyBlocks += count;
+            } else if (isStructuralBlock(blockId)) {
+                structuralNearbyBlocks += count;
+            }
+        }
 
         // 3a. 露天 / 室内 / 洞穴推断
         if (canSeeSky) {
@@ -146,10 +164,12 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     .importance(ImportanceRegistry.getInstance().get("env:exposed", 0.6f))
                     .build());
         } else {
-            int solidBlocksAbove = 0;
+            int coverBlocksAbove = 0;
+            int naturalRoofBlocksAbove = 0;
+            int structuralRoofBlocksAbove = 0;
             boolean hitSky = false;
             BlockPos scan = playerPos.above();
-            
+
             for (int i = 0; i < 64; i++) {
                 scan = scan.above();
                 if (level.canSeeSky(scan)) {
@@ -157,12 +177,18 @@ public class SurroundingBlocksCollector implements IContextCollector {
                     break;
                 }
                 BlockState state = level.getBlockState(scan);
-                // 不计入空气，统计头顶实打实的遮挡方块层数
-                if (!state.isAir()) {
-                    solidBlocksAbove++;
+                String blockId = resolveBlockId(state);
+                if (state.isAir() || isIgnoredOverheadBlock(state, blockId)) {
+                    continue;
+                }
+                coverBlocksAbove++;
+                if (isNaturalCaveBlock(blockId)) {
+                    naturalRoofBlocksAbove++;
+                } else if (isStructuralBlock(blockId)) {
+                    structuralRoofBlocksAbove++;
                 }
             }
-            
+
             if (!hitSky) {
                 features.add("深层遮挡或地底");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
@@ -171,18 +197,41 @@ public class SurroundingBlocksCollector implements IContextCollector {
                         .description("位于头顶极深处被遮挡的建筑内部或极深地城。头顶逾 64 格不见天日。")
                         .importance(ImportanceRegistry.getInstance().get("env:deep_indoors", 0.8f))
                         .build());
-            } else if (solidBlocksAbove <= 4) {
+            } else if (coverBlocksAbove <= 4 && depthBelowSurface <= 4) {
                 features.add("浅层遮挡(室内房屋或树冠下)");
-                // 仅是普通的房屋屋顶或多层建筑的一楼，不视为 cave
-            } else {
-                features.add("洞穴或地下");
                 builder.addTaggedEntry(TaggedContextEntry.builder()
                         .focus(FocusTag.LANDSCAPE)
-                        .detail(DetailTag.CUSTOM_SPECIFIC, "cave")
-                        .description(
-                                "位于地下洞穴或厚重岩层下，头顶有逾 " + solidBlocksAbove + " 格厚的实体方块。周围主要由 " + blockAbove + ", " + blockBelow + " 构成。")
-                        .importance(ImportanceRegistry.getInstance().get("env:cave", 0.8f))
+                        .detail(DetailTag.CUSTOM_SPECIFIC, "indoors")
+                        .description("处于浅层遮挡环境中，更像屋檐、树冠下或普通建筑内部，而非地下洞穴。")
+                        .importance(ImportanceRegistry.getInstance().get("env:indoors", 0.45f))
                         .build());
+            } else {
+                boolean likelyUnderground = depthBelowSurface >= 6;
+                boolean naturalRoofDominant = naturalRoofBlocksAbove >= 5
+                        && naturalRoofBlocksAbove >= structuralRoofBlocksAbove;
+                boolean naturalSurroundings = naturalNearbyBlocks >= Math.max(16, structuralNearbyBlocks);
+                boolean caveLikeDarkness = skyLight <= 2;
+
+                if (likelyUnderground && naturalRoofDominant && naturalSurroundings && caveLikeDarkness) {
+                    features.add("洞穴或地下");
+                    builder.addTaggedEntry(TaggedContextEntry.builder()
+                            .focus(FocusTag.LANDSCAPE)
+                            .detail(DetailTag.CUSTOM_SPECIFIC, "cave")
+                            .description(
+                                    "位于地下天然洞穴或厚重岩层下。离地表约 " + depthBelowSurface + " 格，头顶有效遮挡 "
+                                            + coverBlocksAbove + " 层，自然岩层占主导。")
+                            .importance(ImportanceRegistry.getInstance().get("env:cave", 0.8f))
+                            .build());
+                } else {
+                    features.add("大型建筑内部或深层室内");
+                    builder.addTaggedEntry(TaggedContextEntry.builder()
+                            .focus(FocusTag.LANDSCAPE)
+                            .detail(DetailTag.CUSTOM_SPECIFIC, "indoors")
+                            .description(
+                                    "位于较深的室内/建筑遮挡环境中。虽然不见天日，但更像大型建筑、地堡或人造空间，而不是天然洞穴。")
+                            .importance(ImportanceRegistry.getInstance().get("env:indoors", 0.55f))
+                            .build());
+                }
             }
         }
 
@@ -215,8 +264,6 @@ public class SurroundingBlocksCollector implements IContextCollector {
         }
 
         // 3d. 光照环境推断
-        int blockLight = level.getBrightness(LightLayer.BLOCK, playerPos);
-        int skyLight = level.getBrightness(LightLayer.SKY, playerPos);
         if (blockLight <= 3 && skyLight <= 3) {
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.HAZARD) // 黑暗带来危险
@@ -256,6 +303,93 @@ public class SurroundingBlocksCollector implements IContextCollector {
             return 0.5;
         }
         return 1.0;
+    }
+
+    private boolean isIgnoredOverheadBlock(BlockState state, String blockId) {
+        String lower = blockId.toLowerCase(Locale.ROOT);
+        return state.is(BlockTags.LEAVES)
+                || state.is(BlockTags.LOGS)
+                || state.is(Blocks.VINE)
+                || lower.contains("leaf")
+                || lower.contains("leaves")
+                || lower.contains("log")
+                || lower.contains("wood")
+                || lower.contains("vine")
+                || lower.contains("moss_carpet")
+                || lower.contains("grass")
+                || lower.contains("fern")
+                || lower.contains("bush")
+                || lower.contains("petal")
+                || lower.contains("crop")
+                || lower.contains("sapling");
+    }
+
+    private boolean isNaturalCaveBlock(String blockId) {
+        String lower = blockId.toLowerCase(Locale.ROOT);
+        if (isStructuralBlock(lower)) {
+            return false;
+        }
+        return lower.contains("stone")
+                || lower.contains("deepslate")
+                || lower.contains("andesite")
+                || lower.contains("diorite")
+                || lower.contains("granite")
+                || lower.contains("tuff")
+                || lower.contains("dripstone")
+                || lower.contains("calcite")
+                || lower.contains("basalt")
+                || lower.contains("blackstone")
+                || lower.contains("netherrack")
+                || lower.contains("end_stone")
+                || lower.contains("sandstone")
+                || lower.contains("gravel")
+                || lower.contains("dirt")
+                || lower.contains("mud")
+                || lower.contains("clay")
+                || lower.contains("terracotta")
+                || lower.contains("sand")
+                || lower.contains("snow_block")
+                || lower.contains("powder_snow")
+                || lower.contains("ice")
+                || lower.contains("magma")
+                || lower.contains("soul_sand")
+                || lower.contains("soul_soil")
+                || lower.contains("ore");
+    }
+
+    private boolean isStructuralBlock(String blockId) {
+        String lower = blockId.toLowerCase(Locale.ROOT);
+        return lower.contains("planks")
+                || lower.contains("brick")
+                || lower.contains("bricks")
+                || lower.contains("tiles")
+                || lower.contains("glass")
+                || lower.contains("pane")
+                || lower.contains("concrete")
+                || lower.contains("wool")
+                || lower.contains("carpet")
+                || lower.contains("door")
+                || lower.contains("trapdoor")
+                || lower.contains("fence")
+                || lower.contains("gate")
+                || lower.contains("wall")
+                || lower.contains("stairs")
+                || lower.contains("slab")
+                || lower.contains("pillar")
+                || lower.contains("lamp")
+                || lower.contains("lantern")
+                || lower.contains("torch")
+                || lower.contains("chain")
+                || lower.contains("scaffold")
+                || lower.contains("cobblestone")
+                || lower.contains("polished")
+                || lower.contains("cut_")
+                || lower.contains("chiseled")
+                || lower.contains("smooth_")
+                || lower.contains("stripped_")
+                || lower.contains("trap")
+                || lower.contains("bed")
+                || lower.contains("bookshelf");
     }
 
     private String resolveBlockId(BlockState state) {

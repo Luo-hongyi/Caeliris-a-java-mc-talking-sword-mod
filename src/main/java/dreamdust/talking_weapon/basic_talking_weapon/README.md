@@ -227,9 +227,9 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
    - 导出 / 打开 `custom_tags.json` 所在的 Studio 工作区整包目录
    - 用当前实例的 native 显示名补全缺失的 `tag_descriptions.json`
    - 导出全量 `native_catalog_icons/` 图标包
-   - 导出 `studio_workspace/` 整包目录，供 Talking Weapon Studio 直接按文件夹导入
-   - 将 `studio_workspace/` 中编辑完成的 `custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json` 发布回运行时配置
-   - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时自动发布回运行时
+   - 刷新 `studio_workspace/` 中的 snapshot / runtime view / icon 参考文件，供 Talking Weapon Studio 直接按文件夹导入
+   - `studio_workspace/` 现在同时承载 authored data 真源：`custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json` 由游戏与 Studio 直接共用
+   - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时热重载这批 authored 文件
    - 直接打开这些运行时导出文件 / 图标目录进行检查
 
 ### 方式二：直接编辑配置文件

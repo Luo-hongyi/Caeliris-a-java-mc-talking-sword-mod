@@ -18,6 +18,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,7 @@ public class ReflectionTask extends AgentTask {
         AgentState state = runtime.getState();
         AgentPersona persona = runtime.getPersona();
         AgentContext ctx = getContext();
+        boolean runtimeStateChanged = false;
 
         List<InteractionTurn> turns = memory.getSTMPool().turnSnapshot();
         if (turns.isEmpty()) {
@@ -117,6 +119,7 @@ public class ReflectionTask extends AgentTask {
                             // 大清算好感度直接应用到 Persona，不经过疲劳扣留
                             persona.adjustFavorability(req.change_amount);
                             AgentLogger.logAction("favorability_settlement", "Epoch Settled Favorability by " + req.change_amount + ". Total: " + persona.getFavorability());
+                            runtimeStateChanged = true;
                         }
                     } else if (req.type != null && "inner_monologue".equalsIgnoreCase(req.type)) {
                         if (req.content != null) {
@@ -129,6 +132,9 @@ public class ReflectionTask extends AgentTask {
         } catch (Exception e) {
             AgentLogger.logError("ReflectionTask 执行异常", e);
         } finally {
+            if (runtimeStateChanged) {
+                AgentStateStorage.requestSaveRuntimeState(state, persona);
+            }
             // 6. 清理：无论成功失败，推进纪元
             memory.getSTMPool().clear();
             AgentLogger.logAction("ReflectionTask", "Epoch cleared. New memory epoch begins.");

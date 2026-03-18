@@ -31,7 +31,7 @@ import java.util.function.Predicate;
 /**
  * 自定义 DetailTag 的显式注册表。
  * <p>
- * 运行时只以 {@code config/talking_weapon/custom_tags.json} 作为 custom tag 的合法来源；
+ * 运行时只以 {@code config/talking_weapon/studio_workspace/custom_tags.json} 作为 custom tag 的合法来源；
  * {@code tag_descriptions.json} 仅负责描述文本，不再承担“注册”职责。
  */
 public final class CustomTagRegistry {

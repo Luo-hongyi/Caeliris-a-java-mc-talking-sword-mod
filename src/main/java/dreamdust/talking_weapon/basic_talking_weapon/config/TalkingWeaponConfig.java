@@ -57,6 +57,7 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.ConfigValue<String> WEAPON_NAME;
 
         // —— 实体探查 ——
+        public static final ForgeConfigSpec.IntValue ENTITIES_SCAN_RADIUS;
         public static final ForgeConfigSpec.BooleanValue ENTITIES_ONLY_CREATURES;
         public static final ForgeConfigSpec.BooleanValue ENTITIES_LINE_OF_SIGHT;
         public static final ForgeConfigSpec.IntValue ENTITIES_LOS_MAX_CHECK;
@@ -166,6 +167,9 @@ public final class TalkingWeaponConfig {
 
                 // ── 实体探查 ──────────────────────────────────────────
                 builder.push("entity");
+                ENTITIES_SCAN_RADIUS = builder
+                                .comment("实体探查扫描半径（方块数，默认16格）")
+                                .defineInRange("scanRadiusBlocks", 16, 4, 64);
                 ENTITIES_ONLY_CREATURES = builder
                                 .comment("仅探查生物（true=只报告生物，false=同时报告掉落物、展示框等非生物实体）")
                                 .define("onlyCreatures", false);

@@ -15,6 +15,11 @@ type DesktopBinaryFile = {
 
 type DesktopWorkspaceBridge = {
   pickWorkspaceDirectory: (mode: WorkspaceAccessMode) => Promise<DesktopDirectoryHandle | null>;
+  startWorkspaceWatcher?: (rootPath: string) => Promise<{ ok: boolean }>;
+  stopWorkspaceWatcher?: () => Promise<{ ok: boolean }>;
+  onWorkspaceChanged?: (
+    listener: (payload: { rootPath: string; changedPaths: string[]; changedAt: number }) => void
+  ) => (() => void);
   readTextFile: (rootPath: string, relativePath: string) => Promise<string | null>;
   writeTextFile: (rootPath: string, relativePath: string, contents: string) => Promise<void>;
   readBinaryFile: (rootPath: string, relativePath: string) => Promise<DesktopBinaryFile | null>;
@@ -77,6 +82,10 @@ export function getDesktopBridgeSource(): string {
 
 export function isBrowserDirectoryPickerAvailable(): boolean {
   return typeof (window as DirectoryPickerWindow).showDirectoryPicker === "function";
+}
+
+export function isDesktopWorkspaceHandle(handle: WorkspaceDirectoryHandle | null): boolean {
+  return !!handle && isDesktopDirectoryHandle(handle);
 }
 
 export async function pickDirectoryHandle(mode: WorkspaceAccessMode): Promise<WorkspaceDirectoryHandle | null> {
@@ -207,4 +216,34 @@ export function describeWorkspaceDirectoryHandle(handle: WorkspaceDirectoryHandl
   }
 
   return `${handle.name} (web sandbox)`;
+}
+
+export async function startDesktopWorkspaceWatcher(handle: WorkspaceDirectoryHandle): Promise<boolean> {
+  if (!isDesktopDirectoryHandle(handle)) {
+    return false;
+  }
+  const desktopBridge = getDesktopBridge();
+  if (!desktopBridge?.startWorkspaceWatcher) {
+    return false;
+  }
+  await desktopBridge.startWorkspaceWatcher(handle.path);
+  return true;
+}
+
+export async function stopDesktopWorkspaceWatcher(): Promise<void> {
+  const desktopBridge = getDesktopBridge();
+  if (!desktopBridge?.stopWorkspaceWatcher) {
+    return;
+  }
+  await desktopBridge.stopWorkspaceWatcher();
+}
+
+export function onDesktopWorkspaceChanged(
+  listener: (payload: { rootPath: string; changedPaths: string[]; changedAt: number }) => void
+): (() => void) | null {
+  const desktopBridge = getDesktopBridge();
+  if (!desktopBridge?.onWorkspaceChanged) {
+    return null;
+  }
+  return desktopBridge.onWorkspaceChanged(listener);
 }

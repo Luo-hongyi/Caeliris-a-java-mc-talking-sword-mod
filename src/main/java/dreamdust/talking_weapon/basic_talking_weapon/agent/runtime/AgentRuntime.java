@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.runtime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
 
 import java.util.concurrent.PriorityBlockingQueue;
@@ -47,6 +48,8 @@ public final class AgentRuntime {
     private final AgentPersona persona = new AgentPersona();
 
     private AgentRuntime() {
+        AgentStateStorage.loadIntoRuntime(state, persona);
+
         this.fgWorker = new Thread(this::fgLoop, "TalkingWeapon-FG");
         this.fgWorker.setDaemon(true);
         this.fgWorker.start();

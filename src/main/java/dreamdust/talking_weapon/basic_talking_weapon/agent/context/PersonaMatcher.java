@@ -155,7 +155,7 @@ public class PersonaMatcher {
                                 matchedTraitRawTags,
                                 matchMode));
                     }
-                } else if (trait.getAssociatedFocus() != null) {
+                } else if (!trait.getFocusTags().isEmpty()) {
                     // 无 Detail 约束或标记为 always_recalled 的 persona：按 focus 域恒定触发
                     if (shouldTriggerFocusConstant(trait, source)) {
                         traitTriggered = true;
@@ -178,12 +178,17 @@ public class PersonaMatcher {
     }
 
     private static boolean shouldTriggerFocusConstant(PersonaEntry trait, TaggedContextEntry source) {
-        if (trait == null || source == null || trait.getAssociatedFocus() == null) {
+        if (trait == null || source == null || trait.getFocusTags().isEmpty()) {
             return false;
         }
-        if (trait.getAssociatedFocus() == dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag.COMMON) {
+        if (trait.hasFocus(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag.COMMON)) {
             return true;
         }
-        return source.hasFocus(trait.getAssociatedFocus());
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag focusTag : trait.getFocusTags()) {
+            if (source.hasFocus(focusTag)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

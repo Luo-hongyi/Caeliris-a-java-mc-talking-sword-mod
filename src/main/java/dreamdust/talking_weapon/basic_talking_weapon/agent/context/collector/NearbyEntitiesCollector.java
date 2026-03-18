@@ -31,7 +31,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
     private final double radius;
 
     public NearbyEntitiesCollector() {
-        this(16.0);
+        this(TalkingWeaponConfig.ENTITIES_SCAN_RADIUS.get());
     }
 
     public NearbyEntitiesCollector(double radius) {

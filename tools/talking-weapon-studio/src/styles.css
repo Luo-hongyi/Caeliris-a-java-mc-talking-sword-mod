@@ -301,6 +301,112 @@ button {
   line-height: 1.6;
 }
 
+.state-overview-grid,
+.state-detail-grid {
+  align-items: stretch;
+}
+
+.state-preview {
+  margin: 12px 0 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(31, 27, 22, 0.05);
+  color: var(--ink);
+  font: 0.9rem/1.6 "SFMono-Regular", "SF Mono", "Menlo", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.range-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.range-field input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.range-field-output {
+  min-width: 4.5rem;
+  text-align: right;
+  color: var(--accent);
+}
+
+.state-weight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.state-weight-layout {
+  margin-top: 14px;
+  align-items: start;
+}
+
+.state-radar-card {
+  border: 1px solid rgba(105, 79, 48, 0.14);
+  border-radius: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.state-radar-shell {
+  margin-top: 8px;
+}
+
+.state-radar-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.state-radar-ring {
+  fill: rgba(189, 90, 45, 0.03);
+  stroke: rgba(105, 79, 48, 0.14);
+  stroke-width: 1;
+}
+
+.state-radar-axis {
+  stroke: rgba(105, 79, 48, 0.18);
+  stroke-width: 1;
+}
+
+.state-radar-shape {
+  fill: rgba(189, 90, 45, 0.18);
+  stroke: rgba(189, 90, 45, 0.88);
+  stroke-width: 2.5;
+}
+
+.state-radar-point {
+  fill: rgba(189, 90, 45, 1);
+}
+
+.state-radar-label {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.state-radar-value,
+.state-radar-tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.state-weight-card {
+  border: 1px solid rgba(105, 79, 48, 0.14);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.state-weight-card .range-field {
+  margin: 6px 0 8px;
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -641,6 +747,15 @@ button {
   border-radius: 20px;
   padding: 16px;
   background: rgba(255, 255, 255, 0.58);
+}
+
+.description-row {
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+}
+
+.description-row .custom-tag-main code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .custom-tag-main {
@@ -1197,6 +1312,7 @@ button {
   .relations-shell,
   .relation-status-grid,
   .relation-batch-grid,
+  .state-weight-grid,
   .tag-browser-toolbar,
   .two-col,
   .form-grid {

@@ -71,7 +71,8 @@
     分化成多级 Context：
     *   `[Context]` 基本的世界参数（所处维度，所在相对位置）。
     *   `[Extra Context]` 从外部传入的非对象化附加参数。
-    *   `[Tagged Context]` 这里包含周围环境物块和生物的字典查阅结果。例如捕捉到地标属性，系统在入模前会主动查询 `LocationRegistry` 获取详细描述并替代其 ID（`custom_specific:家` -> `家: 床和箱子的栖息地`），配合计算出来的 `(重要度修正)` 大幅提升大模型对当前位置的沉浸理解能力。
+    *   `[Extra Context]` / `[Supplementary Info]` 现在会常驻注入已命中的登记地点语义，例如 `home: (0, 64, 0) [minecraft:overworld] — 主要居所`。
+    *   `[Tagged Context]` 同时仍会保留 `custom_specific:<location_name>` 这类地点索引标签，使其继续参与注意力、Persona、LTM 与 tag relation 的链路；若命中地点，还会在入模前主动查询 `LocationRegistry` 获取详细描述并替代其 ID。
 5.  **按需构建输出模式 `[Output Format]`**
     由 `buildOutputFormatInstruction` 控制的 JSON 模式构造器。
 

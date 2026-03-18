@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://talking-weapon.dev/schema/location_registry.schema.json",
+  "title": "Talking Weapon Location Registry",
+  "type": "object",
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y",
+          "z",
+          "dim"
+        ],
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "z": {
+            "type": "integer"
+          },
+          "dim": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "horizontalRadius": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "verticalRadius": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "focusTag": {
+            "type": "string"
+          },
+          "detailTags": {
+            "type": "string"
+          }
+        }
+      }
+    ]
+  }
+}

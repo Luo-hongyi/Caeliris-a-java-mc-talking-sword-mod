@@ -1,12 +1,17 @@
+import agentStateExample from "../examples/agent_state.example.json";
 import customTagsExample from "../examples/custom_tags.example.json";
 import implantedMemoriesExample from "../examples/implanted_memories.example.json";
+import locationRegistryExample from "../examples/location_registry.example.json";
 import personasExample from "../examples/personas.example.json";
 import tagDescriptionsExample from "../examples/tag_descriptions.example.json";
 import tagRelationsExample from "../examples/tag_relations.example.json";
 import {
+  AgentStateFile,
   CustomTagEntry,
   DescriptionEntry,
+  FocusTag,
   ImplantedMemoryEntry,
+  LocationRegistryEntry,
   NativeCatalogEntry,
   PersonaEntry,
   TagRecord
@@ -37,11 +42,57 @@ type ImplantedMemoriesFile = {
   memories: ImplantedMemoryEntry[];
 };
 
+type AgentStateWorkspaceFile = AgentStateFile;
+
+function normalizeSeedLocationRegistry(
+  value: unknown
+): Record<string, LocationRegistryEntry> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized: Record<string, LocationRegistryEntry> = {};
+  for (const [name, rawEntry] of Object.entries(value)) {
+    if (name.startsWith("_comment")) {
+      continue;
+    }
+    if (typeof rawEntry !== "object" || rawEntry === null || Array.isArray(rawEntry)) {
+      continue;
+    }
+
+    const entry = rawEntry as Record<string, unknown>;
+    const detailTagsSource = entry.detailTags;
+    const detailTags =
+      Array.isArray(detailTagsSource)
+        ? detailTagsSource.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+        : typeof detailTagsSource === "string"
+          ? detailTagsSource.split(",").map((tag) => tag.trim()).filter(Boolean)
+          : [];
+
+    normalized[name.toLowerCase()] = {
+      x: typeof entry.x === "number" ? entry.x : 0,
+      y: typeof entry.y === "number" ? entry.y : 64,
+      z: typeof entry.z === "number" ? entry.z : 0,
+      dim: typeof entry.dim === "string" && entry.dim.trim() ? entry.dim : "minecraft:overworld",
+      note: typeof entry.note === "string" ? entry.note : "",
+      focusTag:
+        typeof entry.focusTag === "string" &&
+        ["COMBAT", "MOVEMENT", "LABOR", "CREATION", "CREATURE", "SOCIAL", "LANDSCAPE", "HAZARD", "STATUS", "CONSUMABLE", "BLOCK", "TOOL", "COMMON"].includes(entry.focusTag)
+          ? (entry.focusTag as FocusTag)
+          : "",
+      detailTags
+    };
+  }
+  return normalized;
+}
+
 const customTags = customTagsExample as CustomTagsFile;
 const descriptions = tagDescriptionsExample as TagDescriptionsFile;
 const relations = tagRelationsExample as TagRelationsFile;
 const personas = personasExample as PersonasFile;
 const implantedMemories = implantedMemoriesExample as ImplantedMemoriesFile;
+const agentState = agentStateExample as AgentStateWorkspaceFile;
+const locations = normalizeSeedLocationRegistry(locationRegistryExample);
 
 const syntheticNativeCatalog: NativeCatalogEntry[] = [
   {
@@ -151,6 +202,8 @@ export const studioSeedData = {
   relations,
   personas,
   implantedMemories,
+  agentState,
+  locations,
   nativeCatalog: syntheticNativeCatalog,
   tagRecords: buildTagRecords(
     syntheticNativeCatalog,
@@ -164,6 +217,7 @@ export const studioSeedData = {
     relations: relations.schemaVersion,
     personas: personas.schemaVersion,
     implantedMemories: implantedMemories.schemaVersion,
+    agentState: agentState.schemaVersion,
     nativeCatalogSnapshot: 1
   }
 };

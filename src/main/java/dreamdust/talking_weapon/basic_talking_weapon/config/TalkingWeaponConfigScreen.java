@@ -13,19 +13,13 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.fml.loading.FMLPaths;
 
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeCatalogIconExporter;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeCatalogSnapshotExporter;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeTagDescriptionSeeder;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePublisher;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeTagViewExporter;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,6 +42,7 @@ public class TalkingWeaponConfigScreen extends Screen {
     // 结构探查输入框
     private EditBox structureRadiusBox;
     private EditBox structureMaxResultsBox;
+    private EditBox entitiesRadiusBox;
 
     // 厂商选择
     private int providerIndex;
@@ -249,6 +244,11 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         // ── 实体探查设置 ──
         configList.addEntry(new LabelEntry("§e▸ 实体探查设置"));
+        entitiesRadiusBox = new EditBox(font, 0, 0, 80, 20, Component.literal("扫描半径"));
+        entitiesRadiusBox.setValue(String.valueOf(TalkingWeaponConfig.ENTITIES_SCAN_RADIUS.get()));
+        entitiesRadiusBox.setMaxLength(2);
+        entitiesRadiusBox.setCanLoseFocus(true);
+        configList.addEntry(new InputEntry("扫描半径（方块）", left, rowWidth, entitiesRadiusBox, "默认 16"));
         configList.addEntry(
                 new ToggleEntry("仅探查生物", left, rowWidth, entitiesOnlyCreatures, v -> entitiesOnlyCreatures = v));
         configList.addEntry(
@@ -356,105 +356,38 @@ public class TalkingWeaponConfigScreen extends Screen {
 
         configList.addEntry(new TwoButtonEntry(left, rowWidth, openImportance, reloadImportance));
 
-        // ── Studio 快照导出 ──
-        configList.addEntry(new LabelEntry("§e▸ Studio 快照"));
+        // ── Studio 连接 / 同步 ──
+        configList.addEntry(new LabelEntry("§e▸ Studio 连接"));
 
-        Button exportNativeCatalog = Button.builder(Component.literal("导出 Native Tag 快照"), btn -> {
+        Button connectStudioWorkspace = Button.builder(Component.literal("建立连接"), btn -> {
             try {
-                NativeCatalogSnapshotExporter.ExportResult result = NativeCatalogSnapshotExporter.exportSnapshot();
-                btn.setMessage(Component.literal("§a已导出 " + result.entryCount + " 条"));
+                StudioWorkspacePaths.ensureWorkspaceRootExists();
+                Util.getPlatform().openUri(StudioWorkspaceExporter.getWorkspaceRoot().toUri());
+                btn.setMessage(Component.literal("§a已打开工作区"));
             } catch (Exception e) {
-                handleStudioActionError(btn, "export native catalog", e);
+                handleStudioActionError(btn, "connect studio workspace", e);
             }
         }).bounds(0, 0, 100, 20).build();
 
-        Button openNativeCatalog = Button.builder(Component.literal("打开快照文件"), btn -> {
-            Util.getPlatform().openUri(NativeCatalogSnapshotExporter.getSnapshotPath().toUri());
-        }).bounds(0, 0, 100, 20).build();
-
-        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportNativeCatalog, openNativeCatalog));
-
-        Button exportRuntimeTagView = Button.builder(Component.literal("导出 Tag 合并视图"), btn -> {
-            try {
-                StudioRuntimeTagViewExporter.ExportResult result = StudioRuntimeTagViewExporter.exportMergedView();
-                btn.setMessage(Component.literal("§a" + result.tagCount + " 条 / " + result.issueCount + " 问题"));
-            } catch (Exception e) {
-                handleStudioActionError(btn, "export runtime tag view", e);
-            }
-        }).bounds(0, 0, 100, 20).build();
-
-        Button openRuntimeTagView = Button.builder(Component.literal("打开合并视图"), btn -> {
-            Util.getPlatform().openUri(StudioRuntimeTagViewExporter.getOutputPath().toUri());
-        }).bounds(0, 0, 100, 20).build();
-
-        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportRuntimeTagView, openRuntimeTagView));
-
-        Button seedNativeDescriptions = Button.builder(Component.literal("补全 Native 描述"), btn -> {
-            try {
-                NativeTagDescriptionSeeder.SeedResult result = NativeTagDescriptionSeeder.seedMissingNativeDescriptions();
-                btn.setMessage(Component.literal("§a新增 " + result.addedCount + " 条"));
-            } catch (Exception e) {
-                handleStudioActionError(btn, "seed native descriptions", e);
-            }
-        }).bounds(0, 0, 100, 20).build();
-
-        Button openTagDescriptions = Button.builder(Component.literal("打开描述文件"), btn -> {
-            Util.getPlatform().openUri(TagDescriptionDictionary.getConfigPath().toUri());
-        }).bounds(0, 0, 100, 20).build();
-
-        configList.addEntry(new TwoButtonEntry(left, rowWidth, seedNativeDescriptions, openTagDescriptions));
-
-        Button exportNativeIcons = Button.builder(Component.literal("导出 Native 图标"), btn -> {
-            try {
-                NativeCatalogIconExporter.ExportResult result = NativeCatalogIconExporter.exportAllIcons();
-                btn.setMessage(Component.literal("§a" + result.renderedCount + "+" + result.placeholderCount));
-            } catch (Exception e) {
-                handleStudioActionError(btn, "export native icons", e);
-            }
-        }).bounds(0, 0, 100, 20).build();
-
-        Button openNativeIcons = Button.builder(Component.literal("打开图标目录"), btn -> {
-            Util.getPlatform().openUri(NativeCatalogSnapshotExporter.getIconDirectory().toUri());
-        }).bounds(0, 0, 100, 20).build();
-
-        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportNativeIcons, openNativeIcons));
-
-        Button exportStudioWorkspace = Button.builder(Component.literal("刷新 Studio 文件夹"), btn -> {
+        Button exportStudioWorkspace = Button.builder(Component.literal("手动导出"), btn -> {
             try {
                 StudioWorkspaceExporter.ExportResult result = StudioWorkspaceExporter.exportWorkspace();
-                btn.setMessage(Component.literal("§a" + result.fileCount + " 文件已就位"));
+                btn.setMessage(Component.literal("§a已导出 " + result.fileCount + " 项"));
             } catch (Exception e) {
                 handleStudioActionError(btn, "export studio workspace", e);
             }
         }).bounds(0, 0, 100, 20).build();
 
-        Button openStudioWorkspace = Button.builder(Component.literal("打开 Studio 文件夹"), btn -> {
-            Util.getPlatform().openUri(StudioWorkspaceExporter.getWorkspaceRoot().toUri());
-        }).bounds(0, 0, 100, 20).build();
-
-        configList.addEntry(new TwoButtonEntry(left, rowWidth, exportStudioWorkspace, openStudioWorkspace));
-
-        Button publishStudioWorkspace = Button.builder(Component.literal("§b应用 Studio 工作区"), btn -> {
+        Button publishStudioWorkspace = Button.builder(Component.literal("手动读取"), btn -> {
             try {
                 StudioWorkspacePublisher.PublishResult result = StudioWorkspacePublisher.publishWorkspace();
-                btn.setMessage(Component.literal("§a已重载 " + result.publishedFiles.size() + " 文件"));
+                btn.setMessage(Component.literal("§a已读取 " + result.publishedFiles.size() + " 项"));
             } catch (Exception e) {
                 handleStudioActionError(btn, "publish studio workspace", e);
             }
-        }).bounds(0, 0, rowWidth - 8, 20).build();
+        }).bounds(0, 0, 100, 20).build();
 
-        configList.addEntry(new SingleWidgetEntry(left, rowWidth, publishStudioWorkspace));
-
-        Button openStudioErrorLog = Button.builder(Component.literal("打开 Studio 错误日志"), btn -> {
-            Path latestLog = StudioErrorLogger.getLatestLogPath().toAbsolutePath();
-            if (Files.isRegularFile(latestLog)) {
-                Util.getPlatform().openUri(latestLog.toUri());
-            } else {
-                btn.setMessage(Component.literal("§7暂无 Studio 错误日志"));
-            }
-        }).bounds(0, 0, rowWidth - 8, 20).build();
-
-        configList.addEntry(new SingleWidgetEntry(left, rowWidth, openStudioErrorLog));
+        configList.addEntry(new ThreeButtonEntry(left, rowWidth, connectStudioWorkspace, exportStudioWorkspace, publishStudioWorkspace));
 
         // ── 日志管理 ──
         configList.addEntry(new LabelEntry("§e▸ 日志管理"));
@@ -545,6 +478,9 @@ public class TalkingWeaponConfigScreen extends Screen {
         TalkingWeaponConfig.BC_ENABLE_SURROUNDING_BLOCKS.set(bcSurroundingBlocks);
         TalkingWeaponConfig.BC_ENABLE_THINKING.set(bcThinking);
 
+        trySetInt(TalkingWeaponConfig.ENTITIES_SCAN_RADIUS,
+                entitiesRadiusBox.getValue(), 4, 64,
+                TalkingWeaponConfig.ENTITIES_SCAN_RADIUS.get());
         TalkingWeaponConfig.ENTITIES_ONLY_CREATURES.set(entitiesOnlyCreatures);
         TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.set(entitiesLineOfSight);
         TalkingWeaponConfig.ENTITIES_FUZZY_COUNT.set(entitiesFuzzyCount);
@@ -961,6 +897,54 @@ public class TalkingWeaponConfigScreen extends Screen {
         @Override
         public List<? extends NarratableEntry> narratables() {
             return List.of(btn1, btn2);
+        }
+    }
+
+    /** 三按钮行（Studio 建立连接 / 手动导出 / 手动读取） */
+    private class ThreeButtonEntry extends ConfigList.Row {
+        private final int rowLeft;
+        private final int rowWidth;
+        private final AbstractWidget btn1, btn2, btn3;
+
+        ThreeButtonEntry(int rowLeft, int rowWidth, AbstractWidget btn1, AbstractWidget btn2, AbstractWidget btn3) {
+            this.rowLeft = rowLeft;
+            this.rowWidth = rowWidth;
+            this.btn1 = btn1;
+            this.btn2 = btn2;
+            this.btn3 = btn3;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int index, int top, int left,
+                int width, int height, int mouseX, int mouseY,
+                boolean hovering, float delta) {
+            int gap = 4;
+            int thirdW = (rowWidth - 8 - gap * 2) / 3;
+
+            btn1.setX(left + 4);
+            btn1.setY(top + 2);
+            btn1.setWidth(thirdW);
+            btn1.render(g, mouseX, mouseY, delta);
+
+            btn2.setX(left + 4 + thirdW + gap);
+            btn2.setY(top + 2);
+            btn2.setWidth(thirdW);
+            btn2.render(g, mouseX, mouseY, delta);
+
+            btn3.setX(left + 4 + (thirdW + gap) * 2);
+            btn3.setY(top + 2);
+            btn3.setWidth(thirdW);
+            btn3.render(g, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(btn1, btn2, btn3);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(btn1, btn2, btn3);
         }
     }
 }

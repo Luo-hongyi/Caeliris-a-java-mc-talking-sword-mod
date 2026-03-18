@@ -6,11 +6,12 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Persona 条目：将一条人格描述与一个认知领域标签（{@link FocusTag}）绑定，
+ * Persona 条目：将一条人格描述与一个或多个认知领域标签（{@link FocusTag}）绑定，
  * 并可选附带若干 DetailTag（以 {@code prefix:value} 字符串形式存储）。
  * <p>
  * DetailTag 用于联想搜索：根据条目上的细节标签可进一步检索相关记忆或其他条目。
@@ -40,7 +41,16 @@ public class PersonaEntry {
     /** 人格 / 偏好的自然语言描述 */
     private String description;
 
-    /** 该条 persona 所属的认知领域（用于按场景筛选） */
+    /** 该条 persona 所属的认知领域列表（用于按场景筛选） */
+    @SerializedName(value = "focus_tags", alternate = {"focusTags"})
+    private List<FocusTag> focusTags;
+
+    /**
+     * 兼容旧 Studio / 旧运行时数据格式：
+     * 旧文件里 persona 仅有一个 associated_focus。
+     * <p>
+     * 新数据写回时会统一改写为 focus_tags，因此该字段通常保持 null。
+     */
     @SerializedName(value = "associated_focus", alternate = {"associatedFocus"})
     private FocusTag associatedFocus;
 
@@ -64,6 +74,7 @@ public class PersonaEntry {
     public PersonaEntry() {
         this.id = nextRuntimeId();
         this.enabled = true;
+        this.focusTags = new ArrayList<>();
         this.detailTags = new ArrayList<>();
         this.notes = "";
     }
@@ -76,7 +87,8 @@ public class PersonaEntry {
         this.id = sanitizeId(id);
         this.enabled = true;
         this.description = description;
-        this.associatedFocus = associatedFocus;
+        this.focusTags = new ArrayList<>();
+        setAssociatedFocus(associatedFocus);
         this.detailTags = new ArrayList<>();
         this.notes = "";
     }
@@ -123,11 +135,43 @@ public class PersonaEntry {
     }
 
     public FocusTag getAssociatedFocus() {
-        return associatedFocus;
+        List<FocusTag> tags = getFocusTags();
+        return tags.isEmpty() ? null : tags.get(0);
     }
 
     public void setAssociatedFocus(FocusTag associatedFocus) {
         this.associatedFocus = associatedFocus;
+        this.focusTags = new ArrayList<>();
+        if (associatedFocus != null) {
+            this.focusTags.add(associatedFocus);
+        }
+    }
+
+    public List<FocusTag> getFocusTags() {
+        if (focusTags != null && !focusTags.isEmpty()) {
+            return Collections.unmodifiableList(new ArrayList<>(focusTags));
+        }
+        if (associatedFocus != null) {
+            return List.of(associatedFocus);
+        }
+        return Collections.emptyList();
+    }
+
+    public void setFocusTags(List<FocusTag> focusTags) {
+        LinkedHashSet<FocusTag> normalized = new LinkedHashSet<>();
+        if (focusTags != null) {
+            for (FocusTag focusTag : focusTags) {
+                if (focusTag != null) {
+                    normalized.add(focusTag);
+                }
+            }
+        }
+        this.focusTags = new ArrayList<>(normalized);
+        this.associatedFocus = null;
+    }
+
+    public boolean hasFocus(FocusTag focusTag) {
+        return focusTag != null && getFocusTags().contains(focusTag);
     }
 
     public boolean isAlwaysRecalled() {
@@ -196,11 +240,37 @@ public class PersonaEntry {
         this.detailTags = parsed;
     }
 
+    public String getFocusTagsAsString() {
+        List<FocusTag> tags = getFocusTags();
+        if (tags.isEmpty()) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        for (FocusTag tag : tags) {
+            names.add(tag.name());
+        }
+        return String.join(", ", names);
+    }
+
+    public void setFocusTagsFromString(String csv) {
+        List<FocusTag> parsed = new ArrayList<>();
+        if (csv != null && !csv.isBlank()) {
+            for (String part : csv.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    parsed.add(FocusTag.valueOf(trimmed.toUpperCase()));
+                }
+            }
+        }
+        setFocusTags(parsed);
+    }
+
     // ── toString ──────────────────────────────────────────────────────
 
     @Override
     public String toString() {
-        String base = "[" + (associatedFocus != null ? associatedFocus.name() : "UNTAGGED") + "] "
+        String focusText = getFocusTags().isEmpty() ? "UNTAGGED" : getFocusTags().toString();
+        String base = "[" + focusText + "] "
                 + (description != null ? description : "");
         if (detailTags != null && !detailTags.isEmpty()) {
             base += " tags:" + detailTags;

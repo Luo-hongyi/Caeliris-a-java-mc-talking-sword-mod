@@ -27,6 +27,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
 import java.util.ArrayList;
@@ -171,11 +172,13 @@ public class LLMInteractionTask extends AgentTask {
             AgentLogger.logParsedResponse(agentResponse);
 
             // 6. 处理情绪更新（如果 schema 包含 EMOTION_UPDATE）
+            boolean runtimeStateChanged = false;
             if (outputSchema.contains(LLMOutputSchema.EMOTION_UPDATE) && agentResponse.hasEmotionUpdate()) {
                 AgentResponse.EmotionUpdate eu = agentResponse.getEmotionUpdate();
                 state.setPrimaryEmotionByName(eu.emotion);
                 state.setEmotionIntensity(eu.intensity);
                 AgentLogger.logAction("emotion_update", eu.toString());
+                runtimeStateChanged = true;
             }
 
             // ── 日志：推理草稿 ──
@@ -216,6 +219,7 @@ public class LLMInteractionTask extends AgentTask {
                                 AgentLogger.logAction("favorability_update",
                                         String.format("Request: %d, Applied: %d, Total: %d", req.change_amount,
                                                 appliedChange, persona.getFavorability()));
+                                runtimeStateChanged = true;
                             } else {
                                 AgentLogger.logDebug("好感度变动被限界拦截或截断：" + req.change_amount);
                             }
@@ -240,6 +244,10 @@ public class LLMInteractionTask extends AgentTask {
                     screenshotBase64,
                     records);
             stmPool.pushInteractionTurn(turn);
+
+            if (runtimeStateChanged) {
+                AgentStateStorage.requestSaveRuntimeState(state, persona);
+            }
 
         } catch (Throwable e) {
             if (!isCancelled()) {
@@ -351,10 +359,11 @@ public class LLMInteractionTask extends AgentTask {
             String groundLevel = ctx.getExtra("ground_level");
             String timeDesc = ctx.getExtra("time_desc");
             String dimension = ctx.getExtra("dimension");
+            String registeredLocation = ctx.getExtra("registered_location_prompt");
             String biome = ctx.getBiome();
 
             if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null
-                    || timeDesc != null || biome != null || dimension != null) {
+                    || timeDesc != null || biome != null || dimension != null || registeredLocation != null) {
                 sb.append("[Supplementary Info]\n");
                 if (timeDesc != null || biome != null || dimension != null) {
                     sb.append("- 环境: ");
@@ -365,6 +374,9 @@ public class LLMInteractionTask extends AgentTask {
                     if (biome != null)
                         sb.append("群系:").append(biome);
                     sb.append("\n");
+                }
+                if (registeredLocation != null) {
+                    sb.append("- 当前登记地点: ").append(registeredLocation).append("\n");
                 }
                 if (playerPos != null) {
                     sb.append("- 主人当前坐标: ").append(playerPos);

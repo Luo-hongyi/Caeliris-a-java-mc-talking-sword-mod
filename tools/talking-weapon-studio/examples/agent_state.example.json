@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "state": {
+    "primary_emotion": "NEUTRAL",
+    "emotion_intensity": 12,
+    "familiarity": 38,
+    "player_address": "主人",
+    "concentration": 0.5,
+    "wandering_mind": 0.18,
+    "nostalgia": 0.62,
+    "association_mode": "BALANCED",
+    "current_desire_tag": "CREATION",
+    "desire_description": "想再次经历被认真锻造、被赋予意义的时刻。"
+  },
+  "persona_state": {
+    "favorability": 14,
+    "player_profile": "他做事有些莽撞，但并不轻慢我；更多时候，是把我当真正的同伴。"
+  },
+  "attention_weights": {
+    "combat": 1.1,
+    "movement": 0.9,
+    "labor": 1.0,
+    "creation": 1.35,
+    "creature": 0.95,
+    "social": 1.05,
+    "landscape": 1.0,
+    "hazard": 1.2,
+    "status": 1.0,
+    "consumable": 0.85,
+    "block": 1.0,
+    "tool": 1.15
+  }
+}

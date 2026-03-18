@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.gui;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -58,6 +59,7 @@ public class AgentPlayerProfileScreen extends Screen {
     private void save() {
         AgentPersona persona = AgentRuntime.getInstance().getPersona();
         persona.setPlayerProfile(profileBox.getValue());
+        AgentStateStorage.flushSaveRuntimeState(AgentRuntime.getInstance().getState(), persona);
     }
 
     @Override

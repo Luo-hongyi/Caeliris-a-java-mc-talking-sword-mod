@@ -15,7 +15,9 @@ import net.minecraft.world.entity.player.Player;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 地点注册管理界面：以可编辑列表展示并修改 {@link LocationRegistry} 中的所有地标。
@@ -27,6 +29,7 @@ public class AgentLocationRegistryScreen extends Screen {
     private static final int LABEL_COLOR = 0xFFCCCCCC;
     private static final int HEADER_HEIGHT = 42;
     private static final int FOOTER_HEIGHT = 40;
+    private static final int ROW_HEIGHT = 54;
 
     private final Screen parent;
     private LocationScrollList scrollList;
@@ -49,7 +52,7 @@ public class AgentLocationRegistryScreen extends Screen {
         rows.clear();
         clearWidgets();
 
-        scrollList = new LocationScrollList(minecraft, width, height, HEADER_HEIGHT, height - FOOTER_HEIGHT, 30);
+        scrollList = new LocationScrollList(minecraft, width, height, HEADER_HEIGHT, height - FOOTER_HEIGHT, ROW_HEIGHT);
         addWidget(scrollList);
 
         // 列标题
@@ -94,9 +97,7 @@ public class AgentLocationRegistryScreen extends Screen {
 
     private void save() {
         LocationRegistry reg = LocationRegistry.getInstance();
-        for (String name : new ArrayList<>(reg.allNames())) {
-            reg.remove(name);
-        }
+        Map<String, LocationRegistry.LocationEntry> nextLocations = new LinkedHashMap<>();
         for (LocationRow row : rows) {
             if (!row.deleted) {
                 String name = row.nameBox.getValue().trim().toLowerCase();
@@ -115,11 +116,22 @@ public class AgentLocationRegistryScreen extends Screen {
                     entry.z = Integer.parseInt(row.zBox.getValue().trim());
                 } catch (NumberFormatException ignored) {
                 }
+                try {
+                    entry.horizontalRadius = Integer.parseInt(row.horizontalRadiusBox.getValue().trim());
+                } catch (NumberFormatException ignored) {
+                }
+                try {
+                    entry.verticalRadius = Integer.parseInt(row.verticalRadiusBox.getValue().trim());
+                } catch (NumberFormatException ignored) {
+                }
                 entry.dim = row.dimBox.getValue().trim();
                 entry.note = row.noteBox.getValue().trim();
-                reg.put(name, entry);
+                entry.focusTag = row.focusTag;
+                entry.detailTags = row.detailTags;
+                nextLocations.put(name, entry);
             }
         }
+        reg.updateAll(nextLocations);
     }
 
     @Override
@@ -183,7 +195,9 @@ public class AgentLocationRegistryScreen extends Screen {
             g.drawString(font, "§7Y", left + 152, top + 9, LABEL_COLOR);
             g.drawString(font, "§7Z", left + 204, top + 9, LABEL_COLOR);
             g.drawString(font, "§7维度", left + 258, top + 9, LABEL_COLOR);
-            g.drawString(font, "§7备注", left + 368, top + 9, LABEL_COLOR);
+            g.drawString(font, "§7水平半径", left + 4, top + 31, LABEL_COLOR);
+            g.drawString(font, "§7垂直半径", left + 108, top + 31, LABEL_COLOR);
+            g.drawString(font, "§7备注", left + 212, top + 31, LABEL_COLOR);
         }
 
         @Override
@@ -200,9 +214,11 @@ public class AgentLocationRegistryScreen extends Screen {
     // ── 地点编辑行 ──
 
     private class LocationRow extends LocationScrollList.Row {
-        final EditBox nameBox, xBox, yBox, zBox, dimBox, noteBox;
+        final EditBox nameBox, xBox, yBox, zBox, dimBox, noteBox, horizontalRadiusBox, verticalRadiusBox;
         Button deleteBtn;
         boolean deleted = false;
+        String focusTag;
+        String detailTags;
 
         LocationRow(String name, LocationRegistry.LocationEntry entry) {
             nameBox = box(90, name, 16);
@@ -210,7 +226,11 @@ public class AgentLocationRegistryScreen extends Screen {
             yBox = box(46, String.valueOf(entry.y), 7);
             zBox = box(46, String.valueOf(entry.z), 7);
             dimBox = box(102, entry.dim != null ? entry.dim : "", 64);
-            noteBox = box(Math.max(60, rowWidth - 504), entry.note != null ? entry.note : "", 64);
+            horizontalRadiusBox = box(72, String.valueOf(entry.horizontalRadius), 4);
+            verticalRadiusBox = box(72, String.valueOf(entry.verticalRadius), 4);
+            noteBox = box(Math.max(60, rowWidth - 242), entry.note != null ? entry.note : "", 64);
+            focusTag = entry.focusTag != null ? entry.focusTag : "";
+            detailTags = entry.detailTags != null ? entry.detailTags : "";
             deleteBtn = Button.builder(Component.literal("§c✗"), btn -> {
                 deleted = true;
                 btn.active = false;
@@ -248,26 +268,35 @@ public class AgentLocationRegistryScreen extends Screen {
             dimBox.setX(left + 248);
             dimBox.setY(y);
             dimBox.render(g, mx, my, delta);
-            int noteW = Math.max(60, rowWidth - 504);
-            noteBox.setX(left + 354);
-            noteBox.setY(y);
+            int secondRowY = top + 27;
+            horizontalRadiusBox.setX(left + 4);
+            horizontalRadiusBox.setY(secondRowY);
+            horizontalRadiusBox.render(g, mx, my, delta);
+            verticalRadiusBox.setX(left + 108);
+            verticalRadiusBox.setY(secondRowY);
+            verticalRadiusBox.render(g, mx, my, delta);
+            int noteW = Math.max(60, rowWidth - 242);
+            noteBox.setX(left + 212);
+            noteBox.setY(secondRowY);
             noteBox.setWidth(noteW);
             noteBox.render(g, mx, my, delta);
             deleteBtn.setX(left + rowWidth - 26);
-            deleteBtn.setY(y);
+            deleteBtn.setY(top + 16);
             deleteBtn.render(g, mx, my, delta);
         }
 
         @Override
         public List<? extends GuiEventListener> children() {
             return deleted ? Collections.emptyList()
-                    : List.of(nameBox, xBox, yBox, zBox, dimBox, noteBox, deleteBtn);
+                    : List.of(nameBox, xBox, yBox, zBox, dimBox, horizontalRadiusBox, verticalRadiusBox, noteBox,
+                            deleteBtn);
         }
 
         @Override
         public List<? extends NarratableEntry> narratables() {
             return deleted ? Collections.emptyList()
-                    : List.of(nameBox, xBox, yBox, zBox, dimBox, noteBox, deleteBtn);
+                    : List.of(nameBox, xBox, yBox, zBox, dimBox, horizontalRadiusBox, verticalRadiusBox, noteBox,
+                            deleteBtn);
         }
     }
 }

@@ -122,9 +122,9 @@ public final class PersonaStorage {
             if (description.isEmpty()) {
                 continue;
             }
-            FocusTag focus = rawEntry.getAssociatedFocus();
-            if (focus == null) {
-                throw new IllegalArgumentException("Persona entry missing associated_focus: " + description);
+            List<FocusTag> focusTags = rawEntry.getFocusTags();
+            if (focusTags.isEmpty()) {
+                throw new IllegalArgumentException("Persona entry missing focus_tags: " + description);
             }
 
             PersonaEntry entry = new PersonaEntry();
@@ -136,7 +136,7 @@ public final class PersonaStorage {
             entry.setId(id);
             entry.setEnabled(rawEntry.isEnabled());
             entry.setDescription(description);
-            entry.setAssociatedFocus(focus);
+            entry.setFocusTags(focusTags);
             entry.setAlwaysRecalled(rawEntry.isAlwaysRecalled());
             entry.setNotes(rawEntry.getNotes());
             entry.setDetailTags(rawEntry.getDetailTags());

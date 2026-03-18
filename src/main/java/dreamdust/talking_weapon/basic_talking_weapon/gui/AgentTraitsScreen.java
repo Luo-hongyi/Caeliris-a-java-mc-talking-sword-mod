@@ -21,7 +21,9 @@ import java.util.List;
 
 /**
  * 性格词条编辑器：按 FocusTag 分页显示词条，支持增删改。
- * 每条词条占两行：第一行为词条文本，第二行为逗号分隔的 DetailTag 编辑框。
+ * 多 focus persona 会同时出现在多个分页中。
+ * 每条词条占两行：描述、FocusTag 列表。
+ * DetailTag 深度管理改由 Studio 负责，游戏内界面不再直接赋予。
  */
 public class AgentTraitsScreen extends Screen {
 
@@ -30,8 +32,8 @@ public class AgentTraitsScreen extends Screen {
     private static final int DIM_COLOR = 0xFF888888;
     private static final int HEADER_HEIGHT = 50;
     private static final int FOOTER_HEIGHT = 40;
-    /** 每行占两行高度：词条文本 + DetailTag 编辑框 */
-    private static final int ROW_HEIGHT = 48;
+    /** 每行占两行高度：词条文本 + FocusTag 编辑框 */
+    private static final int ROW_HEIGHT = 50;
 
     private static final FocusTag[] TAGS = FocusTag.values();
 
@@ -123,7 +125,7 @@ public class AgentTraitsScreen extends Screen {
             for (TraitEditRow row : editRows) {
                 if (!row.deleted) {
                     row.trait.setDescription(row.traitBox.getValue());
-                    row.trait.setDetailTagsFromString(row.detailTagsBox.getValue());
+                    row.trait.setFocusTagsFromString(row.focusTagsBox.getValue());
                 }
             }
             AgentPersona persona = AgentRuntime.getInstance().getPersona();
@@ -193,13 +195,13 @@ public class AgentTraitsScreen extends Screen {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 词条编辑行（两行显示）
+    // 词条编辑行（三行显示）
     // ═══════════════════════════════════════════════════════════════
 
     private class TraitEditRow extends TraitScrollList.Row {
         final PersonaEntry trait;
         final EditBox traitBox;
-        final EditBox detailTagsBox;
+        final EditBox focusTagsBox;
         boolean deleted = false;
         private final Button deleteBtn;
         private final int rowWidth;
@@ -214,11 +216,11 @@ public class AgentTraitsScreen extends Screen {
             traitBox.setCanLoseFocus(true);
             traitBox.setValue(trait.getDescription());
 
-            // 第二行：DetailTag 编辑框
-            detailTagsBox = new EditBox(minecraft.font, 0, 0, rowWidth - 36, 18, Component.literal(""));
-            detailTagsBox.setMaxLength(256);
-            detailTagsBox.setCanLoseFocus(true);
-            detailTagsBox.setValue(trait.getDetailTagsAsString());
+            // 第二行：FocusTag 编辑框
+            focusTagsBox = new EditBox(minecraft.font, 0, 0, rowWidth - 52, 18, Component.literal(""));
+            focusTagsBox.setMaxLength(128);
+            focusTagsBox.setCanLoseFocus(true);
+            focusTagsBox.setValue(trait.getFocusTagsAsString());
 
             deleteBtn = Button.builder(Component.literal("§c✗"), btn -> {
                 deleted = true;
@@ -243,22 +245,22 @@ public class AgentTraitsScreen extends Screen {
             deleteBtn.setY(top + 2);
             deleteBtn.render(g, mx, my, delta);
 
-            // 行二：DetailTag 标签提示 + 编辑框
-            g.drawString(minecraft.font, "§8tags:", left + 4, top + 24 + 3, DIM_COLOR);
-            detailTagsBox.setX(left + 36);
-            detailTagsBox.setY(top + 24);
-            detailTagsBox.setWidth(rowWidth - 68);
-            detailTagsBox.render(g, mx, my, delta);
+            // 行二：FocusTag 标签提示 + 编辑框
+            g.drawString(minecraft.font, "§8focus:", left + 4, top + 24 + 3, DIM_COLOR);
+            focusTagsBox.setX(left + 42);
+            focusTagsBox.setY(top + 24);
+            focusTagsBox.setWidth(rowWidth - 58);
+            focusTagsBox.render(g, mx, my, delta);
         }
 
         @Override
         public List<? extends GuiEventListener> children() {
-            return deleted ? Collections.emptyList() : List.of(traitBox, detailTagsBox, deleteBtn);
+            return deleted ? Collections.emptyList() : List.of(traitBox, focusTagsBox, deleteBtn);
         }
 
         @Override
         public List<? extends NarratableEntry> narratables() {
-            return deleted ? Collections.emptyList() : List.of(traitBox, detailTagsBox, deleteBtn);
+            return deleted ? Collections.emptyList() : List.of(traitBox, focusTagsBox, deleteBtn);
         }
     }
 }

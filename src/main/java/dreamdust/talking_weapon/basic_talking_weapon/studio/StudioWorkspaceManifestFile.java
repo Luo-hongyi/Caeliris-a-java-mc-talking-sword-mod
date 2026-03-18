@@ -45,6 +45,8 @@ public final class StudioWorkspaceManifestFile {
             "relations",
             "personas",
             "memories",
+            "agentState",
+            "locations",
             "iconsDirectory");
 
     public static final List<String> EDITABLE_VERSION_KEYS = List.of(
@@ -52,7 +54,9 @@ public final class StudioWorkspaceManifestFile {
             "descriptions",
             "relations",
             "personas",
-            "memories");
+            "memories",
+            "agentState",
+            "locations");
 
     public int schemaVersion = SCHEMA_VERSION;
     public String generatedAt = "";

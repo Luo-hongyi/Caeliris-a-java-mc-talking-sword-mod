@@ -7,25 +7,32 @@ import {
   getDesktopBridgeSource,
   isBrowserDirectoryPickerAvailable,
   isDesktopBridgeReady,
+  isDesktopWorkspaceHandle,
+  onDesktopWorkspaceChanged,
   pickDirectoryHandle,
   readFileFromDirectoryPath,
   readJsonFileFromDirectory,
+  startDesktopWorkspaceWatcher,
+  stopDesktopWorkspaceWatcher,
   supportsDirectoryAccessApi,
   writeJsonFileToDirectory
 } from "./workspaceBridge";
 import { pingGameBridge, publishWorkspaceToGame } from "./gameBridge";
 import {
+  AgentStateFile,
+  AgentStateWeightKey,
   CustomTagEntry,
   DescriptionEntry,
   DetailTagKind,
   FocusTag,
   ImplantedMemoryEntry,
+  LocationRegistryEntry,
   NativeCatalogEntry,
   PersonaEntry,
   TagRecord
 } from "./types";
 
-type PageId = "catalog" | "relations" | "persona" | "memory";
+type PageId = "catalog" | "descriptions" | "relations" | "persona" | "memory" | "state" | "locations";
 type CustomTagKind = Extract<DetailTagKind, "custom_specific" | "custom_generic">;
 type RelationBatchOperation = "add" | "remove";
 type TagBrowserCategoryId =
@@ -54,8 +61,12 @@ type CatalogMode =
   | { mode: "create"; draft: CustomTagDraft }
   | { mode: "edit"; originalTag: string; draft: CustomTagDraft };
 
+type DescriptionMode =
+  | { mode: "list" }
+  | { mode: "edit"; tag: string; draft: string };
+
 type PersonaDraft = {
-  associated_focus: FocusTag;
+  focus_tags: FocusTag[];
   description: string;
   always_recalled: boolean;
   detail_tags: string[];
@@ -81,6 +92,24 @@ type MemoryMode =
   | { mode: "list" }
   | { mode: "create"; draft: MemoryDraft }
   | { mode: "edit"; originalIndex: number; draft: MemoryDraft };
+
+type LocationDraft = {
+  name: string;
+  x: string;
+  y: string;
+  z: string;
+  dim: string;
+  note: string;
+  horizontalRadius: string;
+  verticalRadius: string;
+  focusTag: FocusTag | "";
+  detailTags: string[];
+};
+
+type LocationMode =
+  | { mode: "list" }
+  | { mode: "create"; draft: LocationDraft }
+  | { mode: "edit"; originalName: string; draft: LocationDraft };
 
 type RelationDraft = {
   sourceTag: string;
@@ -123,6 +152,8 @@ type ImplantedMemoriesFile = {
   memories: ImplantedMemoryEntry[];
 };
 
+type AgentStateWorkspaceFile = AgentStateFile;
+
 type NativeCatalogSnapshotFile = {
   schemaVersion: number;
   generatedAt: string;
@@ -145,6 +176,7 @@ type SchemaVersions = {
   relations: number;
   personas: number;
   implantedMemories: number;
+  agentState: number;
   nativeCatalogSnapshot: number;
 };
 
@@ -173,6 +205,8 @@ type ImportedWorkspaceData = {
   relations?: TagRelationsFile | null;
   personas?: PersonasFile | null;
   memories?: ImplantedMemoriesFile | null;
+  agentState?: AgentStateWorkspaceFile | null;
+  locations?: Record<string, LocationRegistryEntry> | null;
 };
 
 type WorkspaceManifestWriter = "minecraft" | "studio" | "unknown";
@@ -185,6 +219,8 @@ type WorkspaceManifestVersions = {
   relations: string;
   personas: string;
   memories: string;
+  agentState: string;
+  locations: string;
   iconsDirectory: string;
 };
 
@@ -206,6 +242,7 @@ type WorkspaceImportDescriptor = {
 const CUSTOM_TAG_KINDS: DetailTagKind[] = ["custom_specific", "custom_generic"];
 const TAG_BROWSER_RESULT_LIMIT = 96;
 const TAG_BROWSER_SIDEBAR_PAGE_SIZE = 24;
+const DESCRIPTION_PAGE_SIZE = 32;
 const TAG_BROWSER_CATEGORY_ORDER: TagBrowserCategoryId[] = [
   "custom",
   "item",
@@ -273,9 +310,12 @@ const FOCUS_TAG_LABELS: Record<FocusTag, string> = {
 
 const pages: Array<{ id: PageId; label: string; blurb: string }> = [
   { id: "catalog", label: "Custom Tags", blurb: "管理自定义 tag 的 type、id 与 description。" },
+  { id: "descriptions", label: "Descriptions", blurb: "统一编辑所有 tag 的自然语言 description。" },
   { id: "relations", label: "Relations", blurb: "管理标签联动引用图、环检测与正则批量操作。" },
+  { id: "state", label: "State", blurb: "编辑 agent_state.json，与游戏内 state screen 共用同一份 authored 状态。" },
   { id: "persona", label: "Persona", blurb: "按 focus 管理人格偏好描述与其 detail tags。" },
-  { id: "memory", label: "Memory", blurb: "编辑植入记忆、独立时间语义与标签。" }
+  { id: "memory", label: "Memory", blurb: "编辑植入记忆、独立时间语义与标签。" },
+  { id: "locations", label: "Locations", blurb: "管理 location_registry.json，与游戏内地点注册共用同一份 authored 文件。" }
 ];
 
 const EMPTY_CUSTOM_TAG_DRAFT: CustomTagDraft = {
@@ -285,7 +325,7 @@ const EMPTY_CUSTOM_TAG_DRAFT: CustomTagDraft = {
 };
 
 const EMPTY_PERSONA_DRAFT: PersonaDraft = {
-  associated_focus: "COMMON",
+  focus_tags: ["COMMON"],
   description: "",
   always_recalled: false,
   detail_tags: []
@@ -300,6 +340,82 @@ const EMPTY_MEMORY_DRAFT: MemoryDraft = {
   importance: "",
   occurred_game_time: "",
   notes: ""
+};
+
+const EMPTY_LOCATION_DRAFT: LocationDraft = {
+  name: "",
+  x: "0",
+  y: "64",
+  z: "0",
+  dim: "minecraft:overworld",
+  note: "",
+  horizontalRadius: "24",
+  verticalRadius: "16",
+  focusTag: "",
+  detailTags: []
+};
+
+const AGENT_STATE_WEIGHT_KEYS = [
+  "combat",
+  "movement",
+  "labor",
+  "creation",
+  "creature",
+  "social",
+  "landscape",
+  "hazard",
+  "status",
+  "consumable",
+  "block",
+  "tool"
+] as const;
+
+const PRIMARY_EMOTION_OPTIONS = [
+  "NEUTRAL",
+  "HAPPY",
+  "ANGRY",
+  "EXCITED",
+  "BORED",
+  "FEARFUL",
+  "SAD",
+  "CURIOUS",
+  "ANXIOUS"
+] as const;
+
+const PRIMARY_EMOTION_LABELS: Record<string, string> = {
+  NEUTRAL: "平静",
+  HAPPY: "愉快",
+  ANGRY: "愤怒",
+  EXCITED: "兴奋",
+  BORED: "无聊",
+  FEARFUL: "恐惧",
+  SAD: "悲伤",
+  CURIOUS: "好奇",
+  ANXIOUS: "焦虑"
+};
+
+const ASSOCIATION_MODE_OPTIONS = ["DIVERGENT", "BALANCED", "DEEP", "CUSTOM"] as const;
+
+const ASSOCIATION_MODE_LABELS: Record<string, string> = {
+  DIVERGENT: "发散",
+  BALANCED: "均衡",
+  DEEP: "深度",
+  CUSTOM: "自定义"
+};
+
+const AGENT_STATE_WEIGHT_TO_FOCUS_TAG: Record<AgentStateWeightKey, FocusTag> = {
+  combat: "COMBAT",
+  movement: "MOVEMENT",
+  labor: "LABOR",
+  creation: "CREATION",
+  creature: "CREATURE",
+  social: "SOCIAL",
+  landscape: "LANDSCAPE",
+  hazard: "HAZARD",
+  status: "STATUS",
+  consumable: "CONSUMABLE",
+  block: "BLOCK",
+  tool: "TOOL"
 };
 
 function createSeedNativeCatalogSnapshot(): NativeCatalogSnapshotFile {
@@ -354,7 +470,9 @@ function isPersonaEntryArray(value: unknown): value is PersonaEntry[] {
       (entry) =>
         isRecord(entry) &&
         typeof entry.id === "string" &&
-        typeof entry.associated_focus === "string" &&
+        (Array.isArray(entry.focus_tags)
+          ? entry.focus_tags.every((focusTag) => typeof focusTag === "string")
+          : typeof entry.associated_focus === "string") &&
         typeof entry.description === "string"
     )
   );
@@ -369,6 +487,15 @@ function isImplantedMemoryEntryArray(value: unknown): value is ImplantedMemoryEn
         typeof entry.description === "string"
     )
   );
+}
+
+function isAgentStateWorkspaceFile(value: unknown): value is AgentStateWorkspaceFile {
+  if (!isRecord(value) || !isRecord(value.state) || !isRecord(value.persona_state) || !isRecord(value.attention_weights)) {
+    return false;
+  }
+
+  const weights = value.attention_weights;
+  return AGENT_STATE_WEIGHT_KEYS.every((key) => typeof weights[key] === "number");
 }
 
 function isDescriptionMap(value: unknown): value is Record<string, DescriptionEntry> {
@@ -458,7 +585,10 @@ function normalizePersonasFile(value: unknown): PersonasFile | null {
   }
   return {
     schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
-    personas: value.personas
+    personas: value.personas.map((entry) => ({
+      ...entry,
+      focus_tags: normalizePersonaFocusTags(entry.focus_tags, entry.associated_focus)
+    }))
   };
 }
 
@@ -475,6 +605,135 @@ function normalizeImplantedMemoriesFile(value: unknown): ImplantedMemoriesFile |
   return {
     schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
     memories: value.memories
+  };
+}
+
+function normalizeAgentStateWorkspaceFile(value: unknown): AgentStateWorkspaceFile | null {
+  if (!isAgentStateWorkspaceFile(value)) {
+    return null;
+  }
+
+  const currentDesireTag =
+    typeof value.state.current_desire_tag === "string" && FOCUS_TAGS.includes(value.state.current_desire_tag as FocusTag)
+      ? (value.state.current_desire_tag as FocusTag)
+      : null;
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    state: {
+      primary_emotion: typeof value.state.primary_emotion === "string" ? value.state.primary_emotion : "NEUTRAL",
+      emotion_intensity: typeof value.state.emotion_intensity === "number" ? value.state.emotion_intensity : 0,
+      familiarity: typeof value.state.familiarity === "number" ? value.state.familiarity : 0,
+      player_address: typeof value.state.player_address === "string" ? value.state.player_address : "主人",
+      concentration: typeof value.state.concentration === "number" ? value.state.concentration : 0.5,
+      wandering_mind: typeof value.state.wandering_mind === "number" ? value.state.wandering_mind : 0.1,
+      nostalgia: typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5,
+      association_mode: typeof value.state.association_mode === "string" ? value.state.association_mode : "BALANCED",
+      current_desire_tag: currentDesireTag,
+      desire_description: typeof value.state.desire_description === "string" ? value.state.desire_description : ""
+    },
+    persona_state: {
+      favorability: typeof value.persona_state.favorability === "number" ? value.persona_state.favorability : 0,
+      player_profile: typeof value.persona_state.player_profile === "string" ? value.persona_state.player_profile : ""
+    },
+    attention_weights: Object.fromEntries(
+      AGENT_STATE_WEIGHT_KEYS.map((key) => [key, typeof value.attention_weights[key] === "number" ? value.attention_weights[key] : 1])
+    ) as AgentStateWorkspaceFile["attention_weights"]
+  };
+}
+
+function normalizeLocationRegistryData(value: unknown): Record<string, LocationRegistryEntry> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const source =
+    isRecord(value.locations)
+      ? value.locations
+      : value;
+
+  const normalizedEntries = Object.entries(source)
+    .filter(([name, rawEntry]) => !name.startsWith("_comment") && name !== "schemaVersion" && isRecord(rawEntry))
+    .map(([name, rawEntry]) => {
+      const entry = rawEntry as Record<string, unknown>;
+      const detailTagsSource = entry.detailTags;
+      const detailTags =
+        Array.isArray(detailTagsSource)
+          ? detailTagsSource.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+          : typeof detailTagsSource === "string"
+            ? detailTagsSource.split(",").map((tag) => tag.trim()).filter(Boolean)
+            : [];
+
+      const focusTag =
+        typeof entry.focusTag === "string" && entry.focusTag.trim() && FOCUS_TAGS.includes(entry.focusTag as FocusTag)
+          ? (entry.focusTag as FocusTag)
+          : "";
+
+      return [
+        name.trim().toLowerCase(),
+        {
+          x: typeof entry.x === "number" ? Math.round(entry.x) : 0,
+          y: typeof entry.y === "number" ? Math.round(entry.y) : 64,
+          z: typeof entry.z === "number" ? Math.round(entry.z) : 0,
+          dim: typeof entry.dim === "string" && entry.dim.trim() ? entry.dim.trim() : "minecraft:overworld",
+          note: typeof entry.note === "string" ? entry.note : "",
+          horizontalRadius:
+            typeof entry.horizontalRadius === "number" && entry.horizontalRadius > 0
+              ? Math.round(entry.horizontalRadius)
+              : 24,
+          verticalRadius:
+            typeof entry.verticalRadius === "number" && entry.verticalRadius > 0
+              ? Math.round(entry.verticalRadius)
+              : 16,
+          focusTag,
+          detailTags
+        } satisfies LocationRegistryEntry
+      ] as const;
+    });
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorkspaceFile {
+  const currentDesireTag =
+    file.state.current_desire_tag && FOCUS_TAGS.includes(file.state.current_desire_tag)
+      ? file.state.current_desire_tag
+      : null;
+
+  return {
+    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 1,
+    state: {
+      primary_emotion:
+        typeof file.state.primary_emotion === "string" && file.state.primary_emotion.trim()
+          ? file.state.primary_emotion.trim().toUpperCase()
+          : "NEUTRAL",
+      emotion_intensity: Math.round(clampNumber(file.state.emotion_intensity, 0, 100)),
+      familiarity: Math.max(0, Math.round(file.state.familiarity)),
+      player_address:
+        typeof file.state.player_address === "string" && file.state.player_address.trim()
+          ? file.state.player_address.trim()
+          : "主人",
+      concentration: clampNumber(file.state.concentration, 0, 1),
+      wandering_mind: clampNumber(file.state.wandering_mind, 0, 1),
+      nostalgia: clampNumber(file.state.nostalgia, 0, 1),
+      association_mode:
+        typeof file.state.association_mode === "string" && file.state.association_mode.trim()
+          ? file.state.association_mode.trim().toUpperCase()
+          : "BALANCED",
+      current_desire_tag: currentDesireTag,
+      desire_description: typeof file.state.desire_description === "string" ? file.state.desire_description : ""
+    },
+    persona_state: {
+      favorability: Math.round(clampNumber(file.persona_state.favorability, -100, 100)),
+      player_profile: typeof file.persona_state.player_profile === "string" ? file.persona_state.player_profile : ""
+    },
+    attention_weights: Object.fromEntries(
+      AGENT_STATE_WEIGHT_KEYS.map((key) => [key, clampNumber(file.attention_weights[key], 0, 10)])
+    ) as AgentStateWorkspaceFile["attention_weights"]
   };
 }
 
@@ -528,6 +787,8 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     relations: "missing",
     personas: "missing",
     memories: "missing",
+    agentState: "missing",
+    locations: "missing",
     iconsDirectory: "missing"
   };
 }
@@ -554,6 +815,8 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
       relations: typeof rawVersions.relations === "string" ? rawVersions.relations : "missing",
       personas: typeof rawVersions.personas === "string" ? rawVersions.personas : "missing",
       memories: typeof rawVersions.memories === "string" ? rawVersions.memories : "missing",
+      agentState: typeof rawVersions.agentState === "string" ? rawVersions.agentState : "missing",
+      locations: typeof rawVersions.locations === "string" ? rawVersions.locations : "missing",
       iconsDirectory: typeof rawVersions.iconsDirectory === "string" ? rawVersions.iconsDirectory : "missing"
     }
   };
@@ -613,23 +876,30 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.memories = value as ImplantedMemoriesFile;
     },
     describe: (value) => `memories ${(value as ImplantedMemoriesFile).memories.length} 条`
+  },
+  {
+    filename: "agent_state.json",
+    versionKey: "agentState",
+    normalize: normalizeAgentStateWorkspaceFile,
+    assign: (importedData, value) => {
+      importedData.agentState = value as AgentStateWorkspaceFile;
+    },
+    describe: (_value) => "agent state 1 份"
+  },
+  {
+    filename: "location_registry.json",
+    versionKey: "locations",
+    normalize: normalizeLocationRegistryData,
+    assign: (importedData, value) => {
+      importedData.locations = value as Record<string, LocationRegistryEntry>;
+    },
+    describe: (value) => `locations ${Object.keys(value as Record<string, LocationRegistryEntry>).length} 条`
   }
 ];
 
 const WORKSPACE_IMPORT_DESCRIPTOR_BY_FILENAME = new Map(
   WORKSPACE_IMPORT_DESCRIPTORS.map((descriptor) => [descriptor.filename, descriptor])
 );
-
-function hasManifestVersionChanged(
-  previousManifest: StudioWorkspaceManifest | null,
-  nextManifest: StudioWorkspaceManifest
-): boolean {
-  if (!previousManifest) {
-    return true;
-  }
-  const keys = Object.keys(nextManifest.versions) as Array<keyof WorkspaceManifestVersions>;
-  return keys.some((key) => previousManifest.versions[key] !== nextManifest.versions[key]);
-}
 
 async function readWorkspaceManifestFromDirectory(
   handle: FileSystemDirectoryHandle
@@ -741,6 +1011,22 @@ function extractCustomTagId(tag: string): string {
 
 function buildCustomTagValue(kind: CustomTagKind, id: string): string {
   return `${kind}:${id.trim()}`;
+}
+
+function buildSuggestedCustomTagDescription(kind: CustomTagKind, id: string): string {
+  const normalizedId = id.trim() || "new_tag";
+  const humanizedId = normalizedId
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!humanizedId) {
+    return kind === "custom_specific" ? "一个具体的自定义对象或概念。" : "一类抽象的自定义概念。";
+  }
+
+  return kind === "custom_specific"
+    ? `指向“${humanizedId}”这一具体对象、地点、人物或概念。`
+    : `表示与“${humanizedId}”相关的一类抽象概念或泛化倾向。`;
 }
 
 function replaceTagInList(list: string[] | undefined, oldTag: string, newTag: string): string[] | undefined {
@@ -964,6 +1250,37 @@ function removeTagFromMemories(memories: ImplantedMemoryEntry[], tag: string): I
   }));
 }
 
+function renameTagInLocations(
+  locations: Record<string, LocationRegistryEntry>,
+  oldTag: string,
+  newTag: string
+): Record<string, LocationRegistryEntry> {
+  return Object.fromEntries(
+    Object.entries(locations).map(([name, entry]) => [
+      name,
+      {
+        ...entry,
+        detailTags: replaceTagInList(entry.detailTags, oldTag, newTag) ?? []
+      }
+    ])
+  );
+}
+
+function removeTagFromLocations(
+  locations: Record<string, LocationRegistryEntry>,
+  tag: string
+): Record<string, LocationRegistryEntry> {
+  return Object.fromEntries(
+    Object.entries(locations).map(([name, entry]) => [
+      name,
+      {
+        ...entry,
+        detailTags: removeTagFromList(entry.detailTags, tag) ?? []
+      }
+    ])
+  );
+}
+
 function createStudioId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -983,6 +1300,55 @@ function buildMemoryDraft(memory?: ImplantedMemoryEntry): MemoryDraft {
     occurred_game_time: memory.occurred_game_time !== undefined ? String(memory.occurred_game_time) : "",
     notes: memory.notes ?? ""
   };
+}
+
+function buildLocationDraft(name?: string, entry?: LocationRegistryEntry): LocationDraft {
+  if (!name || !entry) {
+    return { ...EMPTY_LOCATION_DRAFT };
+  }
+
+  return {
+    name,
+    x: String(entry.x),
+    y: String(entry.y),
+    z: String(entry.z),
+    dim: entry.dim,
+    note: entry.note ?? "",
+    horizontalRadius: String(entry.horizontalRadius ?? 24),
+    verticalRadius: String(entry.verticalRadius ?? 16),
+    focusTag: entry.focusTag ?? "",
+    detailTags: [...(entry.detailTags ?? [])]
+  };
+}
+
+function buildLocationRegistryJson(
+  locations: Record<string, LocationRegistryEntry>
+): Record<string, unknown> {
+  const entries = Object.entries(locations)
+    .filter(([name]) => Boolean(name.trim()))
+    .sort((left, right) => left[0].localeCompare(right[0], "zh-Hans"));
+
+  const root: Record<string, unknown> = {
+    _comment: "关键位置注册表。格式：\"地点名\" -> {x, y, z, dim, note, horizontalRadius, verticalRadius}",
+    _comment2: "可通过游戏内命令、Studio 或直接编辑此文件更新。",
+    _comment3: "horizontalRadius / verticalRadius 为该地点各自的命中范围；focusTag 为关联的 FocusTag 名称（可选），detailTags 为逗号分隔的 DetailTag 列表（可选）。"
+  };
+
+  for (const [name, entry] of entries) {
+    root[name] = {
+      x: Math.round(entry.x),
+      y: Math.round(entry.y),
+      z: Math.round(entry.z),
+      dim: entry.dim.trim() || "minecraft:overworld",
+      note: entry.note ?? "",
+      horizontalRadius: Math.max(1, Math.round(entry.horizontalRadius ?? 24)),
+      verticalRadius: Math.max(1, Math.round(entry.verticalRadius ?? 16)),
+      focusTag: entry.focusTag ?? "",
+      detailTags: (entry.detailTags ?? []).join(", ")
+    };
+  }
+
+  return root;
 }
 
 function buildMemoryEntryFromDraft(
@@ -1017,12 +1383,61 @@ function focusTagRank(focusTag: FocusTag): number {
   return index === -1 ? FOCUS_TAGS.length : index;
 }
 
+function normalizePersonaFocusTags(focusTags: FocusTag[] | undefined, fallback?: FocusTag): FocusTag[] {
+  const source = Array.isArray(focusTags) && focusTags.length ? focusTags : fallback ? [fallback] : [];
+  return Array.from(new Set(source.filter((focusTag): focusTag is FocusTag => typeof focusTag === "string")));
+}
+
+function getPersonaFocusTags(persona: PersonaEntry): FocusTag[] {
+  return normalizePersonaFocusTags(persona.focus_tags, persona.associated_focus);
+}
+
+function getPrimaryPersonaFocusTag(persona: PersonaEntry): FocusTag {
+  return getPersonaFocusTags(persona)[0] ?? "COMMON";
+}
+
+function personaHasFocus(persona: PersonaEntry, focusTag: FocusTag): boolean {
+  return getPersonaFocusTags(persona).includes(focusTag);
+}
+
+function comparePersonaEntries(left: PersonaEntry, right: PersonaEntry): number {
+  const rank = focusTagRank(getPrimaryPersonaFocusTag(left)) - focusTagRank(getPrimaryPersonaFocusTag(right));
+  if (rank !== 0) {
+    return rank;
+  }
+  return left.description.localeCompare(right.description, "zh-Hans");
+}
+
 function formatFocusTagLabel(focusTag: FocusTag): string {
   return `${FOCUS_TAG_LABELS[focusTag]} (${focusTag})`;
 }
 
+function formatPrimaryEmotionLabel(emotion: string): string {
+  return `${PRIMARY_EMOTION_LABELS[emotion] ?? emotion} (${emotion})`;
+}
+
+function formatAssociationModeLabel(mode: string): string {
+  return `${ASSOCIATION_MODE_LABELS[mode] ?? mode} (${mode})`;
+}
+
+function formatAgentStateWeightLabel(weightKey: AgentStateWeightKey): string {
+  return formatFocusTagLabel(AGENT_STATE_WEIGHT_TO_FOCUS_TAG[weightKey]);
+}
+
+function formatAgentStateWeightShortLabel(weightKey: AgentStateWeightKey): string {
+  return FOCUS_TAG_LABELS[AGENT_STATE_WEIGHT_TO_FOCUS_TAG[weightKey]];
+}
+
 function formatFocusTagChip(focusTag: FocusTag): string {
   return formatFocusTagLabel(focusTag);
+}
+
+function polarPoint(center: number, radius: number, angleInTurns: number): { x: number; y: number } {
+  const angle = angleInTurns * Math.PI * 2 - Math.PI / 2;
+  return {
+    x: center + Math.cos(angle) * radius,
+    y: center + Math.sin(angle) * radius
+  };
 }
 
 function formatFocusTagItems(focusTags: FocusTag[] | undefined): string[] {
@@ -1151,10 +1566,12 @@ function App() {
   const folderImportInputRef = useRef<HTMLInputElement | null>(null);
   const [page, setPage] = useState<PageId>("catalog");
   const [customQuery, setCustomQuery] = useState("");
+  const [descriptionQuery, setDescriptionQuery] = useState("");
   const [relationQuery, setRelationQuery] = useState("");
   const [personaQuery, setPersonaQuery] = useState("");
   const [personaFocusFilter, setPersonaFocusFilter] = useState<"all" | FocusTag>("all");
   const [memoryQuery, setMemoryQuery] = useState("");
+  const [locationQuery, setLocationQuery] = useState("");
   const [nativeCatalogSnapshot, setNativeCatalogSnapshot] = useState<NativeCatalogSnapshotFile>(
     createSeedNativeCatalogSnapshot()
   );
@@ -1167,6 +1584,8 @@ function App() {
   );
   const [personas, setPersonas] = useState<PersonaEntry[]>(studioSeedData.personas.personas);
   const [memories, setMemories] = useState<ImplantedMemoryEntry[]>(studioSeedData.implantedMemories.memories);
+  const [agentStateFile, setAgentStateFile] = useState<AgentStateWorkspaceFile>(studioSeedData.agentState);
+  const [locations, setLocations] = useState<Record<string, LocationRegistryEntry>>(studioSeedData.locations);
   const [schemaVersions, setSchemaVersions] = useState<SchemaVersions>(studioSeedData.schemaVersions);
   const [workspaceDirectoryHandle, setWorkspaceDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [workspaceDirectoryName, setWorkspaceDirectoryName] = useState("");
@@ -1189,14 +1608,17 @@ function App() {
     message: "工作区目录对应 Minecraft 的 config/talking_weapon/studio_workspace/。"
   });
   const workspaceDirectoryRequestRef = useRef<Promise<FileSystemDirectoryHandle | null> | null>(null);
+  const workspaceWatcherRefreshRef = useRef(false);
   const [relationFeedback, setRelationFeedback] = useState<ImportFeedback>({
     tone: "neutral",
     message: "联动标签默认仅用于程序侧扩展引用，不会直接写入 LLM Prompt；图必须保持无环。"
   });
   const [catalogMode, setCatalogMode] = useState<CatalogMode>({ mode: "list" });
+  const [descriptionMode, setDescriptionMode] = useState<DescriptionMode>({ mode: "list" });
   const [relationMode, setRelationMode] = useState<RelationMode>({ mode: "list" });
   const [personaMode, setPersonaMode] = useState<PersonaMode>({ mode: "list" });
   const [memoryMode, setMemoryMode] = useState<MemoryMode>({ mode: "list" });
+  const [locationMode, setLocationMode] = useState<LocationMode>({ mode: "list" });
 
   useEffect(() => {
     console.log("[TW Studio] renderer env", {
@@ -1235,18 +1657,40 @@ function App() {
     );
   }, [customQuery, customTags, descriptions]);
 
+  const filteredDescriptionRows = useMemo(() => {
+    const normalizedQuery = descriptionQuery.trim().toLowerCase();
+    const rows = [...tagRecords]
+      .sort((left, right) => left.label.localeCompare(right.label, "zh-Hans"))
+      .map((record) => ({
+        record,
+        description: descriptions[record.tag]?.description ?? ""
+      }));
+
+    if (!normalizedQuery) {
+      return rows;
+    }
+
+    return rows.filter(({ record, description }) =>
+      [
+        record.tag,
+        record.label,
+        record.description,
+        description,
+        record.kind,
+        ...record.registryTypes,
+        ...record.sourceMods
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [descriptionQuery, descriptions, tagRecords]);
+
   const filteredPersonas = useMemo(() => {
     const normalizedQuery = personaQuery.trim().toLowerCase();
     const base = [...personas]
-      .filter((persona) => personaFocusFilter === "all" || persona.associated_focus === personaFocusFilter)
-      .sort((left, right) => {
-      const rank = focusTagRank(left.associated_focus) - focusTagRank(right.associated_focus);
-      if (rank !== 0) {
-        return rank;
-      }
-
-      return left.description.localeCompare(right.description, "zh-Hans");
-      });
+      .filter((persona) => personaFocusFilter === "all" || personaHasFocus(persona, personaFocusFilter))
+      .sort(comparePersonaEntries);
 
     if (!normalizedQuery) {
       return base;
@@ -1254,8 +1698,8 @@ function App() {
 
     return base.filter((persona) =>
       [
-        persona.associated_focus,
-        FOCUS_TAG_LABELS[persona.associated_focus],
+        ...getPersonaFocusTags(persona),
+        ...getPersonaFocusTags(persona).map((focusTag) => FOCUS_TAG_LABELS[focusTag]),
         persona.description,
         ...(persona.detail_tags ?? [])
       ]
@@ -1287,6 +1731,30 @@ function App() {
         .includes(normalizedQuery)
     );
   }, [memoryQuery, memories]);
+
+  const filteredLocations = useMemo(() => {
+    const normalizedQuery = locationQuery.trim().toLowerCase();
+    const rows = Object.entries(locations)
+      .sort((left, right) => left[0].localeCompare(right[0], "zh-Hans"))
+      .map(([name, entry]) => ({ name, entry }));
+
+    if (!normalizedQuery) {
+      return rows;
+    }
+
+    return rows.filter(({ name, entry }) =>
+      [
+        name,
+        entry.dim,
+        entry.note ?? "",
+        entry.focusTag ?? "",
+        ...(entry.detailTags ?? [])
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [locationQuery, locations]);
 
   const schemaSummary = Object.entries(schemaVersions)
     .map(([key, version]) => `${key}:v${version}`)
@@ -1329,6 +1797,52 @@ function App() {
 
   const closeTagEditor = () => {
     setCatalogMode({ mode: "list" });
+  };
+
+  const openEditDescriptionEditor = (tag: string) => {
+    setDescriptionMode({
+      mode: "edit",
+      tag,
+      draft: descriptions[tag]?.description ?? ""
+    });
+  };
+
+  const closeDescriptionEditor = () => {
+    setDescriptionMode({ mode: "list" });
+  };
+
+  const updateDescriptionDraft = (nextDescription: string) => {
+    setDescriptionMode((currentMode) =>
+      currentMode.mode === "list"
+        ? currentMode
+        : {
+            ...currentMode,
+            draft: nextDescription
+          }
+    );
+  };
+
+  const saveDescription = () => {
+    if (descriptionMode.mode === "list") {
+      return;
+    }
+
+    const normalizedDescription = descriptionMode.draft.trim();
+    setDescriptions((currentDescriptions) => {
+      const nextDescriptions = { ...currentDescriptions };
+      if (!normalizedDescription) {
+        delete nextDescriptions[descriptionMode.tag];
+        return nextDescriptions;
+      }
+
+      nextDescriptions[descriptionMode.tag] = {
+        ...(currentDescriptions[descriptionMode.tag] ?? {}),
+        description: normalizedDescription,
+        source: "user"
+      };
+      return nextDescriptions;
+    });
+    setDescriptionMode({ mode: "list" });
   };
 
   const saveCustomTag = () => {
@@ -1381,6 +1895,7 @@ function App() {
       );
       setPersonas((currentPersonas) => renameTagInPersonas(currentPersonas, previousTag, nextTag));
       setMemories((currentMemories) => renameTagInMemories(currentMemories, previousTag, nextTag));
+      setLocations((currentLocations) => renameTagInLocations(currentLocations, previousTag, nextTag));
     }
 
     setCatalogMode({ mode: "list" });
@@ -1396,9 +1911,13 @@ function App() {
     setRelations((currentRelations) => normalizeRelationMap(deleteTagFromRelations(currentRelations, tag)));
     setPersonas((currentPersonas) => removeTagFromPersonas(currentPersonas, tag));
     setMemories((currentMemories) => removeTagFromMemories(currentMemories, tag));
+    setLocations((currentLocations) => removeTagFromLocations(currentLocations, tag));
 
     setCatalogMode((currentMode) =>
       currentMode.mode === "edit" && currentMode.originalTag === tag ? { mode: "list" } : currentMode
+    );
+    setDescriptionMode((currentMode) =>
+      currentMode.mode === "edit" && currentMode.tag === tag ? { mode: "list" } : currentMode
     );
   };
 
@@ -1592,7 +2111,7 @@ function App() {
       mode: "edit",
       originalId: entry.id,
       draft: {
-        associated_focus: entry.associated_focus,
+        focus_tags: getPersonaFocusTags(entry),
         description: entry.description,
         always_recalled: entry.always_recalled ?? false,
         detail_tags: [...(entry.detail_tags ?? [])]
@@ -1602,6 +2121,25 @@ function App() {
 
   const closePersonaEditor = () => {
     setPersonaMode({ mode: "list" });
+  };
+
+  const togglePersonaFocusTag = (focusTag: FocusTag) => {
+    setPersonaMode((currentMode) => {
+      if (currentMode.mode === "list") {
+        return currentMode;
+      }
+
+      const exists = currentMode.draft.focus_tags.includes(focusTag);
+      return {
+        ...currentMode,
+        draft: {
+          ...currentMode.draft,
+          focus_tags: exists
+            ? currentMode.draft.focus_tags.filter((entry) => entry !== focusTag)
+            : [...currentMode.draft.focus_tags, focusTag]
+        }
+      };
+    });
   };
 
   const addPersonaDetailTag = (tag: string) => {
@@ -1645,11 +2183,15 @@ function App() {
     if (!normalizedDescription) {
       return;
     }
+    const normalizedFocusTags = normalizePersonaFocusTags(personaMode.draft.focus_tags);
+    if (!normalizedFocusTags.length) {
+      return;
+    }
 
     const nextEntry: PersonaEntry = {
       id: personaMode.mode === "edit" ? personaMode.originalId : createStudioId("persona"),
       enabled: true,
-      associated_focus: personaMode.draft.associated_focus,
+      focus_tags: normalizedFocusTags,
       description: normalizedDescription,
       always_recalled: personaMode.draft.always_recalled,
       detail_tags: personaMode.draft.detail_tags,
@@ -1661,14 +2203,7 @@ function App() {
 
     setPersonas((currentPersonas) => {
       const filtered = currentPersonas.filter((entry) => entry.id !== nextEntry.id);
-      return [...filtered, nextEntry].sort((left, right) => {
-        const rank = focusTagRank(left.associated_focus) - focusTagRank(right.associated_focus);
-        if (rank !== 0) {
-          return rank;
-        }
-
-        return left.description.localeCompare(right.description, "zh-Hans");
-      });
+      return [...filtered, nextEntry].sort(comparePersonaEntries);
     });
     setPersonaMode({ mode: "list" });
   };
@@ -1806,6 +2341,154 @@ function App() {
     );
   };
 
+  const updateLocationDraft = (patch: Partial<LocationDraft>) => {
+    setLocationMode((currentMode) => {
+      if (currentMode.mode === "list") {
+        return currentMode;
+      }
+
+      return {
+        ...currentMode,
+        draft: {
+          ...currentMode.draft,
+          ...patch
+        }
+      };
+    });
+  };
+
+  const openCreateLocationEditor = () => {
+    setLocationMode({
+      mode: "create",
+      draft: { ...EMPTY_LOCATION_DRAFT }
+    });
+  };
+
+  const openEditLocationEditor = (name: string) => {
+    setLocationMode({
+      mode: "edit",
+      originalName: name,
+      draft: buildLocationDraft(name, locations[name])
+    });
+  };
+
+  const closeLocationEditor = () => {
+    setLocationMode({ mode: "list" });
+  };
+
+  const addLocationDetailTag = (tag: string) => {
+    setLocationMode((currentMode) => {
+      if (currentMode.mode === "list") {
+        return currentMode;
+      }
+
+      return {
+        ...currentMode,
+        draft: {
+          ...currentMode.draft,
+          detailTags: Array.from(new Set([...currentMode.draft.detailTags, tag]))
+        }
+      };
+    });
+  };
+
+  const removeLocationDetailTag = (tag: string) => {
+    setLocationMode((currentMode) => {
+      if (currentMode.mode === "list") {
+        return currentMode;
+      }
+
+      return {
+        ...currentMode,
+        draft: {
+          ...currentMode.draft,
+          detailTags: currentMode.draft.detailTags.filter((entry) => entry !== tag)
+        }
+      };
+    });
+  };
+
+  const saveLocation = () => {
+    if (locationMode.mode === "list") {
+      return;
+    }
+
+    const normalizedName = locationMode.draft.name.trim().toLowerCase();
+    if (!normalizedName) {
+      return;
+    }
+
+    const x = Number.parseInt(locationMode.draft.x, 10);
+    const y = Number.parseInt(locationMode.draft.y, 10);
+    const z = Number.parseInt(locationMode.draft.z, 10);
+    const horizontalRadius = Number.parseInt(locationMode.draft.horizontalRadius, 10);
+    const verticalRadius = Number.parseInt(locationMode.draft.verticalRadius, 10);
+    const nextEntry: LocationRegistryEntry = {
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 64,
+      z: Number.isFinite(z) ? z : 0,
+      dim: locationMode.draft.dim.trim() || "minecraft:overworld",
+      note: locationMode.draft.note.trim(),
+      horizontalRadius: Number.isFinite(horizontalRadius) && horizontalRadius > 0 ? horizontalRadius : 24,
+      verticalRadius: Number.isFinite(verticalRadius) && verticalRadius > 0 ? verticalRadius : 16,
+      focusTag: locationMode.draft.focusTag,
+      detailTags: locationMode.draft.detailTags
+    };
+
+    setLocations((currentLocations) => {
+      const nextLocations = { ...currentLocations };
+      if (locationMode.mode === "edit" && locationMode.originalName !== normalizedName) {
+        delete nextLocations[locationMode.originalName];
+      }
+      nextLocations[normalizedName] = nextEntry;
+      return Object.fromEntries(
+        Object.entries(nextLocations).sort((left, right) => left[0].localeCompare(right[0], "zh-Hans"))
+      );
+    });
+    setLocationMode({ mode: "list" });
+  };
+
+  const deleteLocation = (name: string) => {
+    setLocations((currentLocations) => {
+      const nextLocations = { ...currentLocations };
+      delete nextLocations[name];
+      return nextLocations;
+    });
+    setLocationMode((currentMode) =>
+      currentMode.mode === "edit" && currentMode.originalName === name ? { mode: "list" } : currentMode
+    );
+  };
+
+  const updateAgentRuntimeState = (patch: Partial<AgentStateWorkspaceFile["state"]>) => {
+    setAgentStateFile((currentFile) => ({
+      ...currentFile,
+      state: {
+        ...currentFile.state,
+        ...patch
+      }
+    }));
+  };
+
+  const updateAgentPersonaState = (patch: Partial<AgentStateWorkspaceFile["persona_state"]>) => {
+    setAgentStateFile((currentFile) => ({
+      ...currentFile,
+      persona_state: {
+        ...currentFile.persona_state,
+        ...patch
+      }
+    }));
+  };
+
+  const updateAgentAttentionWeight = (weightKey: AgentStateWeightKey, nextValue: number) => {
+    setAgentStateFile((currentFile) => ({
+      ...currentFile,
+      attention_weights: {
+        ...currentFile.attention_weights,
+        [weightKey]: nextValue
+      }
+    }));
+  };
+
   const buildCustomTagsFile = (): CustomTagsFile => ({
     schemaVersion: schemaVersions.customTags,
     tags: customTags
@@ -1831,10 +2514,17 @@ function App() {
     memories
   });
 
+  const buildAgentStateFile = (): AgentStateWorkspaceFile => ({
+    ...sanitizeAgentStateFile(agentStateFile),
+    schemaVersion: schemaVersions.agentState
+  });
+
+  const buildLocationRegistryFile = (): Record<string, unknown> => buildLocationRegistryJson(locations);
+
   const editableWorkspaceFiles: Array<{
     filename: string;
-    versionKey: Extract<keyof WorkspaceManifestVersions, "customTags" | "descriptions" | "relations" | "personas" | "memories">;
-    build: () => CustomTagsFile | TagDescriptionsFile | TagRelationsFile | PersonasFile | ImplantedMemoriesFile;
+    versionKey: Extract<keyof WorkspaceManifestVersions, "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
+    build: () => unknown;
   }> = [
     {
       filename: "custom_tags.json",
@@ -1860,19 +2550,34 @@ function App() {
       filename: "implanted_memories.json",
       versionKey: "memories",
       build: buildImplantedMemoriesFile
+    },
+    {
+      filename: "agent_state.json",
+      versionKey: "agentState",
+      build: buildAgentStateFile
+    },
+    {
+      filename: "location_registry.json",
+      versionKey: "locations",
+      build: buildLocationRegistryFile
     }
   ];
 
   const resetEditorsAfterImport = () => {
     setCatalogMode({ mode: "list" });
+    setDescriptionMode({ mode: "list" });
     setRelationMode({ mode: "list" });
     setPersonaMode({ mode: "list" });
     setMemoryMode({ mode: "list" });
+    setLocationMode({ mode: "list" });
   };
 
   const getPendingEditorLabel = (): string | null => {
     if (catalogMode.mode !== "list") {
       return "Custom Tag";
+    }
+    if (descriptionMode.mode !== "list") {
+      return "Description";
     }
     if (relationMode.mode !== "list") {
       return "Relation";
@@ -1882,6 +2587,9 @@ function App() {
     }
     if (memoryMode.mode !== "list") {
       return "Memory";
+    }
+    if (locationMode.mode !== "list") {
+      return "Location";
     }
     return null;
   };
@@ -1930,6 +2638,16 @@ function App() {
         ...current,
         implantedMemories: importedData.memories?.schemaVersion ?? current.implantedMemories
       }));
+    }
+    if (importedData.agentState) {
+      setAgentStateFile(sanitizeAgentStateFile(importedData.agentState));
+      setSchemaVersions((current) => ({
+        ...current,
+        agentState: importedData.agentState?.schemaVersion ?? current.agentState
+      }));
+    }
+    if (importedData.locations) {
+      setLocations(importedData.locations);
     }
   };
 
@@ -2018,11 +2736,11 @@ function App() {
 
   const importWorkspaceFromDirectoryHandle = async (directoryHandle: FileSystemDirectoryHandle) => {
     const manifest = await readWorkspaceManifestFromDirectory(directoryHandle);
-    const { importedData, importedParts } = await loadWorkspaceDataFromDirectory(directoryHandle, manifest);
+    const { importedData, importedParts } = await loadWorkspaceDataFromDirectory(directoryHandle, null);
 
     setWorkspaceImportedFiles(new Map());
     setWorkspaceManifest(manifest);
-    setIconAssetVersion(manifest?.versions.iconsDirectory ?? "missing");
+    setIconAssetVersion(`desktop-import:${Date.now()}`);
     setWorkspaceDebugInfo({
       accessMode: describeWorkspaceAccessMode(),
       selectedPath: describeWorkspaceDirectoryHandle(directoryHandle),
@@ -2034,57 +2752,67 @@ function App() {
   };
 
   useEffect(() => {
-    if (!workspaceDirectoryHandle) {
+    if (!workspaceDirectoryHandle || !isDesktopWorkspaceHandle(workspaceDirectoryHandle)) {
+      void stopDesktopWorkspaceWatcher();
       return;
     }
 
     let cancelled = false;
-    let polling = false;
+    let removeListener: (() => void) | null = null;
 
-    const pollWorkspaceManifest = async () => {
-      if (polling) {
-        return;
-      }
-      polling = true;
+    const connectWatcher = async () => {
       try {
-        const manifestRaw = await readJsonFileFromDirectory(workspaceDirectoryHandle, "studio_workspace.manifest.json");
-        if (cancelled || manifestRaw === null) {
+        const started = await startDesktopWorkspaceWatcher(workspaceDirectoryHandle);
+        if (cancelled || !started) {
           return;
         }
 
-        const nextManifest = normalizeWorkspaceManifest(manifestRaw);
-        if (!nextManifest) {
-          return;
-        }
-
-        if (hasManifestVersionChanged(workspaceManifest, nextManifest)) {
-          await refreshWorkspaceFromManifest(workspaceDirectoryHandle, workspaceManifest, nextManifest);
-          if (!cancelled) {
-            setWorkspaceManifest(nextManifest);
+        removeListener = onDesktopWorkspaceChanged(async (_payload) => {
+          if (cancelled || workspaceWatcherRefreshRef.current) {
+            return;
           }
-        }
+          workspaceWatcherRefreshRef.current = true;
+          try {
+            await importWorkspaceFromDirectoryHandle(workspaceDirectoryHandle);
+            if (!cancelled) {
+              setImportFeedback({
+                tone: "good",
+                message: "已通过桌面 watcher 自动同步工作区变化。"
+              });
+            }
+          } catch (error) {
+            if (!cancelled) {
+              const message = error instanceof Error ? error.message : String(error);
+              setImportFeedback({
+                tone: "bad",
+                message: `工作区 watcher 同步失败：${message}`
+              });
+            }
+          } finally {
+            workspaceWatcherRefreshRef.current = false;
+          }
+        });
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : String(error);
           setImportFeedback({
             tone: "bad",
-            message: `工作区自动同步失败：${message}`
+            message: `启动桌面 watcher 失败：${message}`
           });
         }
-      } finally {
-        polling = false;
       }
     };
 
-    const intervalId = window.setInterval(() => {
-      void pollWorkspaceManifest();
-    }, 1500);
+    void connectWatcher();
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (removeListener) {
+        removeListener();
+      }
+      void stopDesktopWorkspaceWatcher();
     };
-  }, [workspaceDirectoryHandle, workspaceManifest]);
+  }, [workspaceDirectoryHandle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2106,7 +2834,7 @@ function App() {
         }
         setGameBridgeStatus({
           state: "fallback",
-          message: "未连接到游戏内 HTTP bridge，当前使用工作区 manifest 轮询。"
+          message: "未连接到游戏内 HTTP bridge，当前只能本地编辑工作区，无法自动通知游戏热重载。"
         });
       }
     };
@@ -2150,41 +2878,13 @@ function App() {
     }
   };
 
-  const applyPartialWorkspaceRefresh = (importedData: ImportedWorkspaceData) => {
-    applyWorkspaceDataPatch(importedData);
-  };
-
-  const refreshWorkspaceFromManifest = async (
-    directoryHandle: FileSystemDirectoryHandle,
-    previousManifest: StudioWorkspaceManifest | null,
-    nextManifest: StudioWorkspaceManifest
-  ) => {
-    const { importedData, importedParts: changedParts } = await loadWorkspaceDataFromDirectory(
-      directoryHandle,
-      nextManifest,
-      previousManifest
-    );
-
-    if (!previousManifest || previousManifest.versions.iconsDirectory !== nextManifest.versions.iconsDirectory) {
-      setIconAssetVersion(nextManifest.versions.iconsDirectory);
-    }
-
-    if (changedParts.length) {
-      applyPartialWorkspaceRefresh(importedData);
-      setImportFeedback({
-        tone: "good",
-        message: `已同步工作区变化：${changedParts.join(" / ")}。`
-      });
-    }
-  };
-
   const exportWorkspace = async () => {
     try {
       const pendingEditorLabel = getPendingEditorLabel();
       if (pendingEditorLabel) {
         setImportFeedback({
           tone: "bad",
-          message: `当前有未保存的 ${pendingEditorLabel} 草稿。请先点击当前编辑页的“保存”，再导出工作区。`
+          message: `当前有未保存的 ${pendingEditorLabel} 草稿。请先点击当前编辑页的“保存”，再保存工作区。`
         });
         return;
       }
@@ -2214,7 +2914,7 @@ function App() {
       const nextManifest = buildNextWorkspaceManifest(manifestBeforeWrite, "studio", updatedVersions);
       await writeJsonFileToDirectory(directoryHandle, "studio_workspace.manifest.json", nextManifest);
       setWorkspaceManifest(nextManifest);
-      const exportedMessage = `已导出工作区到 ${workspaceDirectoryName || directoryHandle.name}。`;
+      const exportedMessage = `已保存工作区到 ${workspaceDirectoryName || directoryHandle.name}。`;
 
       try {
         const publishResult = await publishWorkspaceToGame();
@@ -2230,18 +2930,18 @@ function App() {
         const message = publishError instanceof Error ? publishError.message : String(publishError);
         setGameBridgeStatus({
           state: "fallback",
-          message: "未连接到游戏内 HTTP bridge，当前使用工作区 manifest 轮询。"
+          message: "未连接到游戏内 HTTP bridge，当前只能本地编辑工作区，无法自动通知游戏热重载。"
         });
         setImportFeedback({
           tone: "good",
-          message: `${exportedMessage} 未能直接通知游戏，已保留 manifest 兜底同步：${message}`
+          message: `${exportedMessage} 未能直接通知游戏热重载：${message}`
         });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setImportFeedback({
         tone: "bad",
-        message: `导出工作区失败：${message}`
+        message: `保存工作区失败：${message}`
       });
     }
   };
@@ -2328,7 +3028,7 @@ function App() {
             <div className="panel-head io-head">
               <div>
                 <p className="eyebrow">Workspace</p>
-                <h2>工作区导入 / 导出</h2>
+                <h2>工作区读取 / 保存</h2>
                 <p className="muted-copy">
                   目标路径：<code>{workspacePathHint}</code>
                 </p>
@@ -2338,17 +3038,17 @@ function App() {
               <span className="badge muted">
                 {workspaceDirectoryName ? `已选择目录：${workspaceDirectoryName}` : "尚未选择工作区目录"}
               </span>
-              <span className="badge">由模组导出的 `studio_workspace` 文件夹</span>
+              <span className="badge">游戏与 Studio 共用的 `studio_workspace` 真源文件夹</span>
               {workspaceDirectoryHandle ? <span className="badge good">自动同步中</span> : null}
               <span className={gameBridgeStatus.state === "connected" ? "badge good" : "badge muted"}>
-                {gameBridgeStatus.state === "connected" ? "HTTP Bridge 已连接" : "Manifest Fallback"}
+                {gameBridgeStatus.state === "connected" ? "HTTP Bridge 已连接" : "未连接游戏热重载"}
               </span>
             </div>
             <p className="muted-copy">
-              导入会读取该目录下已有的 schema 文件；导出只会回写 `custom_tags.json`、
-              `tag_descriptions.json`、`tag_relations.json`、`personas.json` 与
-              `implanted_memories.json`，不会覆盖模组生成的 snapshot 与图标文件。若游戏内 HTTP bridge 在线，
-              导出后会立即请求热重载；否则退回 manifest 轮询同步。
+              读取会加载该目录下已有的 schema 文件；保存只会回写 `custom_tags.json`、
+              `tag_descriptions.json`、`tag_relations.json`、`personas.json`、
+              `implanted_memories.json`、`agent_state.json` 与 `location_registry.json`。这些 authored 文件本身就是游戏运行时真源；保存不会覆盖模组生成的
+              snapshot 与图标文件。若游戏内 HTTP bridge 在线，保存后会立即请求热重载；否则退回 manifest 轮询同步。
             </p>
             <p className="muted-copy">{gameBridgeStatus.message}</p>
             <div className="workspace-debug">
@@ -2383,7 +3083,7 @@ function App() {
                 导入工作区
               </button>
               <button className="action-button quiet" onClick={exportWorkspace} type="button">
-                导出工作区
+                保存
               </button>
             </div>
             <p className={`io-feedback ${importFeedback.tone}`}>{importFeedback.message}</p>
@@ -2421,6 +3121,21 @@ function App() {
             onSave={saveCustomTag}
           />
         ) : null}
+        {page === "descriptions" ? (
+          <DescriptionCatalogPage
+            rows={filteredDescriptionRows}
+            query={descriptionQuery}
+            mode={descriptionMode}
+            tagRecords={tagRecords}
+            workspaceDirectoryHandle={workspaceDirectoryHandle}
+            workspaceImportedFiles={workspaceImportedFiles}
+            onQueryChange={setDescriptionQuery}
+            onEdit={openEditDescriptionEditor}
+            onDraftChange={updateDescriptionDraft}
+            onCancel={closeDescriptionEditor}
+            onSave={saveDescription}
+          />
+        ) : null}
         {page === "relations" ? (
           <RelationsPage
             relations={relations}
@@ -2441,6 +3156,14 @@ function App() {
             onWorkspaceApply={applyRelationWorkspaceUpdate}
           />
         ) : null}
+        {page === "state" ? (
+          <AgentStatePage
+            agentStateFile={agentStateFile}
+            onStateChange={updateAgentRuntimeState}
+            onPersonaStateChange={updateAgentPersonaState}
+            onAttentionWeightChange={updateAgentAttentionWeight}
+          />
+        ) : null}
         {page === "persona" ? (
           <PersonaPage
             personas={filteredPersonas}
@@ -2456,6 +3179,7 @@ function App() {
             onEdit={openEditPersonaEditor}
             onDelete={deletePersona}
             onDraftChange={updatePersonaDraft}
+            onToggleFocusTag={togglePersonaFocusTag}
             onAddDetailTag={addPersonaDetailTag}
             onRemoveDetailTag={removePersonaDetailTag}
             onCancel={closePersonaEditor}
@@ -2480,6 +3204,25 @@ function App() {
             onRemoveDetailTag={removeMemoryDetailTag}
             onCancel={closeMemoryEditor}
             onSave={saveMemory}
+          />
+        ) : null}
+        {page === "locations" ? (
+          <LocationRegistryPage
+            locations={filteredLocations}
+            query={locationQuery}
+            mode={locationMode}
+            tags={tagRecords}
+            workspaceDirectoryHandle={workspaceDirectoryHandle}
+            workspaceImportedFiles={workspaceImportedFiles}
+            onQueryChange={setLocationQuery}
+            onCreate={openCreateLocationEditor}
+            onEdit={openEditLocationEditor}
+            onDelete={deleteLocation}
+            onDraftChange={updateLocationDraft}
+            onAddDetailTag={addLocationDetailTag}
+            onRemoveDetailTag={removeLocationDetailTag}
+            onCancel={closeLocationEditor}
+            onSave={saveLocation}
           />
         ) : null}
       </main>
@@ -2514,6 +3257,12 @@ function CustomTagCatalogPage({
   onSave: () => void;
 }) {
   if (mode.mode !== "list") {
+    const applySuggestedDescription = () => {
+      onDraftChange({
+        description: buildSuggestedCustomTagDescription(mode.draft.kind, mode.draft.id)
+      });
+    };
+
     return (
       <div className="panel page-panel catalog-editor">
         <div className="panel-head">
@@ -2522,9 +3271,14 @@ function CustomTagCatalogPage({
             <h2>{mode.mode === "create" ? "新增 custom tag" : "编辑 custom tag"}</h2>
             <p className="muted-copy">这里仅编辑 `type`、`id` 与 `description`，其他字段暂不暴露。</p>
           </div>
-          <button className="action-button quiet" onClick={onCancel} type="button">
-            返回列表
-          </button>
+          <div className="row-actions">
+            <button className="action-button quiet" onClick={applySuggestedDescription} type="button">
+              自动补全 Description
+            </button>
+            <button className="action-button quiet" onClick={onCancel} type="button">
+              返回列表
+            </button>
+          </div>
         </div>
 
         <div className="form-grid">
@@ -2629,6 +3383,195 @@ function CustomTagCatalogPage({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function DescriptionCatalogPage({
+  rows,
+  query,
+  mode,
+  tagRecords,
+  workspaceDirectoryHandle,
+  workspaceImportedFiles,
+  onQueryChange,
+  onEdit,
+  onDraftChange,
+  onCancel,
+  onSave
+}: {
+  rows: Array<{ record: TagRecord; description: string }>;
+  query: string;
+  mode: DescriptionMode;
+  tagRecords: TagRecord[];
+  workspaceDirectoryHandle: FileSystemDirectoryHandle | null;
+  workspaceImportedFiles: Map<string, File>;
+  onQueryChange: (next: string) => void;
+  onEdit: (tag: string) => void;
+  onDraftChange: (nextDescription: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / DESCRIPTION_PAGE_SIZE));
+  const pageStart = (page - 1) * DESCRIPTION_PAGE_SIZE;
+  const visibleRows = rows.slice(pageStart, pageStart + DESCRIPTION_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  useEffect(() => {
+    if (page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [page, pageCount]);
+
+  if (mode.mode !== "list") {
+    const record = tagRecordOrFallback(tagRecords, mode.tag);
+    return (
+      <div className="panel page-panel catalog-editor">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Edit Description</p>
+            <h2>编辑 tag description</h2>
+            <p className="muted-copy">这里直接维护 `tag_descriptions.json`，可为 native 与 custom tags 补充自然语言描述。</p>
+          </div>
+          <div className="row-actions">
+            <button className="action-button quiet" onClick={onCancel} type="button">
+              返回列表
+            </button>
+            <button className="action-button primary" onClick={onSave} type="button">
+              保存
+            </button>
+          </div>
+        </div>
+
+        <section className="info-block">
+          <div className="relation-source-preview">
+            <TagCardIcon
+              record={record}
+              workspaceDirectoryHandle={workspaceDirectoryHandle}
+              workspaceImportedFiles={workspaceImportedFiles}
+            />
+            <div className="relation-source-copy">
+              <div className="custom-tag-meta">
+                <span className="badge">{record.kind}</span>
+                {record.registryTypes[0] ? <span className="badge muted">{record.registryTypes[0]}</span> : null}
+                {record.sourceMods[0] ? <span className="badge muted">{record.sourceMods[0]}</span> : null}
+              </div>
+              <strong>{record.label}</strong>
+              <code>{record.tag}</code>
+              <p className="tag-browser-description">
+                {record.description || "当前记录还没有 description。"}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <label className="field full">
+          <span>Description</span>
+          <textarea
+            rows={10}
+            value={mode.draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="写给玩家和 LLM 的自然语言描述。若清空并保存，则会删除这一条 description。"
+          />
+        </label>
+
+        <div className="editor-actions">
+          <button className="action-button quiet" onClick={onCancel} type="button">
+            取消
+          </button>
+          <button className="action-button primary" onClick={onSave} type="button">
+            保存
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel page-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">All Tag Descriptions</p>
+          <h2>Tag Description 管理</h2>
+          <p className="muted-copy">这里统一检索并编辑所有 tag 的自然语言描述，不再分 custom / native。</p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${rows.length} 条`}</span>
+          <span className="badge muted">{`第 ${page} / ${pageCount} 页`}</span>
+        </div>
+      </div>
+
+      <div className="catalog-toolbar">
+        <label className="field grow">
+          <span>检索</span>
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="按 tag、label、description、registry type 或 mod 搜索"
+          />
+        </label>
+      </div>
+
+      <div className="custom-tag-list">
+        {visibleRows.map(({ record, description }) => (
+          <article className="custom-tag-row description-row" key={record.tag}>
+            <TagCardIcon
+              record={record}
+              workspaceDirectoryHandle={workspaceDirectoryHandle}
+              workspaceImportedFiles={workspaceImportedFiles}
+            />
+            <div className="custom-tag-main">
+              <div className="custom-tag-meta">
+                <span className="badge">{record.kind}</span>
+                {record.registryTypes[0] ? <span className="badge muted">{record.registryTypes[0]}</span> : null}
+                {record.sourceMods[0] ? <span className="badge muted">{record.sourceMods[0]}</span> : null}
+              </div>
+              <strong>{record.label}</strong>
+              <code>{record.tag}</code>
+              <p className="custom-tag-description">{description || "暂无 description"}</p>
+            </div>
+            <div className="row-actions">
+              <button className="action-button quiet" onClick={() => onEdit(record.tag)} type="button">
+                编辑
+              </button>
+            </div>
+          </article>
+        ))}
+        {!visibleRows.length ? (
+          <div className="empty-state">
+            <strong>没有匹配结果</strong>
+            <p>当前检索条件下没有 tag description 可编辑项。</p>
+          </div>
+        ) : null}
+      </div>
+
+      {rows.length > DESCRIPTION_PAGE_SIZE ? (
+        <div className="tag-browser-pagination">
+          <span className="badge muted">{`当前显示 ${pageStart + 1}-${Math.min(rows.length, pageStart + DESCRIPTION_PAGE_SIZE)} / ${rows.length}`}</span>
+          <div className="tag-browser-pagination-actions">
+            <button
+              className="action-button quiet"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              type="button"
+            >
+              上一页
+            </button>
+            <button
+              className="action-button quiet"
+              disabled={page >= pageCount}
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              type="button"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3213,6 +4156,7 @@ function PersonaPage({
   onEdit,
   onDelete,
   onDraftChange,
+  onToggleFocusTag,
   onAddDetailTag,
   onRemoveDetailTag,
   onCancel,
@@ -3231,6 +4175,7 @@ function PersonaPage({
   onEdit: (entry: PersonaEntry) => void;
   onDelete: (id: string) => void;
   onDraftChange: (patch: Partial<PersonaDraft>) => void;
+  onToggleFocusTag: (focusTag: FocusTag) => void;
   onAddDetailTag: (tag: string) => void;
   onRemoveDetailTag: (tag: string) => void;
   onCancel: () => void;
@@ -3244,6 +4189,7 @@ function PersonaPage({
         workspaceDirectoryHandle={workspaceDirectoryHandle}
         workspaceImportedFiles={workspaceImportedFiles}
         onDraftChange={onDraftChange}
+        onToggleFocusTag={onToggleFocusTag}
         onAddDetailTag={onAddDetailTag}
         onRemoveDetailTag={onRemoveDetailTag}
         onCancel={onCancel}
@@ -3252,9 +4198,10 @@ function PersonaPage({
     );
   }
 
-  const grouped = FOCUS_TAGS.map((focusTag) => ({
+  const groupedFocusTags = focusFilter === "all" ? FOCUS_TAGS : [focusFilter];
+  const grouped = groupedFocusTags.map((focusTag) => ({
     focusTag,
-    entries: personas.filter((entry) => entry.associated_focus === focusTag)
+    entries: personas.filter((entry) => personaHasFocus(entry, focusTag))
   })).filter((group) => group.entries.length > 0);
 
   return (
@@ -3263,7 +4210,7 @@ function PersonaPage({
         <div>
           <p className="eyebrow">Persona Entries</p>
           <h2>人格偏好管理</h2>
-          <p className="muted-copy">以 focus tag 分组，每条人格偏好由自然语言描述和 detail tags 组成。</p>
+          <p className="muted-copy">以 focus tag 分组；多 focus persona 会同时出现在多个分组里。</p>
         </div>
       </div>
 
@@ -3307,13 +4254,17 @@ function PersonaPage({
                 <article className="custom-tag-row persona-row" key={entry.id}>
                   <div className="custom-tag-main">
                     <div className="custom-tag-meta">
-                      <span className="badge">{formatFocusTagLabel(entry.associated_focus)}</span>
+                      {getPersonaFocusTags(entry).map((focusTag) => (
+                        <span className="badge" key={`${entry.id}-${focusTag}`}>
+                          {formatFocusTagLabel(focusTag)}
+                        </span>
+                      ))}
                       {entry.always_recalled ? <span className="badge warn">Always Remembered</span> : null}
                     </div>
                     <p className="persona-description">{entry.description}</p>
                     {entry.always_recalled ? (
                       <p className="always-recalled-note">
-                        {entry.associated_focus === "COMMON"
+                        {getPersonaFocusTags(entry).includes("COMMON")
                           ? "将在所有情况下触发。"
                           : "将在当前注意力领域下持续触发。"}
                       </p>
@@ -3351,6 +4302,7 @@ function PersonaEditor({
   workspaceDirectoryHandle,
   workspaceImportedFiles,
   onDraftChange,
+  onToggleFocusTag,
   onAddDetailTag,
   onRemoveDetailTag,
   onCancel,
@@ -3361,12 +4313,14 @@ function PersonaEditor({
   workspaceDirectoryHandle: FileSystemDirectoryHandle | null;
   workspaceImportedFiles: Map<string, File>;
   onDraftChange: (patch: Partial<PersonaDraft>) => void;
+  onToggleFocusTag: (focusTag: FocusTag) => void;
   onAddDetailTag: (tag: string) => void;
   onRemoveDetailTag: (tag: string) => void;
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const isCommonFocus = mode.draft.associated_focus === "COMMON";
+  const selectedFocusTags = normalizePersonaFocusTags(mode.draft.focus_tags);
+  const isCommonFocus = selectedFocusTags.includes("COMMON");
   const hiddenDetailTagCount = mode.draft.detail_tags.length;
 
   return (
@@ -3375,27 +4329,37 @@ function PersonaEditor({
         <div>
           <p className="eyebrow">{mode.mode === "create" ? "Create Persona Entry" : "Edit Persona Entry"}</p>
           <h2>{mode.mode === "create" ? "新增 persona" : "编辑 persona"}</h2>
-          <p className="muted-copy">每条 persona 由一个 focus、一个 description，以及若干 detail tags 组成。</p>
+          <p className="muted-copy">每条 persona 由多个 focus、一个 description，以及若干 detail tags 组成。</p>
         </div>
-        <button className="action-button quiet" onClick={onCancel} type="button">
-          返回列表
-        </button>
+        <div className="row-actions">
+          <button className="action-button quiet" onClick={onCancel} type="button">
+            返回列表
+          </button>
+          <button className="action-button primary" onClick={onSave} type="button">
+            保存
+          </button>
+        </div>
       </div>
 
       <div className="form-grid">
-        <label className="field">
-          <span>Focus Tag</span>
-          <select
-            value={mode.draft.associated_focus}
-            onChange={(event) => onDraftChange({ associated_focus: event.target.value as FocusTag })}
-          >
-            {FOCUS_TAGS.map((focusTag) => (
-              <option key={focusTag} value={focusTag}>
-                {formatFocusTagLabel(focusTag)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <section className="info-block full">
+          <h3>Focus Tags</h3>
+          <div className="focus-picker">
+            {FOCUS_TAGS.map((focusTag) => {
+              const selected = selectedFocusTags.includes(focusTag);
+              return (
+                <button
+                  className={selected ? "focus-chip active" : "focus-chip"}
+                  key={focusTag}
+                  onClick={() => onToggleFocusTag(focusTag)}
+                  type="button"
+                >
+                  {formatFocusTagLabel(focusTag)}
+                </button>
+              );
+            })}
+          </div>
+        </section>
         <label className="field full">
           <span>Description</span>
           <textarea
@@ -3425,7 +4389,7 @@ function PersonaEditor({
           <p>
             {isCommonFocus
               ? "这条 persona 将在所有情况下触发。"
-              : "这条 persona 将在当前注意力领域下的所有情况下触发。"}
+              : "这条 persona 将在所选注意力领域下的所有情况下触发。"}
           </p>
           {hiddenDetailTagCount > 0 ? (
             <p>已隐藏 {hiddenDetailTagCount} 个 Detail Tags，取消勾选后会重新显示，不会被删除。</p>
@@ -3464,6 +4428,294 @@ function PersonaEditor({
           </section>
         </div>
       )}
+
+      <div className="editor-actions">
+        <button className="action-button quiet" onClick={onCancel} type="button">
+          取消
+        </button>
+        <button className="action-button primary" onClick={onSave} type="button">
+          保存
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LocationRegistryPage({
+  locations,
+  query,
+  mode,
+  tags,
+  workspaceDirectoryHandle,
+  workspaceImportedFiles,
+  onQueryChange,
+  onCreate,
+  onEdit,
+  onDelete,
+  onDraftChange,
+  onAddDetailTag,
+  onRemoveDetailTag,
+  onCancel,
+  onSave
+}: {
+  locations: Array<{ name: string; entry: LocationRegistryEntry }>;
+  query: string;
+  mode: LocationMode;
+  tags: TagRecord[];
+  workspaceDirectoryHandle: FileSystemDirectoryHandle | null;
+  workspaceImportedFiles: Map<string, File>;
+  onQueryChange: (next: string) => void;
+  onCreate: () => void;
+  onEdit: (name: string) => void;
+  onDelete: (name: string) => void;
+  onDraftChange: (patch: Partial<LocationDraft>) => void;
+  onAddDetailTag: (tag: string) => void;
+  onRemoveDetailTag: (tag: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  if (mode.mode !== "list") {
+    return (
+      <LocationRegistryEditor
+        mode={mode}
+        tags={tags}
+        workspaceDirectoryHandle={workspaceDirectoryHandle}
+        workspaceImportedFiles={workspaceImportedFiles}
+        onDraftChange={onDraftChange}
+        onAddDetailTag={onAddDetailTag}
+        onRemoveDetailTag={onRemoveDetailTag}
+        onCancel={onCancel}
+        onSave={onSave}
+      />
+    );
+  }
+
+  return (
+    <div className="panel page-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Location Registry</p>
+          <h2>地点注册</h2>
+          <p className="muted-copy">这里直接管理 `location_registry.json`。游戏内地点注册界面与 Studio 共用同一份 authored 文件。</p>
+        </div>
+        <span className="badge">{`${locations.length} 个地点`}</span>
+      </div>
+
+      <div className="catalog-toolbar">
+        <label className="field grow">
+          <span>检索</span>
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="按名称、维度、备注、focus 或 detail tag 搜索"
+          />
+        </label>
+        <button className="action-button primary" onClick={onCreate} type="button">
+          增加
+        </button>
+      </div>
+
+      <div className="custom-tag-list">
+        {locations.map(({ name, entry }) => (
+          <article className="custom-tag-row" key={name}>
+            <div className="custom-tag-main">
+              <div className="custom-tag-meta">
+                <span className="badge">Location</span>
+                <span className="badge muted">{entry.dim}</span>
+                {entry.focusTag ? <span className="badge">{formatFocusTagLabel(entry.focusTag)}</span> : null}
+              </div>
+              <strong>{name}</strong>
+              <p className="custom-tag-description">
+                {`(${entry.x}, ${entry.y}, ${entry.z})`}
+                {entry.note ? ` — ${entry.note}` : ""}
+              </p>
+              <p className="custom-tag-description">
+                {`判定范围: 水平 ${entry.horizontalRadius ?? 24} / 垂直 ${entry.verticalRadius ?? 16}`}
+              </p>
+              <ChipList
+                items={(entry.detailTags ?? []).map((tag) => tagRecordOrFallback(tags, tag).label)}
+                emptyLabel="无 detail tags"
+                compact
+              />
+            </div>
+            <div className="row-actions">
+              <button className="action-button quiet" onClick={() => onEdit(name)} type="button">
+                编辑
+              </button>
+              <button className="action-button danger" onClick={() => onDelete(name)} type="button">
+                删除
+              </button>
+            </div>
+          </article>
+        ))}
+        {!locations.length ? (
+          <div className="empty-state">
+            <strong>没有匹配结果</strong>
+            <p>当前检索条件下没有地点注册项。</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LocationRegistryEditor({
+  mode,
+  tags,
+  workspaceDirectoryHandle,
+  workspaceImportedFiles,
+  onDraftChange,
+  onAddDetailTag,
+  onRemoveDetailTag,
+  onCancel,
+  onSave
+}: {
+  mode: Exclude<LocationMode, { mode: "list" }>;
+  tags: TagRecord[];
+  workspaceDirectoryHandle: FileSystemDirectoryHandle | null;
+  workspaceImportedFiles: Map<string, File>;
+  onDraftChange: (patch: Partial<LocationDraft>) => void;
+  onAddDetailTag: (tag: string) => void;
+  onRemoveDetailTag: (tag: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="panel page-panel catalog-editor">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">{mode.mode === "create" ? "Create Location" : "Edit Location"}</p>
+          <h2>{mode.mode === "create" ? "新增地点" : "编辑地点"}</h2>
+          <p className="muted-copy">地点名会作为 <code>custom_specific:&lt;地点名&gt;</code> 的值参与位置语义解释，因此建议保持简洁稳定。</p>
+        </div>
+        <div className="row-actions">
+          <button className="action-button quiet" onClick={onCancel} type="button">
+            返回列表
+          </button>
+          <button className="action-button primary" onClick={onSave} type="button">
+            保存
+          </button>
+        </div>
+      </div>
+
+      <div className="form-grid">
+        <label className="field">
+          <span>Name</span>
+          <input
+            value={mode.draft.name}
+            onChange={(event) => onDraftChange({ name: event.target.value })}
+            placeholder="例如 home / forge_room"
+          />
+        </label>
+        <label className="field">
+          <span>Dimension</span>
+          <input
+            value={mode.draft.dim}
+            onChange={(event) => onDraftChange({ dim: event.target.value })}
+            placeholder="minecraft:overworld"
+          />
+        </label>
+        <label className="field">
+          <span>X</span>
+          <input
+            value={mode.draft.x}
+            onChange={(event) => onDraftChange({ x: event.target.value })}
+            type="number"
+          />
+        </label>
+        <label className="field">
+          <span>Y</span>
+          <input
+            value={mode.draft.y}
+            onChange={(event) => onDraftChange({ y: event.target.value })}
+            type="number"
+          />
+        </label>
+        <label className="field">
+          <span>Z</span>
+          <input
+            value={mode.draft.z}
+            onChange={(event) => onDraftChange({ z: event.target.value })}
+            type="number"
+          />
+        </label>
+        <label className="field">
+          <span>Horizontal Radius</span>
+          <input
+            min={1}
+            value={mode.draft.horizontalRadius}
+            onChange={(event) => onDraftChange({ horizontalRadius: event.target.value })}
+            type="number"
+          />
+        </label>
+        <label className="field">
+          <span>Vertical Radius</span>
+          <input
+            min={1}
+            value={mode.draft.verticalRadius}
+            onChange={(event) => onDraftChange({ verticalRadius: event.target.value })}
+            type="number"
+          />
+        </label>
+        <label className="field">
+          <span>Focus Tag</span>
+          <select
+            value={mode.draft.focusTag}
+            onChange={(event) => onDraftChange({ focusTag: event.target.value as FocusTag | "" })}
+          >
+            <option value="">无</option>
+            {FOCUS_TAGS.map((focusTag) => (
+              <option key={focusTag} value={focusTag}>
+                {formatFocusTagLabel(focusTag)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field full">
+          <span>Note</span>
+          <textarea
+            rows={4}
+            value={mode.draft.note}
+            onChange={(event) => onDraftChange({ note: event.target.value })}
+            placeholder="写给玩家和 LLM 的地点备注"
+          />
+        </label>
+      </div>
+
+      <p className="muted-copy">
+        每个地点都可以有独立的判定范围。只有玩家进入该范围时，这个地点才会被当作“当前登记地点”写入常驻语义，并生成对应的
+        <code>custom_specific:&lt;地点名&gt;</code> 上下文标签。
+      </p>
+
+      <div className="two-col persona-editor-grid">
+        <section className="info-block">
+          <h3>已附带的 Detail Tags</h3>
+          {mode.draft.detailTags.length ? (
+            <SelectedTagGrid
+              tagIds={mode.draft.detailTags}
+              tags={tags}
+              workspaceDirectoryHandle={workspaceDirectoryHandle}
+              workspaceImportedFiles={workspaceImportedFiles}
+              onRemoveTag={onRemoveDetailTag}
+            />
+          ) : (
+            <p className="muted-copy">还没有 detail tag。</p>
+          )}
+        </section>
+
+        <section className="info-block tag-picker">
+          <TagBrowser
+            tags={tags}
+            excludedTags={mode.draft.detailTags}
+            title="Tag Browser"
+            description="点击卡片即可把 detail tag 加到这个地点上。"
+            searchPlaceholder="搜索 detail tag"
+            workspaceDirectoryHandle={workspaceDirectoryHandle}
+            workspaceImportedFiles={workspaceImportedFiles}
+            onSelectTag={onAddDetailTag}
+          />
+        </section>
+      </div>
 
       <div className="editor-actions">
         <button className="action-button quiet" onClick={onCancel} type="button">
@@ -3624,9 +4876,14 @@ function MemoryEditor({
           <p className="muted-copy">植入记忆不再编辑维度、群系、天气，只保留更适合叙事的时间锚。</p>
           <p className="muted-copy">该时间锚会参与记忆联想，但不会混入普通 detail tag 线索。</p>
         </div>
-        <button className="action-button quiet" onClick={onCancel} type="button">
-          返回列表
-        </button>
+        <div className="row-actions">
+          <button className="action-button quiet" onClick={onCancel} type="button">
+            返回列表
+          </button>
+          <button className="action-button primary" onClick={onSave} type="button">
+            保存
+          </button>
+        </div>
       </div>
 
       <div className="form-grid">
@@ -3772,6 +5029,500 @@ function MemoryEditor({
         <button className="action-button primary" onClick={onSave} type="button">
           保存
         </button>
+      </div>
+    </div>
+  );
+}
+
+function AgentStatePage({
+  agentStateFile,
+  onStateChange,
+  onPersonaStateChange,
+  onAttentionWeightChange
+}: {
+  agentStateFile: AgentStateWorkspaceFile;
+  onStateChange: (patch: Partial<AgentStateWorkspaceFile["state"]>) => void;
+  onPersonaStateChange: (patch: Partial<AgentStateWorkspaceFile["persona_state"]>) => void;
+  onAttentionWeightChange: (weightKey: AgentStateWeightKey, nextValue: number) => void;
+}) {
+  const strongestAttention = useMemo(() => {
+    return [...AGENT_STATE_WEIGHT_KEYS]
+      .map((weightKey) => ({
+        weightKey,
+        value: agentStateFile.attention_weights[weightKey]
+      }))
+      .sort((left, right) => right.value - left.value)[0];
+  }, [agentStateFile.attention_weights]);
+
+  const weakestAttention = useMemo(() => {
+    return [...AGENT_STATE_WEIGHT_KEYS]
+      .map((weightKey) => ({
+        weightKey,
+        value: agentStateFile.attention_weights[weightKey]
+      }))
+      .sort((left, right) => left.value - right.value)[0];
+  }, [agentStateFile.attention_weights]);
+
+  const promptPreview = useMemo(() => {
+    const currentDesireText = agentStateFile.state.current_desire_tag
+      ? `, desire=${agentStateFile.state.current_desire_tag}`
+      : "";
+    const desireDescriptionText = agentStateFile.state.desire_description.trim()
+      ? `, desireDescription=${agentStateFile.state.desire_description.trim()}`
+      : "";
+    const playerProfileText = agentStateFile.persona_state.player_profile.trim()
+      ? `\n对持有者的看法: ${agentStateFile.persona_state.player_profile.trim()}`
+      : "";
+
+    return [
+      `[AgentState] emotion=${agentStateFile.state.primary_emotion} (intensity=${agentStateFile.state.emotion_intensity}/100), familiarity=${agentStateFile.state.familiarity}, concentration=${agentStateFile.state.concentration.toFixed(2)}, wandering=${agentStateFile.state.wandering_mind.toFixed(2)}, nostalgia=${agentStateFile.state.nostalgia.toFixed(2)}, associationMode=${agentStateFile.state.association_mode}, 对玩家称呼=${agentStateFile.state.player_address}${currentDesireText}${desireDescriptionText}`,
+      `[AgentPersona]`,
+      `好感度: ${agentStateFile.persona_state.favorability}/100${playerProfileText}`
+    ].join("\n");
+  }, [agentStateFile]);
+
+  return (
+    <div className="panel page-panel catalog-editor">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Shared Agent State</p>
+          <h2>Agent State / Persona State</h2>
+          <p className="muted-copy">
+            本页直接编辑 `agent_state.json`。游戏内 State Screen 与 Studio 共享这一份 authored 状态文件。
+          </p>
+          <p className="muted-copy">
+            此处修改会立即写入 Studio 当前草稿；点击顶部工作区区域里的“保存”后，才会真正回写文件并触发热重载。
+          </p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{formatPrimaryEmotionLabel(agentStateFile.state.primary_emotion)}</span>
+          <span className="badge muted">{formatAssociationModeLabel(agentStateFile.state.association_mode)}</span>
+          <span className={agentStateFile.persona_state.favorability >= 0 ? "badge good" : "badge warn"}>
+            {`Favorability ${agentStateFile.persona_state.favorability}`}
+          </span>
+        </div>
+      </div>
+
+      <div className="two-col state-overview-grid">
+        <section className="info-block">
+          <h3>当前概览</h3>
+          <div className="chip-row">
+            <span className="chip">{`称呼：${agentStateFile.state.player_address}`}</span>
+            <span className="chip">{`熟悉度：${agentStateFile.state.familiarity}`}</span>
+            <span className="chip">{`专注度：${agentStateFile.state.concentration.toFixed(2)}`}</span>
+            <span className="chip">{`随想值：${agentStateFile.state.wandering_mind.toFixed(2)}`}</span>
+            <span className="chip">{`忆旧值：${agentStateFile.state.nostalgia.toFixed(2)}`}</span>
+            <span className="chip">
+              {agentStateFile.state.current_desire_tag
+                ? `当前渴望：${formatFocusTagLabel(agentStateFile.state.current_desire_tag)}`
+                : "当前渴望：无"}
+            </span>
+          </div>
+          <p>
+            当前最强注意力权重是 {formatAgentStateWeightLabel(strongestAttention.weightKey)}，
+            值为 {strongestAttention.value.toFixed(2)}；最弱的是{" "}
+            {formatAgentStateWeightLabel(weakestAttention.weightKey)}，
+            值为 {weakestAttention.value.toFixed(2)}。
+          </p>
+        </section>
+
+        <section className="info-block">
+          <h3>Prompt 预览</h3>
+          <pre className="state-preview">{promptPreview}</pre>
+        </section>
+      </div>
+
+      <section className="info-block">
+        <h3>核心状态</h3>
+        <div className="form-grid">
+          <label className="field">
+            <span>Primary Emotion</span>
+            <select
+              value={agentStateFile.state.primary_emotion}
+              onChange={(event) => onStateChange({ primary_emotion: event.target.value })}
+            >
+              {PRIMARY_EMOTION_OPTIONS.map((emotion) => (
+                <option key={emotion} value={emotion}>
+                  {formatPrimaryEmotionLabel(emotion)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Player Address</span>
+            <input
+              type="text"
+              value={agentStateFile.state.player_address}
+              onChange={(event) => onStateChange({ player_address: event.target.value })}
+              placeholder="例如 主人 / 朋友 / 锻造者"
+            />
+          </label>
+
+          <label className="field">
+            <span>Emotion Intensity</span>
+            <div className="range-field">
+              <input
+                max={100}
+                min={0}
+                step={1}
+                type="range"
+                value={agentStateFile.state.emotion_intensity}
+                onChange={(event) => onStateChange({ emotion_intensity: Number.parseInt(event.target.value, 10) })}
+              />
+              <strong className="range-field-output">{agentStateFile.state.emotion_intensity}</strong>
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Favorability</span>
+            <div className="range-field">
+              <input
+                max={100}
+                min={-100}
+                step={1}
+                type="range"
+                value={agentStateFile.persona_state.favorability}
+                onChange={(event) =>
+                  onPersonaStateChange({ favorability: Number.parseInt(event.target.value, 10) })
+                }
+              />
+              <strong className="range-field-output">{agentStateFile.persona_state.favorability}</strong>
+            </div>
+            <input
+              max={100}
+              min={-100}
+              step={1}
+              type="number"
+              value={agentStateFile.persona_state.favorability}
+              onChange={(event) => {
+                const nextValue = Number.parseInt(event.target.value, 10);
+                onPersonaStateChange({
+                  favorability: Number.isFinite(nextValue)
+                    ? Math.max(-100, Math.min(100, nextValue))
+                    : agentStateFile.persona_state.favorability
+                });
+              }}
+            />
+          </label>
+
+          <label className="field">
+            <span>Familiarity</span>
+            <input
+              min={0}
+              step={1}
+              type="number"
+              value={agentStateFile.state.familiarity}
+              onChange={(event) => {
+                const nextValue = Number.parseInt(event.target.value, 10);
+                onStateChange({
+                  familiarity: Number.isFinite(nextValue) ? nextValue : agentStateFile.state.familiarity
+                });
+              }}
+            />
+          </label>
+
+          <label className="field">
+            <span>Association Mode</span>
+            <select
+              value={agentStateFile.state.association_mode}
+              onChange={(event) => onStateChange({ association_mode: event.target.value })}
+            >
+              {ASSOCIATION_MODE_OPTIONS.map((mode) => (
+                <option key={mode} value={mode}>
+                  {formatAssociationModeLabel(mode)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Concentration</span>
+            <div className="range-field">
+              <input
+                max={1}
+                min={0}
+                step={0.01}
+                type="range"
+                value={agentStateFile.state.concentration}
+                onChange={(event) => onStateChange({ concentration: Number.parseFloat(event.target.value) })}
+              />
+              <strong className="range-field-output">{agentStateFile.state.concentration.toFixed(2)}</strong>
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Wandering Mind</span>
+            <div className="range-field">
+              <input
+                max={1}
+                min={0}
+                step={0.01}
+                type="range"
+                value={agentStateFile.state.wandering_mind}
+                onChange={(event) => onStateChange({ wandering_mind: Number.parseFloat(event.target.value) })}
+              />
+              <strong className="range-field-output">{agentStateFile.state.wandering_mind.toFixed(2)}</strong>
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Nostalgia</span>
+            <div className="range-field">
+              <input
+                max={1}
+                min={0}
+                step={0.01}
+                type="range"
+                value={agentStateFile.state.nostalgia}
+                onChange={(event) => onStateChange({ nostalgia: Number.parseFloat(event.target.value) })}
+              />
+              <strong className="range-field-output">{agentStateFile.state.nostalgia.toFixed(2)}</strong>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <div className="two-col state-detail-grid">
+        <section className="info-block">
+          <h3>当前渴望</h3>
+          <div className="form-grid state-form-grid">
+            <label className="field">
+              <span>Focus Tag</span>
+              <select
+                value={agentStateFile.state.current_desire_tag ?? ""}
+                onChange={(event) =>
+                  onStateChange({
+                    current_desire_tag: event.target.value ? (event.target.value as FocusTag) : null
+                  })
+                }
+              >
+                <option value="">无</option>
+                {FOCUS_TAGS.map((focusTag) => (
+                  <option key={focusTag} value={focusTag}>
+                    {formatFocusTagLabel(focusTag)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field full">
+              <span>Desire Description</span>
+              <textarea
+                rows={5}
+                value={agentStateFile.state.desire_description}
+                onChange={(event) => onStateChange({ desire_description: event.target.value })}
+                placeholder="例如：想再次经历被认真锻造、被赋予意义的时刻。"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="info-block">
+          <h3>玩家画像</h3>
+          <p className="muted-copy">这一段是剑对持有者的长期主观印象，属于 Persona 的动态部分，但与 state 一起共存在 `agent_state.json`。</p>
+          <label className="field">
+            <span>Player Profile</span>
+            <textarea
+              rows={7}
+              value={agentStateFile.persona_state.player_profile}
+              onChange={(event) => onPersonaStateChange({ player_profile: event.target.value })}
+              placeholder="例如：他做事有些莽撞，但并不轻慢我；更多时候，是把我当真正的同伴。"
+            />
+          </label>
+        </section>
+      </div>
+
+      <section className="info-block">
+        <div className="section-head">
+          <div>
+            <h3>注意力权重</h3>
+            <p className="muted-copy">
+              这里对应游戏内 State Screen 暴露的 attention weights。它们会直接影响当前上下文下 focus 召回的偏置。
+            </p>
+          </div>
+          <span className="badge">{`${AGENT_STATE_WEIGHT_KEYS.length} 项`}</span>
+        </div>
+
+        <div className="two-col state-weight-layout">
+          <AttentionWeightRadarChart weights={agentStateFile.attention_weights} />
+
+          <div className="state-weight-grid">
+            {AGENT_STATE_WEIGHT_KEYS.map((weightKey) => (
+              <label className="field state-weight-card" key={weightKey}>
+                <span>{formatAgentStateWeightLabel(weightKey)}</span>
+                <div className="range-field">
+                  <input
+                    max={10}
+                    min={0}
+                    step={0.05}
+                    type="range"
+                    value={agentStateFile.attention_weights[weightKey]}
+                    onChange={(event) => {
+                      const nextValue = Number.parseFloat(event.target.value);
+                      onAttentionWeightChange(
+                        weightKey,
+                        Number.isFinite(nextValue) ? nextValue : agentStateFile.attention_weights[weightKey]
+                      );
+                    }}
+                  />
+                  <strong className="range-field-output">
+                    {agentStateFile.attention_weights[weightKey].toFixed(2)}
+                  </strong>
+                </div>
+                <input
+                  max={10}
+                  min={0}
+                  step={0.05}
+                  type="number"
+                  value={agentStateFile.attention_weights[weightKey]}
+                  onChange={(event) => {
+                    const nextValue = Number.parseFloat(event.target.value);
+                    onAttentionWeightChange(
+                      weightKey,
+                      Number.isFinite(nextValue) ? nextValue : agentStateFile.attention_weights[weightKey]
+                    );
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AttentionWeightRadarChart({
+  weights
+}: {
+  weights: AgentStateWorkspaceFile["attention_weights"];
+}) {
+  const size = 460;
+  const center = size / 2;
+  const radius = 138;
+  const labelRadius = 186;
+  const ringCount = 5;
+  const maxValue = 10;
+
+  const axes = useMemo(
+    () =>
+      AGENT_STATE_WEIGHT_KEYS.map((weightKey, index) => {
+        const turn = index / AGENT_STATE_WEIGHT_KEYS.length;
+        const axisPoint = polarPoint(center, radius, turn);
+        const labelPoint = polarPoint(center, labelRadius, turn);
+        const valuePoint = polarPoint(center, radius * (weights[weightKey] / maxValue), turn);
+        const textAnchor: "start" | "middle" | "end" =
+          labelPoint.x < center - 12 ? "end" : labelPoint.x > center + 12 ? "start" : "middle";
+
+        return {
+          weightKey,
+          axisPoint,
+          labelPoint,
+          valuePoint,
+          textAnchor
+        };
+      }),
+    [center, labelRadius, radius, weights]
+  );
+
+  const ringPolygons = useMemo(
+    () =>
+      Array.from({ length: ringCount }, (_, index) => {
+        const factor = (index + 1) / ringCount;
+        return AGENT_STATE_WEIGHT_KEYS.map((_, axisIndex) => {
+          const point = polarPoint(center, radius * factor, axisIndex / AGENT_STATE_WEIGHT_KEYS.length);
+          return `${point.x},${point.y}`;
+        }).join(" ");
+      }),
+    [center, radius]
+  );
+
+  const dataPolygon = axes.map((axis) => `${axis.valuePoint.x},${axis.valuePoint.y}`).join(" ");
+
+  return (
+    <div className="state-radar-card">
+      <div className="section-head">
+        <div>
+          <h3>权重雷达图</h3>
+          <p className="muted-copy">半径越长，说明当前焦点越容易在召回中被放大。量程固定为 0.00 到 10.00。</p>
+        </div>
+        <span className="badge muted">Radar</span>
+      </div>
+
+      <div className="state-radar-shell">
+        <svg
+          aria-label="Attention weights radar chart"
+          className="state-radar-chart"
+          role="img"
+          viewBox={`0 0 ${size} ${size}`}
+        >
+          {ringPolygons.map((points, index) => (
+            <polygon
+              className="state-radar-ring"
+              key={`ring-${index + 1}`}
+              points={points}
+            />
+          ))}
+
+          {axes.map((axis) => (
+            <line
+              className="state-radar-axis"
+              key={`axis-${axis.weightKey}`}
+              x1={center}
+              x2={axis.axisPoint.x}
+              y1={center}
+              y2={axis.axisPoint.y}
+            />
+          ))}
+
+          <polygon className="state-radar-shape" points={dataPolygon} />
+
+          {axes.map((axis) => (
+            <circle
+              className="state-radar-point"
+              cx={axis.valuePoint.x}
+              cy={axis.valuePoint.y}
+              key={`point-${axis.weightKey}`}
+              r={4.5}
+            />
+          ))}
+
+          {Array.from({ length: ringCount }, (_, index) => {
+            const value = ((index + 1) * maxValue) / ringCount;
+            return (
+              <text
+                className="state-radar-tick"
+                key={`tick-${value}`}
+                x={center + 8}
+                y={center - (radius * (index + 1)) / ringCount}
+              >
+                {value.toFixed(1)}
+              </text>
+            );
+          })}
+
+          {axes.map((axis) => (
+            <g key={`label-${axis.weightKey}`}>
+              <text
+                className="state-radar-label"
+                textAnchor={axis.textAnchor}
+                x={axis.labelPoint.x}
+                y={axis.labelPoint.y - 2}
+              >
+                {formatAgentStateWeightShortLabel(axis.weightKey)}
+              </text>
+              <text
+                className="state-radar-value"
+                textAnchor={axis.textAnchor}
+                x={axis.labelPoint.x}
+                y={axis.labelPoint.y + 14}
+              >
+                {weights[axis.weightKey].toFixed(2)}
+              </text>
+            </g>
+          ))}
+        </svg>
       </div>
     </div>
   );

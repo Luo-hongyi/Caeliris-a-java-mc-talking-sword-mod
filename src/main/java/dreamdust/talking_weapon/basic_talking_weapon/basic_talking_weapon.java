@@ -3,8 +3,8 @@ package dreamdust.talking_weapon.basic_talking_weapon;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.TickEventWatcher;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfigScreen;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceAutoPublisher;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioHttpBridgeServer;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceWatcherService;
 import net.minecraft.world.item.Item;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -42,9 +42,9 @@ public class basic_talking_weapon {
                 MinecraftForge.EVENT_BUS.register(this);
                 MinecraftForge.EVENT_BUS.register(new ClientEventHandler());
                 MinecraftForge.EVENT_BUS.register(new TickEventWatcher());
-                MinecraftForge.EVENT_BUS.register(new StudioWorkspaceAutoPublisher());
 
                 if (FMLEnvironment.dist == Dist.CLIENT) {
+                        StudioWorkspaceWatcherService.startIfNeeded();
                         StudioHttpBridgeServer.startIfNeeded();
                 }
 

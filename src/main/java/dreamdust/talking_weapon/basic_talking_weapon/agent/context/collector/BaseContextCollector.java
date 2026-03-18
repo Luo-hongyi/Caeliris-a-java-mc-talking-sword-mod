@@ -6,6 +6,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -54,6 +56,39 @@ public class BaseContextCollector implements IContextCollector {
                     scan = scan.below();
                 }
                 builder.extra("ground_level", String.valueOf(groundY));
+
+                String dimensionId = level.dimension().location().toString();
+                LocationRegistry.ResolvedLocation resolvedLocation = LocationRegistry.getInstance()
+                        .resolveCurrentLocation(player.getX(), player.getY(), player.getZ(), dimensionId,
+                                LocationRegistry.DEFAULT_HORIZONTAL_RADIUS, LocationRegistry.DEFAULT_VERTICAL_RADIUS);
+                if (resolvedLocation != null) {
+                    builder.extra("registered_location_name", resolvedLocation.getName());
+                    builder.extra("registered_location_prompt", resolvedLocation.toPromptString());
+
+                    FocusTag locationFocus = FocusTag.LANDSCAPE;
+                    String configuredFocus = resolvedLocation.getEntry().focusTag;
+                    if (configuredFocus != null && !configuredFocus.isBlank()) {
+                        try {
+                            locationFocus = FocusTag.valueOf(configuredFocus.trim());
+                        } catch (IllegalArgumentException ignored) {
+                            locationFocus = FocusTag.LANDSCAPE;
+                        }
+                    }
+
+                    TaggedContextEntry.Builder locationEntry = TaggedContextEntry.builder()
+                            .focus(locationFocus)
+                            .detail(DetailTag.customSpecific(resolvedLocation.getName()))
+                            .description("主人当前位于已登记地点: " + resolvedLocation.getName())
+                            .importance(ImportanceRegistry.getInstance().get("base:registered_location", 0.28f));
+                    for (String rawTag : resolvedLocation.getEntry().getParsedDetailTags()) {
+                        try {
+                            locationEntry.detail(TagPolicy.parseRegisteredTag(rawTag));
+                        } catch (IllegalArgumentException ignored) {
+                            // 跳过非法或未登记的 location 附带标签，避免中断整次上下文采集。
+                        }
+                    }
+                    builder.addTaggedEntry(locationEntry.build());
+                }
             }
 
             // ── 标签：生命状态 ──

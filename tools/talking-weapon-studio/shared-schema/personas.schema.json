@@ -49,7 +49,7 @@
       "additionalProperties": false,
       "required": [
         "id",
-        "associated_focus",
+        "focus_tags",
         "description"
       ],
       "properties": {
@@ -62,8 +62,14 @@
           "type": "boolean",
           "description": "Optional Studio-side enable flag."
         },
-        "associated_focus": {
-          "$ref": "#/$defs/focusTag"
+        "focus_tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/focusTag"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "One or more focus tags. A persona with multiple focus tags appears under every matching focus group."
         },
         "description": {
           "type": "string",

@@ -17,7 +17,7 @@ import java.util.*;
 /**
  * DetailTag 到自然语言描述的映射字典。
  * <p>
- * 从 {@code config/talking_weapon/tag_descriptions.json} 加载，
+ * 从 {@code config/talking_weapon/studio_workspace/tag_descriptions.json} 加载，
  * 首次运行时自动从 jar 内资源复制默认配置。
  * <p>
  * <b>用途</b>：在组装 LLM Prompt 时，将机器可读的标签（如 {@code custom_specific:health_critical}）

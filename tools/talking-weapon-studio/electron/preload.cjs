@@ -31,6 +31,24 @@ contextBridge.exposeInMainWorld("talkingWeaponDesktop", {
     return ipcRenderer.invoke("talking-weapon:pick-workspace-directory", mode);
   },
 
+  startWorkspaceWatcher(rootPath) {
+    return ipcRenderer.invoke("talking-weapon:start-workspace-watcher", rootPath);
+  },
+
+  stopWorkspaceWatcher() {
+    return ipcRenderer.invoke("talking-weapon:stop-workspace-watcher");
+  },
+
+  onWorkspaceChanged(listener) {
+    const wrapped = (_event, payload) => {
+      listener(payload);
+    };
+    ipcRenderer.on("talking-weapon:workspace-changed", wrapped);
+    return () => {
+      ipcRenderer.removeListener("talking-weapon:workspace-changed", wrapped);
+    };
+  },
+
   async readTextFile(rootPath, relativePath) {
     try {
       const targetPath = resolveWorkspacePath(rootPath, relativePath);

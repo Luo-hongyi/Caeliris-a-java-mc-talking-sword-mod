@@ -28,7 +28,7 @@ import java.util.function.Predicate;
  * <p>
  * 记忆分两级存储：
  * <ul>
- *   <li><b>全局配置（Global Implanted LTMs）</b>：存放在 {@code config/talking_weapon/implanted_memories.json}
+ *   <li><b>全局配置（Global Implanted LTMs）</b>：存放在 {@code config/talking_weapon/studio_workspace/implanted_memories.json}
  *       这些记忆跨地图通用，视为人设和出厂设定的补充，带有 SourceType.IMPLANTED 属性。</li>
  *   <li><b>存档级配置（World Synthesized LTMs）</b>：<i>（即将开发）</i>将保存在 world 文件夹下。</li>
  * </ul>

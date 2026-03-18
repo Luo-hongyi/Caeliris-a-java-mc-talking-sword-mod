@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://talking-weapon.dev/schema/agent_state.schema.json",
+  "title": "Talking Weapon Agent State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "state",
+    "persona_state",
+    "attention_weights"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_emotion",
+        "emotion_intensity",
+        "familiarity",
+        "player_address",
+        "concentration",
+        "wandering_mind",
+        "nostalgia",
+        "association_mode",
+        "desire_description"
+      ],
+      "properties": {
+        "primary_emotion": {
+          "type": "string"
+        },
+        "emotion_intensity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "familiarity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "player_address": {
+          "type": "string"
+        },
+        "concentration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "wandering_mind": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "nostalgia": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "association_mode": {
+          "type": "string"
+        },
+        "current_desire_tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "desire_description": {
+          "type": "string"
+        }
+      }
+    },
+    "persona_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "favorability",
+        "player_profile"
+      ],
+      "properties": {
+        "favorability": {
+          "type": "integer",
+          "minimum": -100,
+          "maximum": 100
+        },
+        "player_profile": {
+          "type": "string"
+        }
+      }
+    },
+    "attention_weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "combat",
+        "movement",
+        "labor",
+        "creation",
+        "creature",
+        "social",
+        "landscape",
+        "hazard",
+        "status",
+        "consumable",
+        "block",
+        "tool"
+      ],
+      "properties": {
+        "combat": { "type": "number", "minimum": 0, "maximum": 10 },
+        "movement": { "type": "number", "minimum": 0, "maximum": 10 },
+        "labor": { "type": "number", "minimum": 0, "maximum": 10 },
+        "creation": { "type": "number", "minimum": 0, "maximum": 10 },
+        "creature": { "type": "number", "minimum": 0, "maximum": 10 },
+        "social": { "type": "number", "minimum": 0, "maximum": 10 },
+        "landscape": { "type": "number", "minimum": 0, "maximum": 10 },
+        "hazard": { "type": "number", "minimum": 0, "maximum": 10 },
+        "status": { "type": "number", "minimum": 0, "maximum": 10 },
+        "consumable": { "type": "number", "minimum": 0, "maximum": 10 },
+        "block": { "type": "number", "minimum": 0, "maximum": 10 },
+        "tool": { "type": "number", "minimum": 0, "maximum": 10 }
+      }
+    }
+  }
+}

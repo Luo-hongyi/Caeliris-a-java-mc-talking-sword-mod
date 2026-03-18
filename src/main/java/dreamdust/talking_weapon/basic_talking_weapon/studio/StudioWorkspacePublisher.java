@@ -1,10 +1,12 @@
 package dreamdust.talking_weapon.basic_talking_weapon.studio;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.CustomTagRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagRelationDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaStorage;
 
 import java.io.IOException;
@@ -32,17 +34,20 @@ public final class StudioWorkspacePublisher {
     private StudioWorkspacePublisher() {
     }
 
-    public static PublishResult publishWorkspace() {
+    public static synchronized PublishResult publishWorkspace() {
         Path workspaceRoot = StudioWorkspaceExporter.getWorkspaceRoot();
         if (!Files.isDirectory(workspaceRoot)) {
             throw new IllegalStateException("Studio workspace directory does not exist: " + workspaceRoot);
         }
 
+        LocationRegistry.getInstance();
         Path workspaceCustomTags = requireWorkspaceFile(workspaceRoot, "custom_tags.json");
         Path workspaceDescriptions = requireWorkspaceFile(workspaceRoot, "tag_descriptions.json");
         Path workspaceRelations = requireWorkspaceFile(workspaceRoot, "tag_relations.json");
         Path workspacePersonas = requireWorkspaceFile(workspaceRoot, "personas.json");
         Path workspaceMemories = requireWorkspaceFile(workspaceRoot, "implanted_memories.json");
+        Path workspaceAgentState = requireWorkspaceFile(workspaceRoot, "agent_state.json");
+        Path workspaceLocations = requireWorkspaceFile(workspaceRoot, "location_registry.json");
 
         try {
             List<CustomTagRegistry.CustomTagEntry> customTags = CustomTagRegistry.readEntries(workspaceCustomTags);
@@ -53,6 +58,8 @@ public final class StudioWorkspacePublisher {
             int relationCount = TagRelationDictionary.readEdges(workspaceRelations, customTagLookup).size();
             int personaCount = PersonaStorage.readEntries(workspacePersonas, customTagLookup).size();
             int memoryCount = LTMStorage.validateConfig(workspaceMemories, customTagLookup);
+            AgentStateStorage.validateConfig(workspaceAgentState);
+            int locationCount = LocationRegistry.readEntries(workspaceLocations).size();
 
             List<String> publishedFiles = new ArrayList<>();
             publishedFiles.add(workspaceCustomTags.getFileName().toString());
@@ -60,6 +67,8 @@ public final class StudioWorkspacePublisher {
             publishedFiles.add(workspaceRelations.getFileName().toString());
             publishedFiles.add(workspacePersonas.getFileName().toString());
             publishedFiles.add(workspaceMemories.getFileName().toString());
+            publishedFiles.add(workspaceAgentState.getFileName().toString());
+            publishedFiles.add(workspaceLocations.getFileName().toString());
 
             acknowledgeWorkspaceManifest();
 
@@ -68,9 +77,11 @@ public final class StudioWorkspacePublisher {
             TagRelationDictionary.reload();
             AgentRuntime.getInstance().getPersona().reloadStudioPersonaEntries();
             AgentRuntime.getInstance().getMemory().reloadImplantedMemories();
+            AgentStateStorage.loadIntoRuntime(AgentRuntime.getInstance().getState(), AgentRuntime.getInstance().getPersona());
+            LocationRegistry.reload();
 
             return new PublishResult(workspaceRoot, publishedFiles, customTags.size(), descriptionCount, relationCount,
-                    personaCount, memoryCount);
+                    personaCount, memoryCount, locationCount);
         } catch (IOException e) {
             throw new RuntimeException("Failed to publish Studio workspace", e);
         }
@@ -103,9 +114,10 @@ public final class StudioWorkspacePublisher {
         public final int relationCount;
         public final int personaCount;
         public final int memoryCount;
+        public final int locationCount;
 
         public PublishResult(Path workspaceRoot, List<String> publishedFiles, int customTagCount,
-                int descriptionCount, int relationCount, int personaCount, int memoryCount) {
+                int descriptionCount, int relationCount, int personaCount, int memoryCount, int locationCount) {
             this.workspaceRoot = workspaceRoot;
             this.publishedFiles = List.copyOf(publishedFiles);
             this.customTagCount = customTagCount;
@@ -113,6 +125,7 @@ public final class StudioWorkspacePublisher {
             this.relationCount = relationCount;
             this.personaCount = personaCount;
             this.memoryCount = memoryCount;
+            this.locationCount = locationCount;
         }
     }
 }

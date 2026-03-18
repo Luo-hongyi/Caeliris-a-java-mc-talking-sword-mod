@@ -13,6 +13,20 @@ export type FocusTag =
   | "TOOL"
   | "COMMON";
 
+export type AgentStateWeightKey =
+  | "combat"
+  | "movement"
+  | "labor"
+  | "creation"
+  | "creature"
+  | "social"
+  | "landscape"
+  | "hazard"
+  | "status"
+  | "consumable"
+  | "block"
+  | "tool";
+
 export type DetailTagKind =
   | "native_specific"
   | "native_generic"
@@ -39,7 +53,8 @@ export interface DescriptionEntry {
 export interface PersonaEntry {
   id: string;
   enabled?: boolean;
-  associated_focus: FocusTag;
+  focus_tags: FocusTag[];
+  associated_focus?: FocusTag;
   description: string;
   always_recalled?: boolean;
   detail_tags?: string[];
@@ -58,6 +73,39 @@ export interface ImplantedMemoryEntry {
   occurred_game_time?: number;
   time_label?: string;
   notes?: string;
+}
+
+export interface AgentStateFile {
+  schemaVersion: number;
+  state: {
+    primary_emotion: string;
+    emotion_intensity: number;
+    familiarity: number;
+    player_address: string;
+    concentration: number;
+    wandering_mind: number;
+    nostalgia: number;
+    association_mode: string;
+    current_desire_tag?: FocusTag | null;
+    desire_description: string;
+  };
+  persona_state: {
+    favorability: number;
+    player_profile: string;
+  };
+  attention_weights: Record<AgentStateWeightKey, number>;
+}
+
+export interface LocationRegistryEntry {
+  x: number;
+  y: number;
+  z: number;
+  dim: string;
+  note?: string;
+  horizontalRadius?: number;
+  verticalRadius?: number;
+  focusTag?: FocusTag | "";
+  detailTags?: string[];
 }
 
 export interface NativeCatalogEntry {

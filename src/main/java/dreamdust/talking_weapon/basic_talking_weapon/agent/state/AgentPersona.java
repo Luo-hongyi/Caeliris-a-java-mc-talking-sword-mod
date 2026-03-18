@@ -94,12 +94,13 @@ public class AgentPersona {
     }
 
     /**
-     * 返回指定 Focus 下的所有 persona 条目。
+     * 返回包含指定 Focus 的所有 persona 条目。
+     * 多 focus persona 会同时出现在多个 focus 分组中。
      */
     public List<PersonaEntry> getPersonaEntriesByFocus(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag tag) {
         List<PersonaEntry> result = new ArrayList<>();
         for (PersonaEntry t : personaEntries) {
-            if (tag == t.getAssociatedFocus())
+            if (t.hasFocus(tag))
                 result.add(t);
         }
         return result;

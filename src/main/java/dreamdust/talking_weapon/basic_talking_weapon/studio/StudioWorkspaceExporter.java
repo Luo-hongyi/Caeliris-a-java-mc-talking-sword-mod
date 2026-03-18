@@ -3,9 +3,12 @@ package dreamdust.talking_weapon.basic_talking_weapon.studio;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.CustomTagRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagRelationDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaStorage;
 
 import java.io.IOException;
@@ -37,9 +40,13 @@ public final class StudioWorkspaceExporter {
     }
 
     public static ExportResult exportWorkspace() {
+        AgentStateStorage.flushSaveRuntimeState(
+                AgentRuntime.getInstance().getState(),
+                AgentRuntime.getInstance().getPersona());
         CustomTagRegistry.getInstance();
         LTMStorage.loadGlobalImplantedMemories();
         PersonaStorage.loadRuntimePersonas();
+        LocationRegistry.getInstance();
         NativeCatalogSnapshotExporter.ExportResult snapshot = NativeCatalogSnapshotExporter.exportSnapshot();
         StudioRuntimeTagViewExporter.ExportResult runtimeTagView = StudioRuntimeTagViewExporter.exportMergedView();
         NativeCatalogIconExporter.ExportResult icons = NativeCatalogIconExporter.exportAllIcons();
@@ -59,10 +66,14 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(TagRelationDictionary.getConfigPath().getFileName()), exportedFiles);
             copyFile(LTMStorage.getGlobalConfigPath(),
                     workspaceRoot.resolve(LTMStorage.getGlobalConfigPath().getFileName()), exportedFiles);
+            copyFile(AgentStateStorage.getConfigPath(),
+                    workspaceRoot.resolve(AgentStateStorage.getConfigPath().getFileName()), exportedFiles);
             copyFile(CustomTagRegistry.getConfigPath(),
                     workspaceRoot.resolve(CustomTagRegistry.getConfigPath().getFileName()), exportedFiles);
             copyFile(PersonaStorage.getConfigPath(),
                     workspaceRoot.resolve(PersonaStorage.getConfigPath().getFileName()), exportedFiles);
+            copyFile(LocationRegistry.getConfigPath(),
+                    workspaceRoot.resolve(LocationRegistry.getConfigPath().getFileName()), exportedFiles);
 
             writeManifest(StudioWorkspaceManifestFile.getPath(), snapshot, runtimeTagView, icons, exportedFiles);
             return new ExportResult(workspaceRoot, exportedFiles.size(), snapshot.entryCount,
@@ -172,6 +183,8 @@ public final class StudioWorkspaceExporter {
         versions.put("relations", lastModifiedToken(getWorkspaceRoot().resolve("tag_relations.json")));
         versions.put("personas", lastModifiedToken(getWorkspaceRoot().resolve("personas.json")));
         versions.put("memories", lastModifiedToken(getWorkspaceRoot().resolve("implanted_memories.json")));
+        versions.put("agentState", lastModifiedToken(getWorkspaceRoot().resolve("agent_state.json")));
+        versions.put("locations", lastModifiedToken(getWorkspaceRoot().resolve("location_registry.json")));
         versions.put("iconsDirectory", directoryLastModifiedToken(getWorkspaceRoot().resolve("native_catalog_icons")));
         return versions;
     }

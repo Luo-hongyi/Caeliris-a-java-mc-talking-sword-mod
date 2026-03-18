@@ -4,9 +4,15 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.AssociationMode;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.PrimaryEmotion;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePublisher;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -20,6 +26,8 @@ import net.minecraft.network.chat.Component;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.nio.file.Path;
 
 /**
  * Agent 主概览界面：显示并编辑当前 AgentState 和 AgentPersona 的核心字段。
@@ -47,7 +55,7 @@ public class AgentStateScreen extends Screen {
     private EditBox favorabilityBox;
 
     // 注意力权重编辑框
-    private EditBox wCombat, wMovement, wLabor, wCreation, wSocial;
+    private EditBox wCombat, wMovement, wLabor, wCreation, wCreature, wSocial;
     private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool;
 
     // 思维特性编辑引用
@@ -153,6 +161,8 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new BoxRow("LABOR 劳作", left, rowWidth, wLabor));
         wCreation = weightBox(TalkingWeaponConfig.WEIGHT_CREATION.get());
         scrollList.addEntry(new BoxRow("CREATION 创造", left, rowWidth, wCreation));
+        wCreature = weightBox(TalkingWeaponConfig.WEIGHT_CREATURE.get());
+        scrollList.addEntry(new BoxRow("CREATURE 生物", left, rowWidth, wCreature));
         wSocial = weightBox(TalkingWeaponConfig.WEIGHT_SOCIAL.get());
         scrollList.addEntry(new BoxRow("SOCIAL 社交", left, rowWidth, wSocial));
         wLandscape = weightBox(TalkingWeaponConfig.WEIGHT_LANDSCAPE.get());
@@ -213,11 +223,43 @@ public class AgentStateScreen extends Screen {
         desireDescBox = editBox("渴望描述", state.getDesireDescription(), 64);
         scrollList.addEntry(new BoxRow("渴望描述", left, rowWidth, desireDescBox));
 
+        scrollList.addEntry(new LabelRow("§b▸ Studio 工作区"));
+
+        Button connectStudioWorkspace = Button.builder(Component.literal("建立连接"), btn -> {
+            try {
+                StudioWorkspacePaths.ensureWorkspaceRootExists();
+                Util.getPlatform().openUri(StudioWorkspaceExporter.getWorkspaceRoot().toUri());
+                btn.setMessage(Component.literal("§a已打开工作区"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "connect studio workspace", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button exportStudioWorkspace = Button.builder(Component.literal("手动导出"), btn -> {
+            try {
+                StudioWorkspaceExporter.ExportResult result = StudioWorkspaceExporter.exportWorkspace();
+                btn.setMessage(Component.literal("§a已导出 " + result.fileCount + " 项"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "export studio workspace", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        Button publishStudioWorkspace = Button.builder(Component.literal("手动读取"), btn -> {
+            try {
+                StudioWorkspacePublisher.PublishResult result = StudioWorkspacePublisher.publishWorkspace();
+                btn.setMessage(Component.literal("§a已读取 " + result.publishedFiles.size() + " 项"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "publish studio workspace", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        scrollList.addEntry(new ThreeButtonActionRow(left, rowWidth, connectStudioWorkspace, exportStudioWorkspace, publishStudioWorkspace));
+
         // ── 底部导航按钮 ──
         int btnY = height - FOOTER_HEIGHT + 8;
         int btnW = 82;
         int gap = 6;
-        int totalW = btnW * 5 + gap * 4;
+        int totalW = btnW * 4 + gap * 3;
         int bx = (width - totalW) / 2;
 
         addRenderableWidget(Button.builder(Component.literal("§6玩家画像 →"), btn -> {
@@ -235,19 +277,10 @@ public class AgentStateScreen extends Screen {
             minecraft.setScreen(new AgentLocationRegistryScreen(this));
         }).bounds(bx + (btnW + gap) * 2, btnY, btnW, 20).build());
 
-        addRenderableWidget(Button.builder(Component.literal("§6📝 植入配置"), btn -> {
-            save();
-            java.io.File cfgFile = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("talking_weapon/implanted_memories.json").toFile();
-            if (!cfgFile.exists()) {
-                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage.loadGlobalImplantedMemories();
-            }
-            net.minecraft.Util.getPlatform().openFile(cfgFile);
-        }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
-
         addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
             save();
             minecraft.setScreen(parent);
-        }).bounds(bx + (btnW + gap) * 4, btnY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 3, btnY, btnW, 20).build());
     }
 
     private EditBox editBox(String hint, String value, int maxLen) {
@@ -300,6 +333,7 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_MOVEMENT, wMovement);
         setWeight(TalkingWeaponConfig.WEIGHT_LABOR, wLabor);
         setWeight(TalkingWeaponConfig.WEIGHT_CREATION, wCreation);
+        setWeight(TalkingWeaponConfig.WEIGHT_CREATURE, wCreature);
         setWeight(TalkingWeaponConfig.WEIGHT_SOCIAL, wSocial);
         setWeight(TalkingWeaponConfig.WEIGHT_LANDSCAPE, wLandscape);
         setWeight(TalkingWeaponConfig.WEIGHT_HAZARD, wHazard);
@@ -308,6 +342,7 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_BLOCK, wBlock);
         setWeight(TalkingWeaponConfig.WEIGHT_TOOL, wTool);
         TalkingWeaponConfig.SPEC.save();
+        AgentStateStorage.flushSaveRuntimeState(state, persona);
 
         // 当用户编辑了配置文本并回到控制面板点击"保存"时，立即热重载记忆池
         AgentRuntime.getInstance().getMemory().reloadImplantedMemories();
@@ -319,6 +354,41 @@ public class AgentStateScreen extends Screen {
             cfg.set(Math.max(0.0, Math.min(10.0, v)));
         } catch (NumberFormatException ignored) {
         }
+    }
+
+    private static void handleStudioActionError(Button button, String action, Exception error) {
+        Path studioLogPath = StudioErrorLogger.log(action, error);
+        String reason = shortErrorReason(error);
+        button.setMessage(Component.literal("§c失败: " + reason));
+        if (studioLogPath != null) {
+            System.err.println("[TalkingWeapon/Studio] Failed to " + action + ": " + error
+                    + " | detailed log: " + studioLogPath.toAbsolutePath());
+        } else {
+            System.err.println("[TalkingWeapon/Studio] Failed to " + action + ": " + error);
+        }
+        error.printStackTrace();
+    }
+
+    private static String shortErrorReason(Throwable error) {
+        if (error == null) {
+            return "unknown";
+        }
+
+        Throwable leaf = error;
+        while (leaf.getCause() != null && leaf.getCause() != leaf) {
+            leaf = leaf.getCause();
+        }
+
+        String message = leaf.getMessage();
+        if (message == null || message.isBlank()) {
+            message = leaf.getClass().getSimpleName();
+        }
+
+        message = message.replace('\n', ' ').replace('\r', ' ').trim().toLowerCase(Locale.ROOT);
+        if (message.length() > 18) {
+            message = message.substring(0, 18);
+        }
+        return message;
     }
 
     @Override
@@ -471,6 +541,50 @@ public class AgentStateScreen extends Screen {
         @Override
         public List<? extends NarratableEntry> narratables() {
             return List.of(w1, wMid, w2);
+        }
+    }
+
+    private class ThreeButtonActionRow extends StateScrollList.Row {
+        private final int rowWidth;
+        private final AbstractWidget w1, w2, w3;
+
+        ThreeButtonActionRow(int rowLeft, int rowWidth, AbstractWidget w1, AbstractWidget w2, AbstractWidget w3) {
+            this.rowWidth = rowWidth;
+            this.w1 = w1;
+            this.w2 = w2;
+            this.w3 = w3;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
+                int mx, int my, boolean hov, float delta) {
+            int gap = 4;
+            int thirdW = (rowWidth - 8 - gap * 2) / 3;
+
+            w1.setX(left + 4);
+            w1.setY(top + 2);
+            w1.setWidth(thirdW);
+            w1.render(g, mx, my, delta);
+
+            w2.setX(left + 4 + thirdW + gap);
+            w2.setY(top + 2);
+            w2.setWidth(thirdW);
+            w2.render(g, mx, my, delta);
+
+            w3.setX(left + 4 + (thirdW + gap) * 2);
+            w3.setY(top + 2);
+            w3.setWidth(thirdW);
+            w3.render(g, mx, my, delta);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(w1, w2, w3);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(w1, w2, w3);
         }
     }
 }

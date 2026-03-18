@@ -5,6 +5,8 @@
 `collector` 包存放所有 **上下文采集器（Context Collector）** 的实现。  
 每个采集器负责采集一类游戏信息，写入 `AgentContext.Builder` 的 `extras` 字段和/或 `TaggedContextEntry` 标签条目。
 
+如果要追踪“某个标签是怎么判出来的”“阈值写在哪”“当前有哪些已知误判”，优先看 [DETECTION_LOGIC.md](DETECTION_LOGIC.md)。
+
 ## 标签系统 (Tag System)
 
 ### 双轨标签体系
@@ -67,6 +69,13 @@
 | `NearbyStructureCollector` | 探测玩家周边的群系结构 | `native_specific:*` |
 | `NearbyPoiCollector` | 探测周围的村庄职业工作台与床铺门户 | `custom_specific:*` |
 | `LookingAtCollector` | 玩家视线正中锁定的方块或实体 | `native_specific:*` |
+
+补充说明：
+- `BaseContextCollector` 现在会额外尝试把玩家当前位置与 `location_registry.json` 做近邻匹配。
+- 匹配范围不再是全局常量，而是由每个地点自己的 `horizontalRadius / verticalRadius` 条目决定；旧条目缺省时会自动回落到 `24 / 16`。
+- 命中后会同时产出两层信息：
+  - `extras.registered_location_prompt`：作为常驻环境语义直接进入 Prompt。
+  - `TaggedContextEntry(detail=custom_specific:<location_name>)`：作为普通上下文标签参与权重、Persona、LTM 与 relation 链路。
 
 ## 如何新增采集器
 
