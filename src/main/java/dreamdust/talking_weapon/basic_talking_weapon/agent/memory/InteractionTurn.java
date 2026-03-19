@@ -25,15 +25,21 @@ public final class InteractionTurn {
     /** Agent 基于此 Prompt 产出的所有行为（如开口说话、内心独白等） */
     private final List<AgentOutputRecord> agentActions;
 
+    /** 本回合触发过的动作类型摘要（如 speech / inner_monologue / favorability_update） */
+    private final List<String> actionTypes;
+
     /** 回合发生时间戳 */
     private final long timestamp;
 
-    public InteractionTurn(String triggerSource, String userPrompt, String userScreenshotBase64, List<AgentOutputRecord> agentActions) {
+    public InteractionTurn(String triggerSource, String userPrompt, String userScreenshotBase64,
+            List<AgentOutputRecord> agentActions, List<String> actionTypes) {
         this.triggerSource = triggerSource;
         this.userPrompt = userPrompt;
         this.userScreenshotBase64 = userScreenshotBase64;
         this.agentActions = agentActions == null ? Collections.emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(agentActions));
+        this.actionTypes = actionTypes == null ? Collections.emptyList()
+                : Collections.unmodifiableList(new ArrayList<>(actionTypes));
         this.timestamp = System.currentTimeMillis();
     }
 
@@ -41,6 +47,7 @@ public final class InteractionTurn {
     public String getUserPrompt() { return userPrompt; }
     public String getUserScreenshotBase64() { return userScreenshotBase64; }
     public List<AgentOutputRecord> getAgentActions() { return agentActions; }
+    public List<String> getActionTypes() { return actionTypes; }
     public long getTimestamp() { return timestamp; }
 
     /** 是否有图像输入 */
@@ -52,6 +59,6 @@ public final class InteractionTurn {
     public String toString() {
         String promptPreview = userPrompt == null ? "null"
                 : (userPrompt.length() > 20 ? userPrompt.substring(0, 20) + "..." : userPrompt);
-        return "Turn[" + triggerSource + " | " + promptPreview + " | Actions: " + agentActions.size() + "]";
+        return "Turn[" + triggerSource + " | " + promptPreview + " | Actions: " + actionTypes + "]";
     }
 }

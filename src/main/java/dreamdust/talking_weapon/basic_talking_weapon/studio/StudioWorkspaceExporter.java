@@ -74,6 +74,10 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(PersonaStorage.getConfigPath().getFileName()), exportedFiles);
             copyFile(LocationRegistry.getConfigPath(),
                     workspaceRoot.resolve(LocationRegistry.getConfigPath().getFileName()), exportedFiles);
+            copyFile(StudioRuntimeRecentInteractionsFile.getPath(),
+                    workspaceRoot.resolve(StudioRuntimeRecentInteractionsFile.getPath().getFileName()), exportedFiles);
+            copyFile(StudioRuntimeRecallTraceFile.getPath(),
+                    workspaceRoot.resolve(StudioRuntimeRecallTraceFile.getPath().getFileName()), exportedFiles);
 
             writeManifest(StudioWorkspaceManifestFile.getPath(), snapshot, runtimeTagView, icons, exportedFiles);
             return new ExportResult(workspaceRoot, exportedFiles.size(), snapshot.entryCount,
@@ -178,6 +182,8 @@ public final class StudioWorkspaceExporter {
         LinkedHashMap<String, String> versions = new LinkedHashMap<>(StudioWorkspaceManifestFile.createEmptyVersions());
         versions.put("snapshot", lastModifiedToken(getWorkspaceRoot().resolve("native_catalog.snapshot.json")));
         versions.put("runtimeTagView", lastModifiedToken(getWorkspaceRoot().resolve("studio_runtime_tag_view.json")));
+        versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
+        versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
         versions.put("customTags", lastModifiedToken(getWorkspaceRoot().resolve("custom_tags.json")));
         versions.put("descriptions", lastModifiedToken(getWorkspaceRoot().resolve("tag_descriptions.json")));
         versions.put("relations", lastModifiedToken(getWorkspaceRoot().resolve("tag_relations.json")));

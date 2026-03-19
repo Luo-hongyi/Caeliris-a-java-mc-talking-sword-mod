@@ -29,10 +29,22 @@ import {
   LocationRegistryEntry,
   NativeCatalogEntry,
   PersonaEntry,
+  RuntimeRecallTraceFile,
+  RuntimeRecentInteractionsFile,
   TagRecord
 } from "./types";
 
-type PageId = "catalog" | "descriptions" | "relations" | "persona" | "memory" | "state" | "locations";
+type PageId =
+  | "catalog"
+  | "descriptions"
+  | "relations"
+  | "persona"
+  | "memory"
+  | "state"
+  | "thoughts"
+  | "interactions"
+  | "recallGraph"
+  | "locations";
 type CustomTagKind = Extract<DetailTagKind, "custom_specific" | "custom_generic">;
 type RelationBatchOperation = "add" | "remove";
 type TagBrowserCategoryId =
@@ -121,6 +133,18 @@ type RelationMode =
   | { mode: "create"; draft: RelationDraft }
   | { mode: "edit"; originalSourceTag: string; draft: RelationDraft };
 
+type RuntimeThoughtEntry = {
+  id: string;
+  interactionTimestamp: number;
+  outputTimestamp: number;
+  triggerSource: string;
+  userPrompt: string;
+  hasImage: boolean;
+  text: string;
+  speechText: string;
+  actionTypes: string[];
+};
+
 type CustomTagRow = {
   entry: CustomTagEntry;
   id: string;
@@ -200,6 +224,8 @@ type WorkspaceDebugInfo = {
 
 type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
+  runtimeInteractions?: RuntimeRecentInteractionsFile | null;
+  runtimeRecallTrace?: RuntimeRecallTraceFile | null;
   customTags?: CustomTagsFile | null;
   descriptions?: TagDescriptionsFile | null;
   relations?: TagRelationsFile | null;
@@ -214,6 +240,8 @@ type WorkspaceManifestWriter = "minecraft" | "studio" | "unknown";
 type WorkspaceManifestVersions = {
   snapshot: string;
   runtimeTagView: string;
+  runtimeInteractions: string;
+  runtimeRecallTrace: string;
   customTags: string;
   descriptions: string;
   relations: string;
@@ -242,7 +270,7 @@ type WorkspaceImportDescriptor = {
 const CUSTOM_TAG_KINDS: DetailTagKind[] = ["custom_specific", "custom_generic"];
 const TAG_BROWSER_RESULT_LIMIT = 96;
 const TAG_BROWSER_SIDEBAR_PAGE_SIZE = 24;
-const DESCRIPTION_PAGE_SIZE = 32;
+const DESCRIPTION_PAGE_SIZE = 7;
 const TAG_BROWSER_CATEGORY_ORDER: TagBrowserCategoryId[] = [
   "custom",
   "item",
@@ -313,6 +341,9 @@ const pages: Array<{ id: PageId; label: string; blurb: string }> = [
   { id: "descriptions", label: "Descriptions", blurb: "统一编辑所有 tag 的自然语言 description。" },
   { id: "relations", label: "Relations", blurb: "管理标签联动引用图、环检测与正则批量操作。" },
   { id: "state", label: "State", blurb: "编辑 agent_state.json，与游戏内 state screen 共用同一份 authored 状态。" },
+  { id: "thoughts", label: "Thoughts", blurb: "查看每次 inner monologue 的完整记录，而不只看最近一次。" },
+  { id: "interactions", label: "Turns", blurb: "按回合查看触发记录、说话输出与 action 列表。" },
+  { id: "recallGraph", label: "Recall Graph", blurb: "展示最近一次记忆联想的思维导图、触发 tags 与 trace。" },
   { id: "persona", label: "Persona", blurb: "按 focus 管理人格偏好描述与其 detail tags。" },
   { id: "memory", label: "Memory", blurb: "编辑植入记忆、独立时间语义与标签。" },
   { id: "locations", label: "Locations", blurb: "管理 location_registry.json，与游戏内地点注册共用同一份 authored 文件。" }
@@ -338,7 +369,7 @@ const EMPTY_MEMORY_DRAFT: MemoryDraft = {
   semantic_time_tag: "",
   detail_tags: [],
   importance: "",
-  occurred_game_time: "",
+  occurred_game_time: "-1",
   notes: ""
 };
 
@@ -433,8 +464,37 @@ function createSeedNativeCatalogSnapshot(): NativeCatalogSnapshotFile {
   };
 }
 
+function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFile {
+  return {
+    schemaVersion: 1,
+    generatedAt: "",
+    entries: []
+  };
+}
+
+function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
+  return {
+    schemaVersion: 1,
+    generatedAt: "",
+    triggerSource: "",
+    userPrompt: "",
+    associationMode: "",
+    currentDesireTag: "",
+    triggerTags: [],
+    traceLines: [],
+    visibleContexts: [],
+    recalledMemories: []
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringArrayOf(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+    : [];
 }
 
 function isNativeCatalogEntryArray(value: unknown): value is NativeCatalogEntry[] {
@@ -719,7 +779,7 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
           : "主人",
       concentration: clampNumber(file.state.concentration, 0, 1),
       wandering_mind: clampNumber(file.state.wandering_mind, 0, 1),
-      nostalgia: clampNumber(file.state.nostalgia, 0, 1),
+      nostalgia: clampNumber(file.state.nostalgia, 0, 2),
       association_mode:
         typeof file.state.association_mode === "string" && file.state.association_mode.trim()
           ? file.state.association_mode.trim().toUpperCase()
@@ -763,6 +823,75 @@ function normalizeNativeCatalogSnapshotFile(value: unknown): NativeCatalogSnapsh
   };
 }
 
+function normalizeRuntimeRecentInteractionsFile(value: unknown): RuntimeRecentInteractionsFile | null {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    entries: value.entries
+      .filter(isRecord)
+      .map((entry) => ({
+        timestamp: typeof entry.timestamp === "number" ? entry.timestamp : 0,
+        triggerSource: typeof entry.triggerSource === "string" ? entry.triggerSource : "",
+        userPrompt: typeof entry.userPrompt === "string" ? entry.userPrompt : "",
+        hasImage: entry.hasImage === true,
+        actionTypes: stringArrayOf(entry.actionTypes),
+        outputs: Array.isArray(entry.outputs)
+          ? entry.outputs
+              .filter(isRecord)
+              .map((output) => ({
+                type: typeof output.type === "string" ? output.type : "",
+                text: typeof output.text === "string" ? output.text : "",
+                timestamp: typeof output.timestamp === "number" ? output.timestamp : 0
+              }))
+          : []
+      }))
+  };
+}
+
+function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    triggerSource: typeof value.triggerSource === "string" ? value.triggerSource : "",
+    userPrompt: typeof value.userPrompt === "string" ? value.userPrompt : "",
+    associationMode: typeof value.associationMode === "string" ? value.associationMode : "",
+    currentDesireTag: typeof value.currentDesireTag === "string" ? value.currentDesireTag : "",
+    triggerTags: stringArrayOf(value.triggerTags),
+    traceLines: stringArrayOf(value.traceLines),
+    visibleContexts: Array.isArray(value.visibleContexts)
+      ? value.visibleContexts
+          .filter(isRecord)
+          .map((entry) => ({
+            description: typeof entry.description === "string" ? entry.description : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            detailTags: stringArrayOf(entry.detailTags),
+            baseImportance: typeof entry.baseImportance === "number" ? entry.baseImportance : 0,
+            finalScore: typeof entry.finalScore === "number" ? entry.finalScore : 0
+          }))
+      : [],
+    recalledMemories: Array.isArray(value.recalledMemories)
+      ? value.recalledMemories
+          .filter(isRecord)
+          .map((entry) => ({
+            id: typeof entry.id === "string" ? entry.id : "",
+            description: typeof entry.description === "string" ? entry.description : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            detailTags: stringArrayOf(entry.detailTags),
+            semanticTimeTag: typeof entry.semanticTimeTag === "string" ? entry.semanticTimeTag : "",
+            semanticTimeLabel: typeof entry.semanticTimeLabel === "string" ? entry.semanticTimeLabel : ""
+          }))
+      : []
+  };
+}
+
 function basenameOfPath(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const segments = normalized.split("/");
@@ -782,6 +911,8 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
   return {
     snapshot: "missing",
     runtimeTagView: "missing",
+    runtimeInteractions: "missing",
+    runtimeRecallTrace: "missing",
     customTags: "missing",
     descriptions: "missing",
     relations: "missing",
@@ -810,6 +941,10 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
     versions: {
       snapshot: typeof rawVersions.snapshot === "string" ? rawVersions.snapshot : "missing",
       runtimeTagView: typeof rawVersions.runtimeTagView === "string" ? rawVersions.runtimeTagView : "missing",
+      runtimeInteractions:
+        typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
+      runtimeRecallTrace:
+        typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
       customTags: typeof rawVersions.customTags === "string" ? rawVersions.customTags : "missing",
       descriptions: typeof rawVersions.descriptions === "string" ? rawVersions.descriptions : "missing",
       relations: typeof rawVersions.relations === "string" ? rawVersions.relations : "missing",
@@ -831,6 +966,24 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.nativeCatalogSnapshot = value as NativeCatalogSnapshotFile;
     },
     describe: (value) => `snapshot ${(value as NativeCatalogSnapshotFile).entries.length} 条`
+  },
+  {
+    filename: "studio_runtime_recent_interactions.json",
+    versionKey: "runtimeInteractions",
+    normalize: normalizeRuntimeRecentInteractionsFile,
+    assign: (importedData, value) => {
+      importedData.runtimeInteractions = value as RuntimeRecentInteractionsFile;
+    },
+    describe: (value) => `turns ${(value as RuntimeRecentInteractionsFile).entries.length} 条`
+  },
+  {
+    filename: "studio_runtime_recall_trace.json",
+    versionKey: "runtimeRecallTrace",
+    normalize: normalizeRuntimeRecallTraceFile,
+    assign: (importedData, value) => {
+      importedData.runtimeRecallTrace = value as RuntimeRecallTraceFile;
+    },
+    describe: (value) => `recall ${(value as RuntimeRecallTraceFile).recalledMemories.length} 条记忆`
   },
   {
     filename: "custom_tags.json",
@@ -1297,7 +1450,7 @@ function buildMemoryDraft(memory?: ImplantedMemoryEntry): MemoryDraft {
     semantic_time_tag: memory.semantic_time_tag ?? "",
     detail_tags: [...(memory.detail_tags ?? [])],
     importance: memory.importance !== undefined ? String(memory.importance) : "",
-    occurred_game_time: memory.occurred_game_time !== undefined ? String(memory.occurred_game_time) : "",
+    occurred_game_time: memory.occurred_game_time !== undefined ? String(memory.occurred_game_time) : "-1",
     notes: memory.notes ?? ""
   };
 }
@@ -1444,6 +1597,124 @@ function formatFocusTagItems(focusTags: FocusTag[] | undefined): string[] {
   return (focusTags ?? []).map((focusTag) => formatFocusTagChip(focusTag));
 }
 
+function abbreviateText(text: string | undefined, maxLength: number, fallback = "(无)"): string {
+  if (!text || !text.trim()) {
+    return fallback;
+  }
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function formatRuntimeTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "未知时间";
+  }
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function formatShortRuntimeTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "未知时间";
+  }
+  return new Date(timestamp).toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function shortActionType(actionType: string): string {
+  switch ((actionType ?? "").trim().toLowerCase()) {
+    case "speech":
+      return "说话";
+    case "inner_monologue":
+      return "心声";
+    case "attack":
+      return "攻击";
+    case "kill":
+      return "击杀";
+    case "hurt_by":
+      return "受伤";
+    case "death":
+      return "死亡";
+    case "mine_block":
+      return "挖掘";
+    case "place_block":
+      return "放置";
+    case "eat":
+      return "进食";
+    case "use_item":
+      return "使用物品";
+    case "travel":
+      return "移动";
+    case "biome_change":
+      return "群系变化";
+    case "dim_change":
+      return "维度变化";
+    case "trade":
+      return "交易";
+    case "interact":
+      return "交互";
+    case "favorability_update":
+      return "好感变化";
+    case "emotion_update":
+      return "情绪变化";
+    default:
+      return abbreviateText(
+        actionType
+          .toLowerCase()
+          .replace(/_/g, " ")
+          .trim() || "未知",
+        12,
+        "未知"
+      );
+  }
+}
+
+function formatOutputTypeLabel(type: string): string {
+  switch ((type ?? "").trim().toLowerCase()) {
+    case "speech":
+      return "说话";
+    case "inner_monologue":
+      return "内心";
+    default:
+      return type || "输出";
+  }
+}
+
+function getSpeechOutputText(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const speechOutput = entry.outputs.find((output) => output.type === "speech" && output.text.trim());
+  return speechOutput?.text.trim() ?? "";
+}
+
+function buildInteractionTriggerLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const imageMark = entry.hasImage ? " [+image]" : "";
+  const prompt = entry.userPrompt.trim() ? entry.userPrompt.trim() : "(无提示词)";
+  return `${formatShortRuntimeTimestamp(entry.timestamp)}  触发: ${prompt}${imageMark}`;
+}
+
+function buildInteractionSpeechLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const speechText = getSpeechOutputText(entry);
+  return `说话: ${speechText || "(沉默)"}`;
+}
+
+function buildInteractionActionLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const shortTypes = Array.from(new Set(entry.actionTypes.map((actionType) => shortActionType(actionType))));
+  return `动作: ${shortTypes.length ? shortTypes.join(" / ") : "无"}`;
+}
+
 function primaryRegistryTypeOf(record: TagRecord): string | undefined {
   return record.registryTypes[0];
 }
@@ -1575,6 +1846,12 @@ function App() {
   const [nativeCatalogSnapshot, setNativeCatalogSnapshot] = useState<NativeCatalogSnapshotFile>(
     createSeedNativeCatalogSnapshot()
   );
+  const [runtimeInteractions, setRuntimeInteractions] = useState<RuntimeRecentInteractionsFile>(
+    createEmptyRuntimeRecentInteractionsFile()
+  );
+  const [runtimeRecallTrace, setRuntimeRecallTrace] = useState<RuntimeRecallTraceFile>(
+    createEmptyRuntimeRecallTraceFile()
+  );
   const [customTags, setCustomTags] = useState<CustomTagEntry[]>(studioSeedData.customTags.tags);
   const [descriptions, setDescriptions] = useState<Record<string, DescriptionEntry>>(
     studioSeedData.descriptions.descriptions
@@ -1634,6 +1911,35 @@ function App() {
     [customTags, descriptions, nativeCatalogSnapshot.entries, relations]
   );
   const relationCycles = useMemo(() => detectRelationCycles(relations), [relations]);
+  const runtimeInteractionEntries = useMemo(
+    () => [...runtimeInteractions.entries].sort((left, right) => right.timestamp - left.timestamp),
+    [runtimeInteractions.entries]
+  );
+  const runtimeThoughtEntries = useMemo<RuntimeThoughtEntry[]>(() => {
+    const thoughts: RuntimeThoughtEntry[] = [];
+    for (const entry of runtimeInteractionEntries) {
+      const speechText = getSpeechOutputText(entry);
+      [...entry.outputs]
+        .sort((left, right) => right.timestamp - left.timestamp)
+        .forEach((output, index) => {
+          if (output.type !== "inner_monologue" || !output.text.trim()) {
+            return;
+          }
+          thoughts.push({
+            id: `${entry.timestamp}-${output.timestamp}-${index}`,
+            interactionTimestamp: entry.timestamp,
+            outputTimestamp: output.timestamp,
+            triggerSource: entry.triggerSource,
+            userPrompt: entry.userPrompt,
+            hasImage: entry.hasImage,
+            text: output.text.trim(),
+            speechText,
+            actionTypes: entry.actionTypes
+          });
+        });
+    }
+    return thoughts.sort((left, right) => right.outputTimestamp - left.outputTimestamp);
+  }, [runtimeInteractionEntries]);
 
   const customTagRows = useMemo(() => {
     const normalizedQuery = customQuery.trim().toLowerCase();
@@ -2604,6 +2910,12 @@ function App() {
         nativeCatalogSnapshot: importedData.nativeCatalogSnapshot?.schemaVersion ?? current.nativeCatalogSnapshot
       }));
     }
+    if (importedData.runtimeInteractions) {
+      setRuntimeInteractions(importedData.runtimeInteractions);
+    }
+    if (importedData.runtimeRecallTrace) {
+      setRuntimeRecallTrace(importedData.runtimeRecallTrace);
+    }
     if (importedData.customTags) {
       setCustomTags(importedData.customTags.tags);
       setSchemaVersions((current) => ({
@@ -3162,6 +3474,24 @@ function App() {
             onStateChange={updateAgentRuntimeState}
             onPersonaStateChange={updateAgentPersonaState}
             onAttentionWeightChange={updateAgentAttentionWeight}
+          />
+        ) : null}
+        {page === "thoughts" ? (
+          <RuntimeThoughtsPage
+            generatedAt={runtimeInteractions.generatedAt}
+            thoughts={runtimeThoughtEntries}
+          />
+        ) : null}
+        {page === "interactions" ? (
+          <RuntimeInteractionsPage
+            generatedAt={runtimeInteractions.generatedAt}
+            entries={runtimeInteractionEntries}
+          />
+        ) : null}
+        {page === "recallGraph" ? (
+          <RuntimeRecallGraphPage
+            recallTrace={runtimeRecallTrace}
+            tagRecords={tagRecords}
           />
         ) : null}
         {page === "persona" ? (
@@ -4322,6 +4652,11 @@ function PersonaEditor({
   const selectedFocusTags = normalizePersonaFocusTags(mode.draft.focus_tags);
   const isCommonFocus = selectedFocusTags.includes("COMMON");
   const hiddenDetailTagCount = mode.draft.detail_tags.length;
+  const addAllDetailTags = (tagIds: string[]) => {
+    onDraftChange({
+      detail_tags: Array.from(new Set([...mode.draft.detail_tags, ...tagIds]))
+    });
+  };
 
   return (
     <div className="panel page-panel catalog-editor">
@@ -4423,6 +4758,7 @@ function PersonaEditor({
               searchPlaceholder="搜索 tag id、描述、别名、来源"
               workspaceDirectoryHandle={workspaceDirectoryHandle}
               workspaceImportedFiles={workspaceImportedFiles}
+              onAddAllTags={addAllDetailTags}
               onSelectTag={onAddDetailTag}
             />
           </section>
@@ -4865,6 +5201,12 @@ function MemoryEditor({
   onSave: () => void;
 }) {
   const selectedTimeTagRecord = findTagRecord(tags, mode.draft.semantic_time_tag);
+  const [timeTagBrowserExpanded, setTimeTagBrowserExpanded] = useState(false);
+  const addAllDetailTags = (tagIds: string[]) => {
+    onDraftChange({
+      detail_tags: Array.from(new Set([...mode.draft.detail_tags, ...tagIds]))
+    });
+  };
 
   return (
     <div className="panel page-panel catalog-editor">
@@ -4937,8 +5279,19 @@ function MemoryEditor({
       </div>
 
       <section className="info-block">
-        <h3>时间 Custom Tag</h3>
-        <p className="muted-copy">植入记忆的时间语义会参与记忆之间的联想边，但会保持为独立字段，不并入普通 detail tag 列表。</p>
+        <div className="section-head">
+          <div>
+            <h3>时间 Custom Tag</h3>
+            <p className="muted-copy">植入记忆的时间语义会参与记忆之间的联想边，但会保持为独立字段，不并入普通 detail tag 列表。</p>
+          </div>
+          <button
+            className="action-button quiet"
+            onClick={() => setTimeTagBrowserExpanded((current) => !current)}
+            type="button"
+          >
+            {timeTagBrowserExpanded ? "收起时间 Tag Browser" : "展开时间 Tag Browser"}
+          </button>
+        </div>
         {selectedTimeTagRecord ? (
           <div className="selected-time-tag">
             <div className="custom-tag-meta">
@@ -4959,18 +5312,22 @@ function MemoryEditor({
         ) : (
           <p className="muted-copy">尚未选择时间 custom tag。</p>
         )}
-        <TagBrowser
-          tags={tags}
-          allowedKinds={CUSTOM_TAG_KINDS}
-          excludedTags={mode.draft.semantic_time_tag ? [mode.draft.semantic_time_tag] : []}
-          title="时间 Tag Browser"
-          description="这里只浏览 custom tag，用于挑选语义时间锚。"
-          searchPlaceholder="搜索时间相关的 custom tag"
-          workspaceDirectoryHandle={workspaceDirectoryHandle}
-          workspaceImportedFiles={workspaceImportedFiles}
-          initialCategory="custom"
-          onSelectTag={(tag) => onDraftChange({ semantic_time_tag: tag })}
-        />
+        {timeTagBrowserExpanded ? (
+          <TagBrowser
+            tags={tags}
+            allowedKinds={CUSTOM_TAG_KINDS}
+            excludedTags={mode.draft.semantic_time_tag ? [mode.draft.semantic_time_tag] : []}
+            title="时间 Tag Browser"
+            description="这里只浏览 custom tag，用于挑选语义时间锚。"
+            searchPlaceholder="搜索时间相关的 custom tag"
+            workspaceDirectoryHandle={workspaceDirectoryHandle}
+            workspaceImportedFiles={workspaceImportedFiles}
+            initialCategory="custom"
+            onSelectTag={(tag) => onDraftChange({ semantic_time_tag: tag })}
+          />
+        ) : (
+          <p className="muted-copy">时间 tag 浏览器当前已折叠。</p>
+        )}
       </section>
 
       <section className="info-block">
@@ -5017,6 +5374,7 @@ function MemoryEditor({
             searchPlaceholder="搜索 tag id、描述、别名、来源"
             workspaceDirectoryHandle={workspaceDirectoryHandle}
             workspaceImportedFiles={workspaceImportedFiles}
+            onAddAllTags={addAllDetailTags}
             onSelectTag={onAddDetailTag}
           />
         </section>
@@ -5240,7 +5598,7 @@ function AgentStatePage({
             <span>Concentration</span>
             <div className="range-field">
               <input
-                max={1}
+                max={2}
                 min={0}
                 step={0.01}
                 type="range"
@@ -5524,6 +5882,411 @@ function AttentionWeightRadarChart({
           ))}
         </svg>
       </div>
+    </div>
+  );
+}
+
+function RuntimeThoughtsPage({
+  generatedAt,
+  thoughts
+}: {
+  generatedAt: string;
+  thoughts: RuntimeThoughtEntry[];
+}) {
+  return (
+    <div className="panel page-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Inner Monologue Archive</p>
+          <h2>完整心路历程</h2>
+          <p className="muted-copy">
+            这里把 runtime 交互文件中的每一条 `inner_monologue` 都拆成独立 entry，
+            方便逐条追踪剑灵在每次触发里的内心活动。
+          </p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${thoughts.length} 条心声`}</span>
+          <span className="badge muted">
+            {generatedAt ? `最近同步 ${formatRuntimeTimestamp(Date.parse(generatedAt))}` : "尚未读到 runtime 文件"}
+          </span>
+        </div>
+      </div>
+
+      {thoughts.length ? (
+        <div className="runtime-entry-list">
+          {thoughts.map((thought) => (
+            <article className="runtime-entry-card" key={thought.id}>
+              <div className="runtime-entry-head">
+                <div>
+                  <div className="custom-tag-meta">
+                    <span className="badge warn">Inner Monologue</span>
+                    {thought.triggerSource ? <span className="badge muted">{thought.triggerSource}</span> : null}
+                    {thought.hasImage ? <span className="badge muted">+image</span> : null}
+                  </div>
+                  <h3>{formatRuntimeTimestamp(thought.outputTimestamp || thought.interactionTimestamp)}</h3>
+                </div>
+                <span className="badge">{buildInteractionActionLine({
+                  timestamp: thought.interactionTimestamp,
+                  triggerSource: thought.triggerSource,
+                  userPrompt: thought.userPrompt,
+                  hasImage: thought.hasImage,
+                  actionTypes: thought.actionTypes,
+                  outputs: []
+                }).replace(/^动作: /, "")}</span>
+              </div>
+
+              <p className="runtime-entry-trigger">{`触发: ${abbreviateText(thought.userPrompt, 120, "(无提示词)")}`}</p>
+              <div className="runtime-thought-body">{thought.text}</div>
+
+              <div className="runtime-entry-footer">
+                <p className="muted-copy">
+                  对外说话：{thought.speechText ? abbreviateText(thought.speechText, 120) : "(沉默)"}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <strong>还没有 inner monologue 记录</strong>
+          <p>需要先让游戏端完成一次交互回合，并把 runtime 文件写进共享 workspace。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuntimeInteractionsPage({
+  generatedAt,
+  entries
+}: {
+  generatedAt: string;
+  entries: RuntimeRecentInteractionsFile["entries"];
+}) {
+  const [expandedEntryId, setExpandedEntryId] = useState<string>("");
+
+  useEffect(() => {
+    if (!entries.length) {
+      setExpandedEntryId("");
+      return;
+    }
+    setExpandedEntryId((current) => current || `${entries[0]?.timestamp ?? 0}-0`);
+  }, [entries]);
+
+  return (
+    <div className="panel page-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Runtime Turns</p>
+          <h2>触发记录列表</h2>
+          <p className="muted-copy">
+            封面沿用游戏内的极简摘要，只显示触发、说话和动作概览；展开后可以查看完整输出与 action 列表。
+          </p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${entries.length} 个回合`}</span>
+          <span className="badge muted">
+            {generatedAt ? `最近同步 ${formatRuntimeTimestamp(Date.parse(generatedAt))}` : "尚未读到 runtime 文件"}
+          </span>
+        </div>
+      </div>
+
+      {entries.length ? (
+        <div className="runtime-entry-list">
+          {entries.map((entry, index) => {
+            const entryId = `${entry.timestamp}-${index}`;
+            const expanded = expandedEntryId === entryId;
+            const uniqueActionTypes = Array.from(new Set(entry.actionTypes));
+            const sortedOutputs = [...entry.outputs].sort((left, right) => left.timestamp - right.timestamp);
+
+            return (
+              <article className={expanded ? "runtime-entry-card expanded" : "runtime-entry-card"} key={entryId}>
+                <button
+                  className="runtime-entry-toggle"
+                  onClick={() => setExpandedEntryId((current) => (current === entryId ? "" : entryId))}
+                  type="button"
+                >
+                  <div className="runtime-entry-head">
+                    <div>
+                      <div className="custom-tag-meta">
+                        <span className="badge">{formatRuntimeTimestamp(entry.timestamp)}</span>
+                        {entry.triggerSource ? <span className="badge muted">{entry.triggerSource}</span> : null}
+                        {entry.hasImage ? <span className="badge muted">+image</span> : null}
+                      </div>
+                      <h3>{buildInteractionTriggerLine(entry)}</h3>
+                    </div>
+                    <span className={expanded ? "badge good" : "badge muted"}>{expanded ? "收起" : "展开"}</span>
+                  </div>
+                  <div className="runtime-summary-lines">
+                    <p>{buildInteractionSpeechLine(entry)}</p>
+                    <p>{buildInteractionActionLine(entry)}</p>
+                  </div>
+                </button>
+
+                {expanded ? (
+                  <div className="runtime-entry-details">
+                    <section className="info-block">
+                      <h3>Action 列表</h3>
+                      <div className="chip-row compact">
+                        {uniqueActionTypes.length ? (
+                          uniqueActionTypes.map((actionType) => (
+                            <span className="chip" key={actionType}>
+                              {shortActionType(actionType)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="chip">无</span>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="info-block">
+                      <h3>输出明细</h3>
+                      <div className="runtime-output-list">
+                        {sortedOutputs.length ? (
+                          sortedOutputs.map((output, outputIndex) => (
+                            <article className="runtime-output-card" key={`${entryId}-${output.timestamp}-${outputIndex}`}>
+                              <div className="runtime-output-head">
+                                <div className="custom-tag-meta">
+                                  <span className="badge warn">{formatOutputTypeLabel(output.type)}</span>
+                                  <span className="badge muted">{formatShortRuntimeTimestamp(output.timestamp)}</span>
+                                </div>
+                              </div>
+                              <div className="runtime-output-body">{output.text.trim() || "(空输出)"}</div>
+                            </article>
+                          ))
+                        ) : (
+                          <p className="muted-copy">这一回合没有记录到输出文本。</p>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <strong>还没有触发记录</strong>
+          <p>需要先让游戏端写出 `studio_runtime_recent_interactions.json`。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuntimeRecallGraphPage({
+  recallTrace,
+  tagRecords
+}: {
+  recallTrace: RuntimeRecallTraceFile;
+  tagRecords: TagRecord[];
+}) {
+  const stageWidth = 960;
+  const stageHeight = 640;
+  const centerX = stageWidth / 2;
+  const centerY = stageHeight / 2;
+  const triggerTagSet = useMemo(() => new Set(recallTrace.triggerTags), [recallTrace.triggerTags]);
+
+  const graphNodes = useMemo(() => {
+    const count = recallTrace.recalledMemories.length;
+    if (!count) {
+      return [];
+    }
+
+    const radius = count <= 2 ? 210 : count <= 4 ? 238 : 264;
+
+    return recallTrace.recalledMemories.map((memory, index) => {
+      const turn = count === 1 ? 0 : index / count;
+      const point = polarPoint(centerX, radius, turn - 0.25);
+      const matchedTags = memory.detailTags.filter((tag) => triggerTagSet.has(tag));
+      const edgeTags = matchedTags.length
+        ? matchedTags.slice(0, 3)
+        : memory.semanticTimeTag && triggerTagSet.has(memory.semanticTimeTag)
+          ? [memory.semanticTimeTag]
+          : memory.detailTags.slice(0, 3);
+      const edgeLabel = edgeTags.length ? edgeTags.join(" / ") : "召回";
+      const angle = Math.atan2(point.y - centerY, point.x - centerX);
+      const midpointX = (centerX + point.x) / 2;
+      const midpointY = (centerY + point.y) / 2;
+      const labelX = midpointX + Math.cos(angle - Math.PI / 2) * 18;
+      const labelY = midpointY + Math.sin(angle - Math.PI / 2) * 18;
+
+      return {
+        memory,
+        edgeTags,
+        edgeLabel: abbreviateText(edgeLabel, 28, "召回"),
+        point,
+        labelX,
+        labelY
+      };
+    });
+  }, [recallTrace.recalledMemories, triggerTagSet]);
+
+  return (
+    <div className="panel page-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Recall Trace</p>
+          <h2>最近一次记忆联想</h2>
+          <p className="muted-copy">
+            当前思维导图基于最近一次写入的 recall trace 构建。中心节点表示本轮联想，边标签优先取触发 tag 与记忆 detail tag 的交集。
+          </p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${recallTrace.recalledMemories.length} 条记忆`}</span>
+          <span className="badge muted">{recallTrace.associationMode || "未记录 association mode"}</span>
+          <span className="badge muted">
+            {recallTrace.generatedAt
+              ? `最近同步 ${formatRuntimeTimestamp(Date.parse(recallTrace.generatedAt))}`
+              : "尚未读到 recall trace"}
+          </span>
+        </div>
+      </div>
+
+      <div className="two-col runtime-recall-summary">
+        <section className="info-block">
+          <h3>本轮输入</h3>
+          <p className="muted-copy">{`触发源：${recallTrace.triggerSource || "(未知)"}`}</p>
+          <p className="muted-copy">{`用户提示：${recallTrace.userPrompt || "(无提示词)"}`}</p>
+          <div className="chip-row compact">
+            {recallTrace.currentDesireTag ? <span className="chip">{`渴望 ${recallTrace.currentDesireTag}`}</span> : null}
+            {recallTrace.triggerTags.map((tag) => (
+              <span className="chip" key={tag}>
+                {tag}
+              </span>
+            ))}
+            {!recallTrace.triggerTags.length ? <span className="chip">无触发 tags</span> : null}
+          </div>
+        </section>
+
+        <section className="info-block">
+          <h3>可见上下文</h3>
+          <div className="runtime-visible-contexts">
+            {recallTrace.visibleContexts.length ? (
+              recallTrace.visibleContexts.slice(0, 6).map((entry, index) => (
+                <article className="runtime-visible-context-card" key={`${entry.description}-${index}`}>
+                  <strong>{abbreviateText(entry.description, 40, "(无描述)")}</strong>
+                  <p>{`score ${entry.finalScore.toFixed(2)} / base ${entry.baseImportance.toFixed(2)}`}</p>
+                  <div className="chip-row compact">
+                    {entry.focusTags.map((focusTag) => (
+                      <span className="chip" key={`${entry.description}-${focusTag}`}>
+                        {focusTag}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="muted-copy">当前 trace 里没有可见上下文摘要。</p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {graphNodes.length ? (
+        <section className="info-block runtime-graph-panel">
+          <div className="section-head">
+            <div>
+              <h3>思维导图</h3>
+              <p className="muted-copy">节点显示被召回记忆本体；边展示本轮联想里可观察到的 tag 线索。</p>
+            </div>
+            <span className="badge muted">Mind Map</span>
+          </div>
+
+          <div className="runtime-mind-map-scroll">
+            <div
+              className="runtime-mind-map-stage"
+              style={{
+                width: `${stageWidth}px`,
+                height: `${stageHeight}px`
+              }}
+            >
+              <svg className="runtime-mind-map-svg" role="img" viewBox={`0 0 ${stageWidth} ${stageHeight}`}>
+                {graphNodes.map((node) => (
+                  <g key={node.memory.id || node.memory.description}>
+                    <line
+                      className="runtime-mind-map-edge"
+                      x1={centerX}
+                      x2={node.point.x}
+                      y1={centerY}
+                      y2={node.point.y}
+                    />
+                    <text className="runtime-mind-map-edge-label" textAnchor="middle" x={node.labelX} y={node.labelY}>
+                      {node.edgeLabel}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+
+              <div
+                className="runtime-mind-map-center"
+                style={{
+                  left: `${centerX}px`,
+                  top: `${centerY}px`
+                }}
+              >
+                <span>本轮联想</span>
+              </div>
+
+              {graphNodes.map((node, index) => {
+                const primaryEdgeTag = node.edgeTags[0];
+                const primaryEdgeRecord = primaryEdgeTag ? tagRecordOrFallback(tagRecords, primaryEdgeTag) : null;
+                return (
+                  <article
+                    className="runtime-mind-map-node"
+                    key={`${node.memory.id}-${index}`}
+                    style={{
+                      left: `${node.point.x}px`,
+                      top: `${node.point.y}px`
+                    }}
+                  >
+                    <div className="custom-tag-meta">
+                      {primaryEdgeTag ? <span className="badge warn">{primaryEdgeTag}</span> : <span className="badge muted">召回</span>}
+                      {node.memory.semanticTimeTag ? (
+                        <span className="badge muted">{node.memory.semanticTimeLabel || node.memory.semanticTimeTag}</span>
+                      ) : null}
+                    </div>
+                    <strong>{abbreviateText(node.memory.id || "memory", 48, "memory")}</strong>
+                    <p>{node.memory.description || "该记忆没有 description。"}</p>
+                    <div className="chip-row compact">
+                      {node.memory.focusTags.map((focusTag) => (
+                        <span className="chip" key={`${node.memory.id}-${focusTag}`}>
+                          {focusTag}
+                        </span>
+                      ))}
+                      {primaryEdgeRecord && primaryEdgeRecord.description ? (
+                        <span className="chip">{abbreviateText(primaryEdgeRecord.description, 28)}</span>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      ) : (
+        <div className="empty-state">
+          <strong>当前没有可绘制的召回记忆</strong>
+          <p>需要先让游戏端完成一次 LTM recall，并写出 `studio_runtime_recall_trace.json`。</p>
+        </div>
+      )}
+
+      <section className="info-block">
+        <div className="section-head">
+          <div>
+            <h3>Trace 详情</h3>
+            <p className="muted-copy">这里直接展示后端写入的 trace lines，方便对照实际召回链路。</p>
+          </div>
+          <span className="badge">{`${recallTrace.traceLines.length} 行`}</span>
+        </div>
+        {recallTrace.traceLines.length ? (
+          <pre className="state-preview runtime-trace-preview">{recallTrace.traceLines.join("\n")}</pre>
+        ) : (
+          <p className="muted-copy">当前没有 trace lines。</p>
+        )}
+      </section>
     </div>
   );
 }

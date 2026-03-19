@@ -35,6 +35,9 @@ import java.util.function.ToDoubleFunction;
  */
 public final class LTMRecallEngine {
 
+    private static final double COMMON_FOCUS_RECALL_WEIGHT = 0.35;
+    private static final int SPARSE_MEMORY_FALLBACK_LIMIT = 12;
+
     private LTMRecallEngine() {
     }
 
@@ -111,7 +114,7 @@ public final class LTMRecallEngine {
             }
             double total = 0.0;
             for (FocusTag tag : focusTags) {
-                total += normalizedWeights.getOrDefault(tag, 0.0);
+                total += normalizedWeights.getOrDefault(tag, 0.0) * focusRecallWeight(tag);
             }
             return clamp01(total / Math.max(1.0, focusTags.size()));
         }
@@ -192,6 +195,33 @@ public final class LTMRecallEngine {
                 bestMatchedTag = matchedTag;
             }
         }
+
+        void addFocusOnlyEvidence(String sourceDescription, double score, double focusAlignment,
+                double ageFactor, double recentPenalty) {
+            supportCount++;
+            supportSources.add("focus-only:" + sourceDescription);
+            combinedScore += supportCount == 1 ? score : score * 0.55;
+            if (score > bestSingleScore) {
+                bestSingleScore = score;
+                bestSemanticScore = 0.0;
+                bestFocusAlignment = focusAlignment;
+                bestAgeFactor = ageFactor;
+                bestRecentPenalty = recentPenalty;
+                bestMatchedTag = null;
+            }
+        }
+    }
+
+    private static final class ImplantedFallbackCandidate {
+        final LTMEntry entry;
+        double weight;
+        int hitCount;
+        final Set<String> matchedSeedTags = new LinkedHashSet<>();
+        final Set<String> matchedMemoryTags = new LinkedHashSet<>();
+
+        ImplantedFallbackCandidate(LTMEntry entry) {
+            this.entry = entry;
+        }
     }
 
     public static RecallResult recall(List<TaggedContextEntry> visibleContexts, AgentMemory memory, AgentState state,
@@ -211,6 +241,7 @@ public final class LTMRecallEngine {
         float wanderingMind = state != null ? state.getWanderingMind() : 0.1f;
         float nostalgia = state != null ? state.getNostalgia() : 0.5f;
         FocusTag desireTag = state != null ? state.getCurrentDesireTag() : null;
+        long now = System.currentTimeMillis();
 
         FocusProfile focusProfile = buildFocusProfile(visibleContexts, concentration, desireTag);
         List<String> traceLines = new ArrayList<>();
@@ -220,15 +251,41 @@ public final class LTMRecallEngine {
 
         List<Seed> frontier = buildInitialSeeds(visibleContexts, focusProfile, state, profile, traceLines);
         if (frontier.isEmpty()) {
-            return new RecallResult(Collections.emptyList(), Collections.emptySet(), traceLines);
+            traceLines.add("[记忆起点] no detail-tag seeds, trying focus-only fallback");
+            List<MemoryCandidate> fallbackCandidates = collectFocusFallbackCandidates(
+                    visibleContexts, memory, Collections.emptySet(), focusProfile, state, now, nostalgia, currentGameTime);
+            if (fallbackCandidates.isEmpty()) {
+                traceLines.add("[记忆起点] focus-only fallback also found no candidate memories");
+                return new RecallResult(Collections.emptyList(), Collections.emptySet(), traceLines);
+            }
+
+            int fallbackBudget = Math.min(profile.finalMemoryCap, Math.max(1, Math.min(2, fallbackCandidates.size())));
+            List<MemoryCandidate> picked = sampleWeightedWithoutReplacement(
+                    fallbackCandidates, c -> c.combinedScore, fallbackBudget, wanderingMind);
+            List<LTMEntry> recalled = new ArrayList<>();
+            Set<String> triggerTags = new LinkedHashSet<>();
+            for (MemoryCandidate candidate : picked) {
+                recalled.add(candidate.entry);
+                candidate.entry.markAccessed(now);
+                traceLines.add(String.format(
+                        "[记忆召回-fallback] score=%.2f supports=%d focus=%.2f recentPenalty=%.2f ageFactor=%.2f memory=%s",
+                        candidate.combinedScore,
+                        candidate.supportCount,
+                        candidate.bestFocusAlignment,
+                        candidate.bestRecentPenalty,
+                        candidate.bestAgeFactor,
+                        candidate.entry.getDescription()));
+            }
+            memory.noteRecalledMemories(recalled);
+            return new RecallResult(recalled, triggerTags, traceLines);
         }
 
         List<LTMEntry> recalled = new ArrayList<>();
         Set<String> triggerTags = new LinkedHashSet<>();
         Set<UUID> recalledIds = new LinkedHashSet<>();
         Set<String> seenSeedKeys = new LinkedHashSet<>();
+        List<Seed> totalSeedPool = new ArrayList<>();
         TagRelationDictionary relationDict = TagRelationDictionary.getInstance();
-        long now = System.currentTimeMillis();
 
         for (int depth = 0; depth <= profile.maxDepth
                 && !frontier.isEmpty()
@@ -244,10 +301,19 @@ public final class LTMRecallEngine {
             if (layerSeeds.isEmpty()) {
                 break;
             }
+            totalSeedPool.addAll(layerSeeds);
 
             traceLines.add(String.format("[联想层 %d] frontier=%d", depth, layerSeeds.size()));
             List<MemoryCandidate> candidates = collectLayerCandidates(
                     layerSeeds, memory, recalledIds, relationDict, focusProfile, state, now, nostalgia, currentGameTime);
+            if (candidates.isEmpty() && depth == 0 && memory.getLtmRecords().size() <= SPARSE_MEMORY_FALLBACK_LIMIT) {
+                candidates = collectFocusFallbackCandidates(
+                        visibleContexts, memory, recalledIds, focusProfile, state, now, nostalgia, currentGameTime);
+                if (!candidates.isEmpty()) {
+                    traceLines.add(String.format("[联想层 %d] semantic path empty, switched to focus-only fallback (%d candidates)",
+                            depth, candidates.size()));
+                }
+            }
             if (candidates.isEmpty()) {
                 traceLines.add(String.format("[联想层 %d] no candidate memories", depth));
                 break;
@@ -271,11 +337,15 @@ public final class LTMRecallEngine {
                 }
 
                 traceLines.add(String.format(
-                        "[记忆召回] depth=%d score=%.2f supports=%d matched=%s memory=%s",
+                        "[记忆召回] depth=%d score=%.2f supports=%d matched=%s semantic=%.2f focus=%.2f recentPenalty=%.2f ageFactor=%.2f memory=%s",
                         depth,
                         candidate.combinedScore,
                         candidate.supportCount,
                         candidate.bestMatchedTag != null ? candidate.bestMatchedTag : "(focus-only)",
+                        candidate.bestSemanticScore,
+                        candidate.bestFocusAlignment,
+                        candidate.bestRecentPenalty,
+                        candidate.bestAgeFactor,
                         candidate.entry.getDescription()));
                 if (!candidate.supportTags.isEmpty()) {
                     traceLines.add("    support_tags=" + candidate.supportTags);
@@ -314,6 +384,15 @@ public final class LTMRecallEngine {
             frontier = nextFrontier;
         }
 
+        if (nostalgia > 1.0f && !containsImplantedRecall(recalled) && !totalSeedPool.isEmpty()) {
+            LTMEntry implantedFallback = pickWeightedImplantedFallback(
+                    totalSeedPool, memory, recalledIds, relationDict, wanderingMind, traceLines);
+            if (implantedFallback != null && recalledIds.add(implantedFallback.getId())) {
+                recalled.add(implantedFallback);
+                implantedFallback.markAccessed(now);
+            }
+        }
+
         memory.noteRecalledMemories(recalled);
         return new RecallResult(recalled, triggerTags, traceLines);
     }
@@ -326,8 +405,9 @@ public final class LTMRecallEngine {
         for (TaggedContextEntry entry : visibleContexts) {
             double base = AttentionFilter.calculateFinalScore(entry, concentration);
             for (FocusTag tag : entry.getFocusTags()) {
-                double bonus = (desireTag != null && desireTag == tag) ? 0.25 : 0.0;
-                double weight = base + bonus;
+                double tagWeight = focusRecallWeight(tag);
+                double bonus = (desireTag != null && desireTag == tag) ? 0.25 * tagWeight : 0.0;
+                double weight = base * tagWeight + bonus;
                 focusMass.merge(tag, weight, Double::sum);
                 total += weight;
             }
@@ -363,7 +443,7 @@ public final class LTMRecallEngine {
             }
             double attentionScore = AttentionFilter.calculateFinalScore(entry, concentration);
             double focusAlignment = focusProfile.alignment(entry.getFocusTags());
-            double score = attentionScore * (0.70 + 0.80 * focusAlignment);
+            double score = attentionScore * (0.78 + 0.72 * focusAlignment);
             entryCandidates.add(new EntrySeedCandidate(entry, score));
         }
 
@@ -404,7 +484,7 @@ public final class LTMRecallEngine {
                 double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
 
                 boolean hasSemanticSignal = semanticMatch.score > 0.0;
-                boolean hasStrongFocusSignal = memoryFocusAlignment >= 0.55 && seedFocusAlignment >= 0.30;
+                boolean hasStrongFocusSignal = memoryFocusAlignment >= 0.38 && seedFocusAlignment >= 0.20;
                 if (!hasSemanticSignal && !hasStrongFocusSignal) {
                     continue;
                 }
@@ -425,7 +505,7 @@ public final class LTMRecallEngine {
                         * strengthFactor
                         * sourceFactor;
 
-                if (totalScore < 0.28) {
+                if (totalScore < 0.22) {
                     continue;
                 }
 
@@ -458,29 +538,168 @@ public final class LTMRecallEngine {
         if (seedFocusTags == null || seedFocusTags.isEmpty() || memoryFocusTags == null || memoryFocusTags.isEmpty()) {
             return 0.0;
         }
-        int overlap = 0;
+        double overlap = 0.0;
         for (FocusTag tag : seedFocusTags) {
             if (memoryFocusTags.contains(tag)) {
-                overlap++;
+                overlap += focusRecallWeight(tag);
             }
         }
-        return clamp01((double) overlap / Math.max(1, seedFocusTags.size()));
+        return clamp01(overlap / Math.max(1.0, seedFocusTags.size()));
     }
 
     private static double computeDesiredFocusBonus(AgentState state, Collection<FocusTag> memoryFocusTags) {
         if (state == null || state.getCurrentDesireTag() == null || memoryFocusTags == null) {
             return 0.0;
         }
-        return memoryFocusTags.contains(state.getCurrentDesireTag()) ? 0.18 : 0.0;
+        return memoryFocusTags.contains(state.getCurrentDesireTag())
+                ? 0.18 * focusRecallWeight(state.getCurrentDesireTag())
+                : 0.0;
     }
 
     private static double computeContinueChance(double focusAlignment, float concentration,
             FocusTag desireTag, Collection<FocusTag> memoryFocusTags) {
         double chance = 0.15 + concentration * 0.45 + focusAlignment * 0.30;
         if (desireTag != null && memoryFocusTags != null && memoryFocusTags.contains(desireTag)) {
-            chance += 0.10;
+            chance += 0.10 * focusRecallWeight(desireTag);
         }
         return clamp(0.10, 0.95, chance);
+    }
+
+    private static List<MemoryCandidate> collectFocusFallbackCandidates(List<TaggedContextEntry> visibleContexts,
+            AgentMemory memory, Set<UUID> recalledIds, FocusProfile focusProfile, AgentState state,
+            long now, float nostalgia, long currentGameTime) {
+        if (memory.getLtmRecords().size() > SPARSE_MEMORY_FALLBACK_LIMIT) {
+            return Collections.emptyList();
+        }
+
+        float concentration = state != null ? state.getConcentration() : 0.5f;
+        Map<UUID, MemoryCandidate> candidateMap = new LinkedHashMap<>();
+
+        for (LTMEntry entry : memory.getLtmRecords()) {
+            if (recalledIds.contains(entry.getId())) {
+                continue;
+            }
+
+            double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
+            double bestContextAlignment = 0.0;
+            double bestContextScore = 0.0;
+            String bestContextDescription = "(no context)";
+
+            for (TaggedContextEntry contextEntry : visibleContexts) {
+                double contextAlignment = computeSeedFocusAlignment(contextEntry.getFocusTags(), entry.getFocusTags());
+                if (contextAlignment <= 0.0) {
+                    continue;
+                }
+                double contextScore = AttentionFilter.calculateFinalScore(contextEntry, concentration);
+                double mergedContextScore = contextAlignment * (0.65 + clamp01(contextScore / 2.0) * 0.35);
+                if (mergedContextScore > bestContextScore) {
+                    bestContextScore = mergedContextScore;
+                    bestContextAlignment = contextAlignment;
+                    bestContextDescription = contextEntry.getDescription();
+                }
+            }
+
+            if (memoryFocusAlignment < 0.12 && bestContextAlignment < 0.12) {
+                continue;
+            }
+
+            double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
+            double ageFactor = computeAgeFactor(entry, nostalgia, currentGameTime, now);
+            double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
+            double strengthFactor = 0.70 + entry.getImportance() * 0.20 + entry.getClarity() * 0.10;
+            double totalScore = (0.24
+                    + memoryFocusAlignment * 0.80
+                    + bestContextAlignment * 0.55
+                    + desiredFocusBonus)
+                    * (0.55 + ageFactor * 0.45)
+                    * recentPenalty
+                    * strengthFactor;
+
+            if (totalScore < 0.14) {
+                continue;
+            }
+
+            MemoryCandidate candidate = candidateMap.computeIfAbsent(entry.getId(), id -> new MemoryCandidate(entry));
+            candidate.addFocusOnlyEvidence(bestContextDescription, totalScore, Math.max(memoryFocusAlignment, bestContextAlignment),
+                    ageFactor, recentPenalty);
+        }
+
+        return new ArrayList<>(candidateMap.values());
+    }
+
+    private static boolean containsImplantedRecall(List<LTMEntry> recalled) {
+        for (LTMEntry entry : recalled) {
+            if (entry != null
+                    && entry.getSourceType() == LTMEntry.SourceType.IMPLANTED
+                    && entry.getOccurredGameTime() < 0L) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LTMEntry pickWeightedImplantedFallback(List<Seed> totalSeedPool, AgentMemory memory,
+            Set<UUID> recalledIds, TagRelationDictionary relationDict, float wanderingMind, List<String> traceLines) {
+        if (totalSeedPool == null || totalSeedPool.isEmpty() || memory == null) {
+            return null;
+        }
+
+        Map<UUID, ImplantedFallbackCandidate> candidateMap = new LinkedHashMap<>();
+        for (LTMEntry entry : memory.getLtmRecords()) {
+            if (entry == null
+                    || entry.getId() == null
+                    || recalledIds.contains(entry.getId())
+                    || entry.getSourceType() != LTMEntry.SourceType.IMPLANTED
+                    || entry.getOccurredGameTime() >= 0L) {
+                continue;
+            }
+
+            ImplantedFallbackCandidate candidate = null;
+            for (Seed seed : totalSeedPool) {
+                SemanticMatch match = findBestSemanticMatch(seed.tag, entry.getAssociativeDetailTags(), relationDict);
+                if (match.score <= 0.0 || match.tag == null) {
+                    continue;
+                }
+                if (candidate == null) {
+                    candidate = candidateMap.computeIfAbsent(entry.getId(), ignored -> new ImplantedFallbackCandidate(entry));
+                }
+                candidate.weight += match.score;
+                candidate.hitCount++;
+                candidate.matchedSeedTags.add(seed.tag.toString());
+                candidate.matchedMemoryTags.add(match.tag.toString());
+            }
+        }
+
+        List<ImplantedFallbackCandidate> candidates = new ArrayList<>();
+        for (ImplantedFallbackCandidate candidate : candidateMap.values()) {
+            if (candidate.weight > 0.0 && candidate.hitCount > 0) {
+                candidates.add(candidate);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            traceLines.add(String.format("[植入记忆保底] seed_pool=%d eligible_implanted=0", totalSeedPool.size()));
+            return null;
+        }
+
+        List<ImplantedFallbackCandidate> picked = sampleWeightedWithoutReplacement(
+                candidates, candidate -> candidate.weight, 1, wanderingMind);
+        if (picked.isEmpty()) {
+            traceLines.add(String.format("[植入记忆保底] seed_pool=%d weighted_pick_failed", totalSeedPool.size()));
+            return null;
+        }
+
+        ImplantedFallbackCandidate winner = picked.get(0);
+        traceLines.add(String.format(
+                "[植入记忆保底] seed_pool=%d candidates=%d chosen_weight=%.2f hits=%d memory=%s",
+                totalSeedPool.size(),
+                candidates.size(),
+                winner.weight,
+                winner.hitCount,
+                winner.entry.getDescription()));
+        traceLines.add("    fallback_seed_tags=" + winner.matchedSeedTags);
+        traceLines.add("    fallback_memory_tags=" + winner.matchedMemoryTags);
+        return winner.entry;
     }
 
     private static int computeBranchCount(int branchPerMemory, double focusAlignment, float concentration) {
@@ -622,6 +841,10 @@ public final class LTMRecallEngine {
     private static double applyTemperature(double score, float wanderingMind) {
         double exponent = 2.6 - clamp01(wanderingMind) * 2.0; // 低 wandering -> 更尖锐，高 wandering -> 更平坦
         return Math.pow(Math.max(0.0001, score), exponent);
+    }
+
+    private static double focusRecallWeight(FocusTag tag) {
+        return tag == FocusTag.COMMON ? COMMON_FOCUS_RECALL_WEIGHT : 1.0;
     }
 
     private static double tagPriority(DetailTag tag) {

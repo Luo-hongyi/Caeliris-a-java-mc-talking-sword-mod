@@ -40,6 +40,8 @@ public final class StudioWorkspaceManifestFile {
     public static final List<String> VERSION_KEYS = List.of(
             "snapshot",
             "runtimeTagView",
+            "runtimeInteractions",
+            "runtimeRecallTrace",
             "customTags",
             "descriptions",
             "relations",

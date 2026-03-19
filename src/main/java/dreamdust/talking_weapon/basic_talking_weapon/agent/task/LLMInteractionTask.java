@@ -29,6 +29,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecentInteractionsFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecallTraceFile;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -190,6 +192,7 @@ public class LLMInteractionTask extends AgentTask {
             STMPool stmPool = AgentRuntime.getInstance().getMemory().getSTMPool();
             String triggerSrc = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
             List<AgentOutputRecord> records = new java.util.ArrayList<>();
+            java.util.LinkedHashSet<String> actionTypes = new java.util.LinkedHashSet<>();
 
             boolean spoke = false;
             if (agentResponse.hasActions()) {
@@ -197,6 +200,7 @@ public class LLMInteractionTask extends AgentTask {
                     if (req.type == null)
                         continue;
                     String t = req.type.toLowerCase();
+                    actionTypes.add(t);
 
                     if ("speech".equals(t)) {
                         if (req.content != null) {
@@ -242,8 +246,10 @@ public class LLMInteractionTask extends AgentTask {
                     triggerSrc,
                     eventInstruction,
                     screenshotBase64,
-                    records);
+                    records,
+                    new java.util.ArrayList<>(actionTypes));
             stmPool.pushInteractionTurn(turn);
+            StudioRuntimeRecentInteractionsFile.recordTurn(turn);
 
             if (runtimeStateChanged) {
                 AgentStateStorage.requestSaveRuntimeState(state, persona);
@@ -475,6 +481,7 @@ public class LLMInteractionTask extends AgentTask {
                 }
                 AgentLogger.logDebug(recallLog.toString());
             }
+            StudioRuntimeRecallTraceFile.writeLatest(ctx, userPrompt, mergedVisible, state, recallResult);
 
             // Agent 人格画像（直接传入筛选好的词条）
             String personaSnippet = persona.toPromptSnippet(personaResult.activeTraits);

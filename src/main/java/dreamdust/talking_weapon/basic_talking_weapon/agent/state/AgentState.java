@@ -67,9 +67,11 @@ public class AgentState {
     private volatile float wanderingMind;
 
     /**
-     * 忆旧值（0.0 ~ 1.0）。
+     * 忆旧值（0.0 ~ 2.0）。
      * <p>
-     * 越高越容易让久远记忆保留影响力；越低越偏向新近经历。
+     * 0.0 ~ 1.0 控制旧记忆的时间衰退强度；超过 1.0 后，
+     * 若本轮正常召回没有命中任何“未设置 occurredGameTime 的植入记忆”，
+     * 会额外启用一次基于 seed 池的植入记忆保底补捞。
      */
     private volatile float nostalgia;
 
@@ -196,9 +198,9 @@ public class AgentState {
         return nostalgia;
     }
 
-    /** 设置忆旧值，自动 clamped 至 [0.0, 1.0]。 */
+    /** 设置忆旧值，自动 clamped 至 [0.0, 2.0]。 */
     public void setNostalgia(float value) {
-        this.nostalgia = Math.max(0f, Math.min(1f, value));
+        this.nostalgia = Math.max(0f, Math.min(2f, value));
     }
 
     // ── AssociationMode ───────────────────────────────────────────────

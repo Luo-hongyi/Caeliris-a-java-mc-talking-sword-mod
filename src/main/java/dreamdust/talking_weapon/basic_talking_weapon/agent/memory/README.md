@@ -44,6 +44,10 @@
 - 不同 seed 可以共同支持同一条记忆，证据会在 memory layer 聚合。
 - `native_generic` 可以参与内部检索，但不会直接进入 Prompt。
 - `semantic_time_tag` 会加入记忆的 associative tag 视图，因此可以成为记忆到记忆的联想边；但它仍然保持为独立时间语义，不会被塞进普通 detail cue 列表。
+- `nostalgia` 当前取值范围为 `0.0 ~ 2.0`：
+  - `0.0 ~ 1.0`：只影响旧记忆随时间衰退的力度。
+  - `1.0 ~ 2.0`：在保留上述作用的同时，若本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆，会额外启用一次“植入记忆保底”。
+- 这个“植入记忆保底”不会重跑整套 recall；它只复用本轮已经产生的总 seed 池，遍历所有 `SourceType.IMPLANTED && occurredGameTime < 0` 的记忆，并仅按 seed 与记忆 associative tags 的语义命中强度做一次加权抽取，最终最多补入 1 条记忆。
 
 ## 当前缺口：LTM 生成
 

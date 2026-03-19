@@ -145,3 +145,54 @@ export interface TagRecord {
   iconRelativePath?: string;
   group?: string;
 }
+
+export interface RuntimeInteractionOutputEntry {
+  type: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface RuntimeInteractionEntry {
+  timestamp: number;
+  triggerSource: string;
+  userPrompt: string;
+  hasImage: boolean;
+  actionTypes: string[];
+  outputs: RuntimeInteractionOutputEntry[];
+}
+
+export interface RuntimeRecentInteractionsFile {
+  schemaVersion: number;
+  generatedAt: string;
+  entries: RuntimeInteractionEntry[];
+}
+
+export interface RuntimeRecallVisibleContextEntry {
+  description: string;
+  focusTags: string[];
+  detailTags: string[];
+  baseImportance: number;
+  finalScore: number;
+}
+
+export interface RuntimeRecalledMemoryEntry {
+  id: string;
+  description: string;
+  focusTags: string[];
+  detailTags: string[];
+  semanticTimeTag: string;
+  semanticTimeLabel: string;
+}
+
+export interface RuntimeRecallTraceFile {
+  schemaVersion: number;
+  generatedAt: string;
+  triggerSource: string;
+  userPrompt: string;
+  associationMode: string;
+  currentDesireTag: string;
+  triggerTags: string[];
+  traceLines: string[];
+  visibleContexts: RuntimeRecallVisibleContextEntry[];
+  recalledMemories: RuntimeRecalledMemoryEntry[];
+}

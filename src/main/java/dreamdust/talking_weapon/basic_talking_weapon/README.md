@@ -182,6 +182,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - 长期记忆不是全量匹配，而是“focus 导向 + 温度采样”的召回链：`wanderingMind` 提供随机温度，`concentration` 与当前 Focus 压力共同决定联想方向和联想深度。
 - 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
 - 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；`nostalgia` 则控制旧记忆随时间衰退的力度。
+- `nostalgia` 当前允许到 `2.0`。当它大于 `1.0` 且本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆时，系统会复用本轮总 seed 池，对符合条件的植入记忆做一次轻量加权保底，最多额外补入 1 条。
 - `LTMEntry` 现在会记录轻量的游戏内时间锚点（如“第 N 天的深夜”），并在召回时优先按游戏内时间而不是现实时间计算记忆老化。
 - 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，Prompt 中会单独显示为“时间语义”。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
@@ -229,6 +230,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
    - 导出全量 `native_catalog_icons/` 图标包
    - 刷新 `studio_workspace/` 中的 snapshot / runtime view / icon 参考文件，供 Talking Weapon Studio 直接按文件夹导入
    - `studio_workspace/` 现在同时承载 authored data 真源：`custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json` 由游戏与 Studio 直接共用
+   - `studio_workspace/` 也承载只读 runtime 参考：最近交互回合、最近一次记忆召回轨迹等，供游戏内调试页与未来 Studio 详细页共读
    - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时热重载这批 authored 文件
    - 直接打开这些运行时导出文件 / 图标目录进行检查
 
