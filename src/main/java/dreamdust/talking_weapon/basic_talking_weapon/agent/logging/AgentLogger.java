@@ -213,6 +213,7 @@ public final class AgentLogger {
         w.println("  随想值:   " + String.format("%.2f", state.getWanderingMind()));
         w.println("  忆旧值:   " + String.format("%.2f", state.getNostalgia()));
         w.println("  联想模式: " + state.getAssociationMode().name());
+        w.println("  植入保底: " + (state.isImplantedMemorySafetyNetEnabled() ? "开启" : "关闭"));
         w.println();
 
         w.println("记忆:");

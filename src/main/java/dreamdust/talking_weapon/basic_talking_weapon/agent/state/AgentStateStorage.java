@@ -168,6 +168,14 @@ public final class AgentStateStorage {
         if (file.attention_weights == null) {
             file.attention_weights = new AttentionWeightsSection();
         }
+        if (file.state.custom_recall == null) {
+            file.state.custom_recall = CustomRecallSection.fromConfig(AgentState.CustomAssociationConfig.defaults());
+        } else {
+            file.state.custom_recall = file.state.custom_recall.normalized();
+        }
+        if (file.state.implanted_memory_safety_net == null) {
+            file.state.implanted_memory_safety_net = file.state.nostalgia > 1.0f;
+        }
         return file;
     }
 
@@ -181,6 +189,8 @@ public final class AgentStateStorage {
         file.state.wandering_mind = state.getWanderingMind();
         file.state.nostalgia = state.getNostalgia();
         file.state.association_mode = state.getAssociationMode().name();
+        file.state.custom_recall = CustomRecallSection.fromConfig(state.getCustomAssociationConfig());
+        file.state.implanted_memory_safety_net = state.isImplantedMemorySafetyNetEnabled();
         file.state.current_desire_tag = state.getCurrentDesireTag() != null ? state.getCurrentDesireTag().name() : null;
         file.state.desire_description = state.getDesireDescription();
 
@@ -213,6 +223,8 @@ public final class AgentStateStorage {
         state.setWanderingMind(file.state.wandering_mind);
         state.setNostalgia(file.state.nostalgia);
         state.setAssociationModeByName(file.state.association_mode);
+        state.setCustomAssociationConfig(file.state.custom_recall.toConfig());
+        state.setImplantedMemorySafetyNetEnabled(Boolean.TRUE.equals(file.state.implanted_memory_safety_net));
         state.setCurrentDesireTag(parseFocusTag(file.state.current_desire_tag));
         state.setDesireDescription(file.state.desire_description);
 
@@ -265,8 +277,47 @@ public final class AgentStateStorage {
         public float wandering_mind = 0.1f;
         public float nostalgia = 0.5f;
         public String association_mode = AgentState.AssociationMode.BALANCED.name();
+        public CustomRecallSection custom_recall = CustomRecallSection.fromConfig(AgentState.CustomAssociationConfig.defaults());
+        public Boolean implanted_memory_safety_net = null;
         public String current_desire_tag = null;
         public String desire_description = "";
+    }
+
+    public static final class CustomRecallSection {
+        public int seed_entry_count = TalkingWeaponConfig.LTM_RECALL_SEED_ENTRY_COUNT.get();
+        public int tags_per_entry = TalkingWeaponConfig.LTM_RECALL_TAGS_PER_ENTRY.get();
+        public int memory_pick_per_seed = TalkingWeaponConfig.LTM_RECALL_MEMORY_PICK_PER_SEED.get();
+        public int max_depth = TalkingWeaponConfig.LTM_RECALL_MAX_DEPTH.get();
+        public int branch_per_memory = TalkingWeaponConfig.LTM_RECALL_BRANCH_PER_MEMORY.get();
+        public int final_memory_cap = TalkingWeaponConfig.LTM_RECALL_FINAL_MEMORY_CAP.get();
+
+        public static CustomRecallSection fromConfig(AgentState.CustomAssociationConfig config) {
+            AgentState.CustomAssociationConfig normalized = config != null
+                    ? config
+                    : AgentState.CustomAssociationConfig.defaults();
+            CustomRecallSection section = new CustomRecallSection();
+            section.seed_entry_count = normalized.getSeedEntryCount();
+            section.tags_per_entry = normalized.getTagsPerEntry();
+            section.memory_pick_per_seed = normalized.getMemoryPickPerSeed();
+            section.max_depth = normalized.getMaxDepth();
+            section.branch_per_memory = normalized.getBranchPerMemory();
+            section.final_memory_cap = normalized.getFinalMemoryCap();
+            return section;
+        }
+
+        public CustomRecallSection normalized() {
+            return fromConfig(toConfig());
+        }
+
+        public AgentState.CustomAssociationConfig toConfig() {
+            return new AgentState.CustomAssociationConfig(
+                    seed_entry_count,
+                    tags_per_entry,
+                    memory_pick_per_seed,
+                    max_depth,
+                    branch_per_memory,
+                    final_memory_cap);
+        }
     }
 
     public static final class AgentPersonaStateSection {

@@ -9,6 +9,15 @@
     "wandering_mind": 0.18,
     "nostalgia": 0.62,
     "association_mode": "BALANCED",
+    "custom_recall": {
+      "seed_entry_count": 3,
+      "tags_per_entry": 2,
+      "memory_pick_per_seed": 1,
+      "max_depth": 1,
+      "branch_per_memory": 1,
+      "final_memory_cap": 3
+    },
+    "implanted_memory_safety_net": false,
     "current_desire_tag": "CREATION",
     "desire_description": "想再次经历被认真锻造、被赋予意义的时刻。"
   },

@@ -61,13 +61,21 @@ public class AgentStateScreen extends Screen {
     // 思维特性编辑引用
     private EditBox wanderingMindBox;
     private EditBox nostalgiaBox;
+    private EditBox customSeedEntryCountBox;
+    private EditBox customTagsPerEntryBox;
+    private EditBox customMemoryPickPerSeedBox;
+    private EditBox customMaxDepthBox;
+    private EditBox customBranchPerMemoryBox;
+    private EditBox customFinalMemoryCapBox;
     private EditBox desireDescBox;
     private int associationModeIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
+    private boolean implantedMemorySafetyNetEnabled;
 
     private Button emotionLabel;
     private Button assocModeLabel;
     private Button desireTagLabel;
+    private Button implantedMemorySafetyNetButton;
     private StateScrollList scrollList;
 
     public AgentStateScreen(Screen parent) {
@@ -77,6 +85,7 @@ public class AgentStateScreen extends Screen {
         AgentState state = AgentRuntime.getInstance().getState();
         this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
         this.associationModeIndex = assocIndexOf(state.getAssociationMode());
+        this.implantedMemorySafetyNetEnabled = state.isImplantedMemorySafetyNetEnabled();
         // desireTagIndex: 0=无渴望, 1..n=FocusTag
         FocusTag desire = state.getCurrentDesireTag();
         this.desireTagIndex = desire == null ? 0 : desireTagIndexOf(desire) + 1;
@@ -201,6 +210,37 @@ public class AgentStateScreen extends Screen {
             assocModeLabel.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
         }).bounds(0, 0, 20, 20).build();
         scrollList.addEntry(new ThreeWidgetRow("联想模式", left, rowWidth, prevAssoc, assocModeLabel, nextAssoc));
+
+        AgentState.CustomAssociationConfig customRecall = state.getCustomAssociationConfig();
+        scrollList.addEntry(new LabelRow("§8  CUSTOM 参数（仅在自定义模式生效）"));
+        scrollList.addEntry(new LabelRow("§8  其中前两项为兼容字段，当前不会改变首层 seed 起点数量"));
+
+        customSeedEntryCountBox = editBox("seedEntryCount", String.valueOf(customRecall.getSeedEntryCount()), 2);
+        scrollList.addEntry(new BoxRow("Seed Entry Count", left, rowWidth, customSeedEntryCountBox));
+
+        customTagsPerEntryBox = editBox("tagsPerEntry", String.valueOf(customRecall.getTagsPerEntry()), 2);
+        scrollList.addEntry(new BoxRow("Tags Per Entry", left, rowWidth, customTagsPerEntryBox));
+
+        customMemoryPickPerSeedBox = editBox("memoryPickPerSeed", String.valueOf(customRecall.getMemoryPickPerSeed()), 2);
+        scrollList.addEntry(new BoxRow("Memory Pick Per Seed", left, rowWidth, customMemoryPickPerSeedBox));
+
+        customMaxDepthBox = editBox("maxDepth", String.valueOf(customRecall.getMaxDepth()), 2);
+        scrollList.addEntry(new BoxRow("Max Depth", left, rowWidth, customMaxDepthBox));
+
+        customBranchPerMemoryBox = editBox("branchPerMemory", String.valueOf(customRecall.getBranchPerMemory()), 2);
+        scrollList.addEntry(new BoxRow("Branch Per Memory", left, rowWidth, customBranchPerMemoryBox));
+
+        customFinalMemoryCapBox = editBox("finalMemoryCap", String.valueOf(customRecall.getFinalMemoryCap()), 2);
+        scrollList.addEntry(new BoxRow("Final Memory Cap", left, rowWidth, customFinalMemoryCapBox));
+
+        implantedMemorySafetyNetButton = Button.builder(
+                Component.literal(implantedMemorySafetyNetEnabled ? "开启" : "关闭"),
+                btn -> {
+                    implantedMemorySafetyNetEnabled = !implantedMemorySafetyNetEnabled;
+                    btn.setMessage(Component.literal(implantedMemorySafetyNetEnabled ? "开启" : "关闭"));
+                }).bounds(0, 0, 100, 20).build();
+        scrollList.addEntry(new ButtonRow("植入记忆保底", left, rowWidth, implantedMemorySafetyNetButton));
+        scrollList.addEntry(new LabelRow("§8  开启后，若本轮正常召回未命中任何无 occurTime 的植入记忆，会额外做一次轻量补捞"));
 
         // 渴望分类选择器（0 = 无渴望, 1..n = FocusTag）
         String desireLabelStr = desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name();
@@ -336,6 +376,15 @@ public class AgentStateScreen extends Screen {
         } catch (NumberFormatException ignored) {
         }
         state.setAssociationMode(ASSOC_MODES[associationModeIndex]);
+        AgentState.CustomAssociationConfig currentCustomRecall = state.getCustomAssociationConfig();
+        state.setCustomAssociationConfig(new AgentState.CustomAssociationConfig(
+                parseIntOrDefault(customSeedEntryCountBox, currentCustomRecall.getSeedEntryCount()),
+                parseIntOrDefault(customTagsPerEntryBox, currentCustomRecall.getTagsPerEntry()),
+                parseIntOrDefault(customMemoryPickPerSeedBox, currentCustomRecall.getMemoryPickPerSeed()),
+                parseIntOrDefault(customMaxDepthBox, currentCustomRecall.getMaxDepth()),
+                parseIntOrDefault(customBranchPerMemoryBox, currentCustomRecall.getBranchPerMemory()),
+                parseIntOrDefault(customFinalMemoryCapBox, currentCustomRecall.getFinalMemoryCap())));
+        state.setImplantedMemorySafetyNetEnabled(implantedMemorySafetyNetEnabled);
         state.setCurrentDesireTag(desireTagIndex == 0 ? null : DESIRE_TAGS[desireTagIndex - 1]);
         state.setDesireDescription(desireDescBox.getValue().trim());
 
@@ -357,6 +406,17 @@ public class AgentStateScreen extends Screen {
 
         // 当用户编辑了配置文本并回到控制面板点击"保存"时，立即热重载记忆池
         AgentRuntime.getInstance().getMemory().reloadImplantedMemories();
+    }
+
+    private static int parseIntOrDefault(EditBox box, int fallback) {
+        if (box == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(box.getValue().trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private void setWeight(net.minecraftforge.common.ForgeConfigSpec.DoubleValue cfg, EditBox box) {
@@ -552,6 +612,39 @@ public class AgentStateScreen extends Screen {
         @Override
         public List<? extends NarratableEntry> narratables() {
             return List.of(w1, wMid, w2);
+        }
+    }
+
+    /** 标签 + 单按钮行 */
+    private class ButtonRow extends StateScrollList.Row {
+        private final String label;
+        private final int rowWidth;
+        private final AbstractWidget widget;
+
+        ButtonRow(String label, int rowLeft, int rowWidth, AbstractWidget widget) {
+            this.label = label;
+            this.rowWidth = rowWidth;
+            this.widget = widget;
+        }
+
+        @Override
+        public void render(GuiGraphics g, int idx, int top, int left, int w, int h,
+                int mx, int my, boolean hov, float delta) {
+            g.drawString(font, label, left + 4, top + 6, LABEL_COLOR);
+            widget.setX(left + rowWidth - 106);
+            widget.setY(top + 2);
+            widget.setWidth(100);
+            widget.render(g, mx, my, delta);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(widget);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(widget);
         }
     }
 

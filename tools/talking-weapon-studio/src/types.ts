@@ -75,6 +75,15 @@ export interface ImplantedMemoryEntry {
   notes?: string;
 }
 
+export interface AgentStateCustomRecall {
+  seed_entry_count: number;
+  tags_per_entry: number;
+  memory_pick_per_seed: number;
+  max_depth: number;
+  branch_per_memory: number;
+  final_memory_cap: number;
+}
+
 export interface AgentStateFile {
   schemaVersion: number;
   state: {
@@ -86,6 +95,8 @@ export interface AgentStateFile {
     wandering_mind: number;
     nostalgia: number;
     association_mode: string;
+    custom_recall: AgentStateCustomRecall;
+    implanted_memory_safety_net: boolean;
     current_desire_tag?: FocusTag | null;
     desire_description: string;
   };

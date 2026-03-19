@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.state;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 
 /**
  * Agent 高频运行时状态：描述武器灵魂当前即时的情绪、关系数值与思维特性。
@@ -60,18 +61,17 @@ public class AgentState {
     /**
      * 随想值（0.0 ~ 1.0）。
      * <p>
-     * 每次构建上下文时，以此概率随机注入一条与当前场景无关的
-     * 性格词条或历史记忆，制造思维跳脱的生动感。
-     * 默认 0.1（10% 概率开小差）。
+     * 当前主要作为联想采样的“温度”使用：
+     * 值越低，越偏向稳定地选择高分候选；
+     * 值越高，越容易从次高分候选中抽到意外联想。
      */
     private volatile float wanderingMind;
 
     /**
      * 忆旧值（0.0 ~ 2.0）。
      * <p>
-     * 0.0 ~ 1.0 控制旧记忆的时间衰退强度；超过 1.0 后，
-     * 若本轮正常召回没有命中任何“未设置 occurredGameTime 的植入记忆”，
-     * 会额外启用一次基于 seed 池的植入记忆保底补捞。
+     * 控制旧记忆的时间衰退强度。
+     * 值越高，旧记忆衰退越慢，更容易在长期内维持分数。
      */
     private volatile float nostalgia;
 
@@ -81,6 +81,22 @@ public class AgentState {
      * @see AssociationMode
      */
     private volatile AssociationMode associationMode;
+
+    /**
+     * CUSTOM 联想模式的自定义参数。
+     * <p>
+     * 这组值会持久化到 `agent_state.json.state.custom_recall`，由游戏内 State Screen 与
+     * Studio 共用；当 authored 文件缺失时，会回退到客户端配置中的默认值。
+     */
+    private volatile CustomAssociationConfig customAssociationConfig;
+
+    /**
+     * 是否启用“植入记忆保底”。
+     * <p>
+     * 打开后，当本轮正常 recall 没有命中任何 `occurredGameTime < 0` 的植入记忆时，
+     * 系统会额外复用本轮 seed 池，对这类植入记忆做一次轻量补捞。
+     */
+    private volatile boolean implantedMemorySafetyNetEnabled;
 
     /**
      * 当前渴望关联的认知领域（可为 null，表示无特定执念）。
@@ -106,6 +122,8 @@ public class AgentState {
         this.wanderingMind = 0.1f;
         this.nostalgia = 0.5f;
         this.associationMode = AssociationMode.BALANCED;
+        this.customAssociationConfig = CustomAssociationConfig.defaults();
+        this.implantedMemorySafetyNetEnabled = false;
         this.currentDesireTag = null;
         this.desireDescription = "";
         this.playerAddress = "主人";
@@ -222,6 +240,22 @@ public class AgentState {
         }
     }
 
+    public CustomAssociationConfig getCustomAssociationConfig() {
+        return customAssociationConfig != null ? customAssociationConfig : CustomAssociationConfig.defaults();
+    }
+
+    public void setCustomAssociationConfig(CustomAssociationConfig config) {
+        this.customAssociationConfig = config != null ? config : CustomAssociationConfig.defaults();
+    }
+
+    public boolean isImplantedMemorySafetyNetEnabled() {
+        return implantedMemorySafetyNetEnabled;
+    }
+
+    public void setImplantedMemorySafetyNetEnabled(boolean enabled) {
+        this.implantedMemorySafetyNetEnabled = enabled;
+    }
+
     // ── CurrentDesire ─────────────────────────────────────────────────
 
     public FocusTag getCurrentDesireTag() {
@@ -299,7 +333,7 @@ public class AgentState {
      * <li>{@link #DIVERGENT} — 发散：从更多当前条目起跳，浅层铺开</li>
      * <li>{@link #BALANCED} — 均衡：少量起点，有限追溯</li>
      * <li>{@link #DEEP} — 深度：少量起点，沿更深层联想链追溯</li>
-     * <li>{@link #CUSTOM} — 自定义：具体参数读取配置文件</li>
+     * <li>{@link #CUSTOM} — 自定义：具体参数读取 `agent_state.json.state.custom_recall`，缺失时回退客户端配置</li>
      * </ul>
      */
     public enum AssociationMode {
@@ -309,7 +343,7 @@ public class AgentState {
         BALANCED(1, 2),
         /** 深度：少量起点，但更愿意沿单条链深入 */
         DEEP(2, 1),
-        /** 自定义：召回参数完全由配置文件控制 */
+        /** 自定义：召回参数完全由 authored state 控制，缺失时回退客户端配置 */
         CUSTOM(0, 0);
 
         /** 最大联想深度（层数） */
@@ -320,6 +354,82 @@ public class AgentState {
         AssociationMode(int maxDepth, int widthPerLayer) {
             this.maxDepth = maxDepth;
             this.widthPerLayer = widthPerLayer;
+        }
+    }
+
+    /**
+     * CUSTOM 联想模式参数。
+     * <p>
+     * 其中 `seedEntryCount` 和 `tagsPerEntry` 仅保留作历史兼容字段；当前 recall 算法的首层
+     * 起点已经改为“全量 visible detail-tag seed 池”，因此这两项不会再裁掉首层 seed。
+     */
+    public static final class CustomAssociationConfig {
+        public static final int MIN_SEED_ENTRY_COUNT = 1;
+        public static final int MAX_SEED_ENTRY_COUNT = 12;
+        public static final int MIN_TAGS_PER_ENTRY = 1;
+        public static final int MAX_TAGS_PER_ENTRY = 6;
+        public static final int MIN_MEMORY_PICK_PER_SEED = 1;
+        public static final int MAX_MEMORY_PICK_PER_SEED = 6;
+        public static final int MIN_MAX_DEPTH = 0;
+        public static final int MAX_MAX_DEPTH = 4;
+        public static final int MIN_BRANCH_PER_MEMORY = 0;
+        public static final int MAX_BRANCH_PER_MEMORY = 4;
+        public static final int MIN_FINAL_MEMORY_CAP = 0;
+        public static final int MAX_FINAL_MEMORY_CAP = 8;
+
+        private final int seedEntryCount;
+        private final int tagsPerEntry;
+        private final int memoryPickPerSeed;
+        private final int maxDepth;
+        private final int branchPerMemory;
+        private final int finalMemoryCap;
+
+        public CustomAssociationConfig(int seedEntryCount, int tagsPerEntry, int memoryPickPerSeed,
+                int maxDepth, int branchPerMemory, int finalMemoryCap) {
+            this.seedEntryCount = clampInt(seedEntryCount, MIN_SEED_ENTRY_COUNT, MAX_SEED_ENTRY_COUNT);
+            this.tagsPerEntry = clampInt(tagsPerEntry, MIN_TAGS_PER_ENTRY, MAX_TAGS_PER_ENTRY);
+            this.memoryPickPerSeed = clampInt(memoryPickPerSeed, MIN_MEMORY_PICK_PER_SEED, MAX_MEMORY_PICK_PER_SEED);
+            this.maxDepth = clampInt(maxDepth, MIN_MAX_DEPTH, MAX_MAX_DEPTH);
+            this.branchPerMemory = clampInt(branchPerMemory, MIN_BRANCH_PER_MEMORY, MAX_BRANCH_PER_MEMORY);
+            this.finalMemoryCap = clampInt(finalMemoryCap, MIN_FINAL_MEMORY_CAP, MAX_FINAL_MEMORY_CAP);
+        }
+
+        public static CustomAssociationConfig defaults() {
+            return new CustomAssociationConfig(
+                    TalkingWeaponConfig.LTM_RECALL_SEED_ENTRY_COUNT.get(),
+                    TalkingWeaponConfig.LTM_RECALL_TAGS_PER_ENTRY.get(),
+                    TalkingWeaponConfig.LTM_RECALL_MEMORY_PICK_PER_SEED.get(),
+                    TalkingWeaponConfig.LTM_RECALL_MAX_DEPTH.get(),
+                    TalkingWeaponConfig.LTM_RECALL_BRANCH_PER_MEMORY.get(),
+                    TalkingWeaponConfig.LTM_RECALL_FINAL_MEMORY_CAP.get());
+        }
+
+        public int getSeedEntryCount() {
+            return seedEntryCount;
+        }
+
+        public int getTagsPerEntry() {
+            return tagsPerEntry;
+        }
+
+        public int getMemoryPickPerSeed() {
+            return memoryPickPerSeed;
+        }
+
+        public int getMaxDepth() {
+            return maxDepth;
+        }
+
+        public int getBranchPerMemory() {
+            return branchPerMemory;
+        }
+
+        public int getFinalMemoryCap() {
+            return finalMemoryCap;
+        }
+
+        private static int clampInt(int value, int min, int max) {
+            return Math.max(min, Math.min(max, value));
         }
     }
 }

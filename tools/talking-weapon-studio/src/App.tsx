@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { buildTagRecords, studioSeedData } from "./data";
+import { RuntimeRecallGraphPage } from "./RuntimeRecallGraphPage";
 import {
   describeWorkspaceAccessMode,
   describeWorkspaceDirectoryHandle,
@@ -19,6 +20,7 @@ import {
 } from "./workspaceBridge";
 import { pingGameBridge, publishWorkspaceToGame } from "./gameBridge";
 import {
+  AgentStateCustomRecall,
   AgentStateFile,
   AgentStateWeightKey,
   CustomTagEntry,
@@ -434,6 +436,62 @@ const ASSOCIATION_MODE_LABELS: Record<string, string> = {
   CUSTOM: "自定义"
 };
 
+const DEFAULT_AGENT_STATE_CUSTOM_RECALL: AgentStateCustomRecall = {
+  seed_entry_count: 3,
+  tags_per_entry: 2,
+  memory_pick_per_seed: 1,
+  max_depth: 1,
+  branch_per_memory: 1,
+  final_memory_cap: 3
+};
+
+const AGENT_STATE_CUSTOM_RECALL_FIELDS: Array<{
+  key: keyof AgentStateCustomRecall;
+  label: string;
+  min: number;
+  max: number;
+  note?: string;
+}> = [
+  {
+    key: "seed_entry_count",
+    label: "Seed Entry Count",
+    min: 1,
+    max: 12,
+    note: "兼容字段。首层 recall 已改为全量 visible detail-tag seed 池，这一项不会再裁掉起点数量。"
+  },
+  {
+    key: "tags_per_entry",
+    label: "Tags Per Entry",
+    min: 1,
+    max: 6,
+    note: "兼容字段。首层 recall 不再按单条 context entry 截断 seed tags。"
+  },
+  {
+    key: "memory_pick_per_seed",
+    label: "Memory Pick Per Seed",
+    min: 1,
+    max: 6
+  },
+  {
+    key: "max_depth",
+    label: "Max Depth",
+    min: 0,
+    max: 4
+  },
+  {
+    key: "branch_per_memory",
+    label: "Branch Per Memory",
+    min: 0,
+    max: 4
+  },
+  {
+    key: "final_memory_cap",
+    label: "Final Memory Cap",
+    min: 0,
+    max: 8
+  }
+];
+
 const AGENT_STATE_WEIGHT_TO_FOCUS_TAG: Record<AgentStateWeightKey, FocusTag> = {
   combat: "COMBAT",
   movement: "MOVEMENT",
@@ -689,6 +747,11 @@ function normalizeAgentStateWorkspaceFile(value: unknown): AgentStateWorkspaceFi
       wandering_mind: typeof value.state.wandering_mind === "number" ? value.state.wandering_mind : 0.1,
       nostalgia: typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5,
       association_mode: typeof value.state.association_mode === "string" ? value.state.association_mode : "BALANCED",
+      custom_recall: normalizeAgentStateCustomRecall(value.state.custom_recall),
+      implanted_memory_safety_net:
+        typeof value.state.implanted_memory_safety_net === "boolean"
+          ? value.state.implanted_memory_safety_net
+          : (typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5) > 1,
       current_desire_tag: currentDesireTag,
       desire_description: typeof value.state.desire_description === "string" ? value.state.desire_description : ""
     },
@@ -758,6 +821,37 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeAgentStateCustomRecall(value: unknown): AgentStateCustomRecall {
+  const source = isRecord(value) ? value : {};
+
+  return {
+    seed_entry_count:
+      typeof source.seed_entry_count === "number"
+        ? Math.round(clampNumber(source.seed_entry_count, 1, 12))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.seed_entry_count,
+    tags_per_entry:
+      typeof source.tags_per_entry === "number"
+        ? Math.round(clampNumber(source.tags_per_entry, 1, 6))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.tags_per_entry,
+    memory_pick_per_seed:
+      typeof source.memory_pick_per_seed === "number"
+        ? Math.round(clampNumber(source.memory_pick_per_seed, 1, 6))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.memory_pick_per_seed,
+    max_depth:
+      typeof source.max_depth === "number"
+        ? Math.round(clampNumber(source.max_depth, 0, 4))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.max_depth,
+    branch_per_memory:
+      typeof source.branch_per_memory === "number"
+        ? Math.round(clampNumber(source.branch_per_memory, 0, 4))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.branch_per_memory,
+    final_memory_cap:
+      typeof source.final_memory_cap === "number"
+        ? Math.round(clampNumber(source.final_memory_cap, 0, 8))
+        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.final_memory_cap
+  };
+}
+
 function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorkspaceFile {
   const currentDesireTag =
     file.state.current_desire_tag && FOCUS_TAGS.includes(file.state.current_desire_tag)
@@ -784,6 +878,8 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
         typeof file.state.association_mode === "string" && file.state.association_mode.trim()
           ? file.state.association_mode.trim().toUpperCase()
           : "BALANCED",
+      custom_recall: normalizeAgentStateCustomRecall(file.state.custom_recall),
+      implanted_memory_safety_net: Boolean(file.state.implanted_memory_safety_net),
       current_desire_tag: currentDesireTag,
       desire_description: typeof file.state.desire_description === "string" ? file.state.desire_description : ""
     },
@@ -3491,7 +3587,6 @@ function App() {
         {page === "recallGraph" ? (
           <RuntimeRecallGraphPage
             recallTrace={runtimeRecallTrace}
-            tagRecords={tagRecords}
           />
         ) : null}
         {page === "persona" ? (
@@ -5421,6 +5516,34 @@ function AgentStatePage({
       .sort((left, right) => left.value - right.value)[0];
   }, [agentStateFile.attention_weights]);
 
+  const customRecallSummary = useMemo(() => {
+    const recall = agentStateFile.state.custom_recall;
+    return `pick=${recall.memory_pick_per_seed}, depth=${recall.max_depth}, branch=${recall.branch_per_memory}, cap=${recall.final_memory_cap}`;
+  }, [agentStateFile.state.custom_recall]);
+
+  const associationModeDescription = useMemo(() => {
+    switch (agentStateFile.state.association_mode) {
+      case "DIVERGENT":
+        return "发散模式会在单层保留更多候选记忆，但联想链更浅，适合让剑更容易东想西想。";
+      case "DEEP":
+        return "深度模式会减少单层命中数，但更愿意沿着已经命中的记忆继续往下追。";
+      case "CUSTOM":
+        return "自定义模式会读取下方 custom recall 参数。当前算法首层总是从全部 visible detail tags 建 seed 池，再按这些参数控制每层候选、分支和最终注入上限。";
+      case "BALANCED":
+      default:
+        return "均衡模式会在宽度和深度之间折中，既不会过度发散，也不会只盯着一条链往下钻。";
+    }
+  }, [agentStateFile.state.association_mode]);
+
+  const updateCustomRecall = (key: keyof AgentStateCustomRecall, nextValue: number) => {
+    onStateChange({
+      custom_recall: {
+        ...agentStateFile.state.custom_recall,
+        [key]: nextValue
+      }
+    });
+  };
+
   const promptPreview = useMemo(() => {
     const currentDesireText = agentStateFile.state.current_desire_tag
       ? `, desire=${agentStateFile.state.current_desire_tag}`
@@ -5470,6 +5593,10 @@ function AgentStatePage({
             <span className="chip">{`专注度：${agentStateFile.state.concentration.toFixed(2)}`}</span>
             <span className="chip">{`随想值：${agentStateFile.state.wandering_mind.toFixed(2)}`}</span>
             <span className="chip">{`忆旧值：${agentStateFile.state.nostalgia.toFixed(2)}`}</span>
+            <span className="chip">{`植入保底：${agentStateFile.state.implanted_memory_safety_net ? "开启" : "关闭"}`}</span>
+            {agentStateFile.state.association_mode === "CUSTOM" ? (
+              <span className="chip">{`Custom Recall：${customRecallSummary}`}</span>
+            ) : null}
             <span className="chip">
               {agentStateFile.state.current_desire_tag
                 ? `当前渴望：${formatFocusTagLabel(agentStateFile.state.current_desire_tag)}`
@@ -5592,13 +5719,47 @@ function AgentStatePage({
                 </option>
               ))}
             </select>
+            <p className="muted-copy">{associationModeDescription}</p>
           </label>
+
+          {agentStateFile.state.association_mode === "CUSTOM" ? (
+            <div className="field full">
+              <span>Custom Recall Parameters</span>
+              <p className="muted-copy">
+                这组数值会写入 <code>agent_state.json.state.custom_recall</code>，游戏内 State Screen 与 Studio 共用。
+              </p>
+              <div className="form-grid state-form-grid">
+                {AGENT_STATE_CUSTOM_RECALL_FIELDS.map((field) => (
+                  <label key={field.key} className="field">
+                    <span>{field.label}</span>
+                    <input
+                      max={field.max}
+                      min={field.min}
+                      step={1}
+                      type="number"
+                      value={agentStateFile.state.custom_recall[field.key]}
+                      onChange={(event) => {
+                        const nextValue = Number.parseInt(event.target.value, 10);
+                        updateCustomRecall(
+                          field.key,
+                          Number.isFinite(nextValue)
+                            ? Math.round(clampNumber(nextValue, field.min, field.max))
+                            : agentStateFile.state.custom_recall[field.key]
+                        );
+                      }}
+                    />
+                    {field.note ? <p className="muted-copy">{field.note}</p> : null}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <label className="field">
             <span>Concentration</span>
             <div className="range-field">
               <input
-                max={2}
+                max={1}
                 min={0}
                 step={0.01}
                 type="range"
@@ -5628,7 +5789,7 @@ function AgentStatePage({
             <span>Nostalgia</span>
             <div className="range-field">
               <input
-                max={1}
+                max={2}
                 min={0}
                 step={0.01}
                 type="range"
@@ -5637,6 +5798,20 @@ function AgentStatePage({
               />
               <strong className="range-field-output">{agentStateFile.state.nostalgia.toFixed(2)}</strong>
             </div>
+            <p className="muted-copy">现在只控制时间衰退强度，不再负责触发植入记忆保底。</p>
+          </label>
+
+          <label className="field full">
+            <span>Implanted Memory Safety Net</span>
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={agentStateFile.state.implanted_memory_safety_net}
+                onChange={(event) => onStateChange({ implanted_memory_safety_net: event.target.checked })}
+              />
+              <span>若本轮正常召回未命中 `occurredGameTime &lt; 0` 的植入记忆，则额外执行一次轻量补捞。</span>
+            </label>
+            <p className="muted-copy">这个开关已与 nostalgia 解耦。关闭后，系统将完全依赖正常 seed recall，不再做植入记忆保底。</p>
           </label>
         </div>
       </section>
@@ -6072,221 +6247,6 @@ function RuntimeInteractionsPage({
           <p>需要先让游戏端写出 `studio_runtime_recent_interactions.json`。</p>
         </div>
       )}
-    </div>
-  );
-}
-
-function RuntimeRecallGraphPage({
-  recallTrace,
-  tagRecords
-}: {
-  recallTrace: RuntimeRecallTraceFile;
-  tagRecords: TagRecord[];
-}) {
-  const stageWidth = 960;
-  const stageHeight = 640;
-  const centerX = stageWidth / 2;
-  const centerY = stageHeight / 2;
-  const triggerTagSet = useMemo(() => new Set(recallTrace.triggerTags), [recallTrace.triggerTags]);
-
-  const graphNodes = useMemo(() => {
-    const count = recallTrace.recalledMemories.length;
-    if (!count) {
-      return [];
-    }
-
-    const radius = count <= 2 ? 210 : count <= 4 ? 238 : 264;
-
-    return recallTrace.recalledMemories.map((memory, index) => {
-      const turn = count === 1 ? 0 : index / count;
-      const point = polarPoint(centerX, radius, turn - 0.25);
-      const matchedTags = memory.detailTags.filter((tag) => triggerTagSet.has(tag));
-      const edgeTags = matchedTags.length
-        ? matchedTags.slice(0, 3)
-        : memory.semanticTimeTag && triggerTagSet.has(memory.semanticTimeTag)
-          ? [memory.semanticTimeTag]
-          : memory.detailTags.slice(0, 3);
-      const edgeLabel = edgeTags.length ? edgeTags.join(" / ") : "召回";
-      const angle = Math.atan2(point.y - centerY, point.x - centerX);
-      const midpointX = (centerX + point.x) / 2;
-      const midpointY = (centerY + point.y) / 2;
-      const labelX = midpointX + Math.cos(angle - Math.PI / 2) * 18;
-      const labelY = midpointY + Math.sin(angle - Math.PI / 2) * 18;
-
-      return {
-        memory,
-        edgeTags,
-        edgeLabel: abbreviateText(edgeLabel, 28, "召回"),
-        point,
-        labelX,
-        labelY
-      };
-    });
-  }, [recallTrace.recalledMemories, triggerTagSet]);
-
-  return (
-    <div className="panel page-panel">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Recall Trace</p>
-          <h2>最近一次记忆联想</h2>
-          <p className="muted-copy">
-            当前思维导图基于最近一次写入的 recall trace 构建。中心节点表示本轮联想，边标签优先取触发 tag 与记忆 detail tag 的交集。
-          </p>
-        </div>
-        <div className="stacked-badges">
-          <span className="badge">{`${recallTrace.recalledMemories.length} 条记忆`}</span>
-          <span className="badge muted">{recallTrace.associationMode || "未记录 association mode"}</span>
-          <span className="badge muted">
-            {recallTrace.generatedAt
-              ? `最近同步 ${formatRuntimeTimestamp(Date.parse(recallTrace.generatedAt))}`
-              : "尚未读到 recall trace"}
-          </span>
-        </div>
-      </div>
-
-      <div className="two-col runtime-recall-summary">
-        <section className="info-block">
-          <h3>本轮输入</h3>
-          <p className="muted-copy">{`触发源：${recallTrace.triggerSource || "(未知)"}`}</p>
-          <p className="muted-copy">{`用户提示：${recallTrace.userPrompt || "(无提示词)"}`}</p>
-          <div className="chip-row compact">
-            {recallTrace.currentDesireTag ? <span className="chip">{`渴望 ${recallTrace.currentDesireTag}`}</span> : null}
-            {recallTrace.triggerTags.map((tag) => (
-              <span className="chip" key={tag}>
-                {tag}
-              </span>
-            ))}
-            {!recallTrace.triggerTags.length ? <span className="chip">无触发 tags</span> : null}
-          </div>
-        </section>
-
-        <section className="info-block">
-          <h3>可见上下文</h3>
-          <div className="runtime-visible-contexts">
-            {recallTrace.visibleContexts.length ? (
-              recallTrace.visibleContexts.slice(0, 6).map((entry, index) => (
-                <article className="runtime-visible-context-card" key={`${entry.description}-${index}`}>
-                  <strong>{abbreviateText(entry.description, 40, "(无描述)")}</strong>
-                  <p>{`score ${entry.finalScore.toFixed(2)} / base ${entry.baseImportance.toFixed(2)}`}</p>
-                  <div className="chip-row compact">
-                    {entry.focusTags.map((focusTag) => (
-                      <span className="chip" key={`${entry.description}-${focusTag}`}>
-                        {focusTag}
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="muted-copy">当前 trace 里没有可见上下文摘要。</p>
-            )}
-          </div>
-        </section>
-      </div>
-
-      {graphNodes.length ? (
-        <section className="info-block runtime-graph-panel">
-          <div className="section-head">
-            <div>
-              <h3>思维导图</h3>
-              <p className="muted-copy">节点显示被召回记忆本体；边展示本轮联想里可观察到的 tag 线索。</p>
-            </div>
-            <span className="badge muted">Mind Map</span>
-          </div>
-
-          <div className="runtime-mind-map-scroll">
-            <div
-              className="runtime-mind-map-stage"
-              style={{
-                width: `${stageWidth}px`,
-                height: `${stageHeight}px`
-              }}
-            >
-              <svg className="runtime-mind-map-svg" role="img" viewBox={`0 0 ${stageWidth} ${stageHeight}`}>
-                {graphNodes.map((node) => (
-                  <g key={node.memory.id || node.memory.description}>
-                    <line
-                      className="runtime-mind-map-edge"
-                      x1={centerX}
-                      x2={node.point.x}
-                      y1={centerY}
-                      y2={node.point.y}
-                    />
-                    <text className="runtime-mind-map-edge-label" textAnchor="middle" x={node.labelX} y={node.labelY}>
-                      {node.edgeLabel}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-
-              <div
-                className="runtime-mind-map-center"
-                style={{
-                  left: `${centerX}px`,
-                  top: `${centerY}px`
-                }}
-              >
-                <span>本轮联想</span>
-              </div>
-
-              {graphNodes.map((node, index) => {
-                const primaryEdgeTag = node.edgeTags[0];
-                const primaryEdgeRecord = primaryEdgeTag ? tagRecordOrFallback(tagRecords, primaryEdgeTag) : null;
-                return (
-                  <article
-                    className="runtime-mind-map-node"
-                    key={`${node.memory.id}-${index}`}
-                    style={{
-                      left: `${node.point.x}px`,
-                      top: `${node.point.y}px`
-                    }}
-                  >
-                    <div className="custom-tag-meta">
-                      {primaryEdgeTag ? <span className="badge warn">{primaryEdgeTag}</span> : <span className="badge muted">召回</span>}
-                      {node.memory.semanticTimeTag ? (
-                        <span className="badge muted">{node.memory.semanticTimeLabel || node.memory.semanticTimeTag}</span>
-                      ) : null}
-                    </div>
-                    <strong>{abbreviateText(node.memory.id || "memory", 48, "memory")}</strong>
-                    <p>{node.memory.description || "该记忆没有 description。"}</p>
-                    <div className="chip-row compact">
-                      {node.memory.focusTags.map((focusTag) => (
-                        <span className="chip" key={`${node.memory.id}-${focusTag}`}>
-                          {focusTag}
-                        </span>
-                      ))}
-                      {primaryEdgeRecord && primaryEdgeRecord.description ? (
-                        <span className="chip">{abbreviateText(primaryEdgeRecord.description, 28)}</span>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      ) : (
-        <div className="empty-state">
-          <strong>当前没有可绘制的召回记忆</strong>
-          <p>需要先让游戏端完成一次 LTM recall，并写出 `studio_runtime_recall_trace.json`。</p>
-        </div>
-      )}
-
-      <section className="info-block">
-        <div className="section-head">
-          <div>
-            <h3>Trace 详情</h3>
-            <p className="muted-copy">这里直接展示后端写入的 trace lines，方便对照实际召回链路。</p>
-          </div>
-          <span className="badge">{`${recallTrace.traceLines.length} 行`}</span>
-        </div>
-        {recallTrace.traceLines.length ? (
-          <pre className="state-preview runtime-trace-preview">{recallTrace.traceLines.join("\n")}</pre>
-        ) : (
-          <p className="muted-copy">当前没有 trace lines。</p>
-        )}
-      </section>
     </div>
   );
 }

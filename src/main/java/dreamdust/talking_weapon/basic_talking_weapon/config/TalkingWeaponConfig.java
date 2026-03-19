@@ -297,22 +297,22 @@ public final class TalkingWeaponConfig {
 
                 builder.push("memory_recall");
                 LTM_RECALL_SEED_ENTRY_COUNT = builder
-                                .comment("CUSTOM 联想模式：从多少条当前 context entry 中挑选记忆起点")
+                                .comment("CUSTOM 联想模式默认/回退值：历史兼容字段，首层 recall 已改为全量 visible tag seed 池；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("seedEntryCount", 3, 1, 12);
                 LTM_RECALL_TAGS_PER_ENTRY = builder
-                                .comment("CUSTOM 联想模式：每条 entry 最多抽取多少个 seed tags")
+                                .comment("CUSTOM 联想模式默认/回退值：历史兼容字段，首层 recall 已改为全量 visible tag seed 池；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("tagsPerEntry", 2, 1, 6);
                 LTM_RECALL_MEMORY_PICK_PER_SEED = builder
-                                .comment("CUSTOM 联想模式：每个 seed tag 最多召回多少条长期记忆")
+                                .comment("CUSTOM 联想模式默认/回退值：每个 seed tag 在单层候选收集阶段最多保留多少条长期记忆；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("memoryPickPerSeed", 1, 1, 6);
                 LTM_RECALL_MAX_DEPTH = builder
-                                .comment("CUSTOM 联想模式：联想链最大深度")
+                                .comment("CUSTOM 联想模式默认/回退值：联想链最大深度；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("maxDepth", 1, 0, 4);
                 LTM_RECALL_BRANCH_PER_MEMORY = builder
-                                .comment("CUSTOM 联想模式：每条被召回记忆最多继续派生多少个下一层 seed")
+                                .comment("CUSTOM 联想模式默认/回退值：每条被召回记忆最多继续派生多少个下一层 seed；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("branchPerMemory", 1, 0, 4);
                 LTM_RECALL_FINAL_MEMORY_CAP = builder
-                                .comment("CUSTOM 联想模式：最终最多注入到 prompt 的长期记忆条数")
+                                .comment("CUSTOM 联想模式默认/回退值：最终最多注入到 prompt 的长期记忆条数；仅在 agent_state.json 未提供 custom_recall 时使用")
                                 .defineInRange("finalMemoryCap", 3, 0, 8);
                 LTM_RECALL_RECENT_WINDOW = builder
                                 .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆")

@@ -32,7 +32,7 @@
 
 > **补充：**`native_generic:*` 与 `associativeOnly` 是两套不同机制。前者会进入系统检索层，但在 Prompt 合成阶段默认隐藏；后者控制的是整条 `TaggedContextEntry` 是否默认对大模型可见。
 
-> **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力、随想值和忆旧值共同影响联想方向、采样随机性与时间衰退。当前当 `nostalgia > 1.0` 且本轮正常召回未命中任何 `occurredGameTime < 0` 的植入记忆时，系统还会复用本轮 seed 池，对这类植入记忆做一次轻量保底抽取。
+> **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力、随想值和忆旧值共同影响联想方向、采样随机性与时间衰退。若 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回未命中任何 `occurredGameTime < 0` 的植入记忆，系统会复用本轮 seed 池，对这类植入记忆做一次轻量保底抽取。
 
 > **当前进度说明：**这条“上下文进入 Prompt / Persona / LTM Recall”的链已经按新设计落地；但与之配套的新版 LTM 生成闭环仍未完成，仓库中的 `ReflectionTask` 仍应视作旧版过渡骨架。
 

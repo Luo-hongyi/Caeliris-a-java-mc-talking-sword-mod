@@ -26,7 +26,7 @@ import java.util.function.ToDoubleFunction;
  * <p>
  * 核心思想：
  * <ul>
- *   <li>从当前 visible contexts 中抽取少量 seed entries / seed tags，而不是全量遍历。</li>
+ *   <li>从当前 visible contexts 中汇总全部可见 detail tags，构成首层 seed 池。</li>
  *   <li>用 wanderingMind 作为随机温度，避免每轮都回想起同一组线索。</li>
  *   <li>用当前 Focus 压力和 concentration 引导联想方向与联想深度。</li>
  *   <li>允许多个 seed 同时指向同一条记忆，并在记忆层聚合证据，而不是过早在 seed 层去重。</li>
@@ -36,7 +36,8 @@ import java.util.function.ToDoubleFunction;
 public final class LTMRecallEngine {
 
     private static final double COMMON_FOCUS_RECALL_WEIGHT = 0.35;
-    private static final int SPARSE_MEMORY_FALLBACK_LIMIT = 12;
+    private static final double RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD = 0.88;
+    private static final int INITIAL_SEED_TRACE_PREVIEW_LIMIT = 12;
 
     private LTMRecallEngine() {
     }
@@ -75,7 +76,8 @@ public final class LTMRecallEngine {
             this.finalMemoryCap = finalMemoryCap;
         }
 
-        static RecallProfile fromState(AgentState.AssociationMode mode) {
+        static RecallProfile fromState(AgentState state) {
+            AgentState.AssociationMode mode = state != null ? state.getAssociationMode() : null;
             if (mode == null) {
                 mode = AgentState.AssociationMode.BALANCED;
             }
@@ -84,14 +86,18 @@ public final class LTMRecallEngine {
                     return new RecallProfile(4, 2, 2, 1, 2, 4);
                 case DEEP:
                     return new RecallProfile(2, 1, 1, 2, 1, 2);
-                case CUSTOM:
+                case CUSTOM: {
+                    AgentState.CustomAssociationConfig customConfig = state != null
+                            ? state.getCustomAssociationConfig()
+                            : AgentState.CustomAssociationConfig.defaults();
                     return new RecallProfile(
-                            TalkingWeaponConfig.LTM_RECALL_SEED_ENTRY_COUNT.get(),
-                            TalkingWeaponConfig.LTM_RECALL_TAGS_PER_ENTRY.get(),
-                            TalkingWeaponConfig.LTM_RECALL_MEMORY_PICK_PER_SEED.get(),
-                            TalkingWeaponConfig.LTM_RECALL_MAX_DEPTH.get(),
-                            TalkingWeaponConfig.LTM_RECALL_BRANCH_PER_MEMORY.get(),
-                            TalkingWeaponConfig.LTM_RECALL_FINAL_MEMORY_CAP.get());
+                            customConfig.getSeedEntryCount(),
+                            customConfig.getTagsPerEntry(),
+                            customConfig.getMemoryPickPerSeed(),
+                            customConfig.getMaxDepth(),
+                            customConfig.getBranchPerMemory(),
+                            customConfig.getFinalMemoryCap());
+                }
                 case BALANCED:
                 default:
                     return new RecallProfile(3, 2, 1, 1, 1, 3);
@@ -140,6 +146,39 @@ public final class LTMRecallEngine {
 
         String dedupeKey() {
             return depth + "|" + originType + "|" + sourceDescription + "|" + tag;
+        }
+    }
+
+    private static final class InitialSeedAccumulator {
+        final DetailTag tag;
+        final Set<FocusTag> focusTags = new LinkedHashSet<>();
+        String primarySourceDescription = "";
+        int sourceCount;
+
+        InitialSeedAccumulator(DetailTag tag) {
+            this.tag = tag;
+        }
+
+        void note(TaggedContextEntry entry) {
+            if (entry == null) {
+                return;
+            }
+            focusTags.addAll(entry.getFocusTags());
+            sourceCount++;
+            if (primarySourceDescription.isBlank() && entry.getDescription() != null) {
+                primarySourceDescription = entry.getDescription();
+            }
+        }
+
+        double sourceScore() {
+            return 1.0 + Math.min(0.45, Math.max(0, sourceCount - 1) * 0.12);
+        }
+
+        String summary() {
+            if (sourceCount <= 1) {
+                return primarySourceDescription;
+            }
+            return primarySourceDescription + " +" + (sourceCount - 1);
         }
     }
 
@@ -214,8 +253,12 @@ public final class LTMRecallEngine {
 
     private static final class ImplantedFallbackCandidate {
         final LTMEntry entry;
+        double rawWeight;
         double weight;
         int hitCount;
+        int recentRank = -1;
+        double maxSemanticScore;
+        double recentPenalty = 1.0;
         final Set<String> matchedSeedTags = new LinkedHashSet<>();
         final Set<String> matchedMemoryTags = new LinkedHashSet<>();
 
@@ -230,8 +273,8 @@ public final class LTMRecallEngine {
             return new RecallResult(Collections.emptyList(), Collections.emptySet(), Collections.emptyList());
         }
 
-        RecallProfile profile = RecallProfile.fromState(state != null ? state.getAssociationMode() : null);
-        if (profile.finalMemoryCap <= 0 || profile.seedEntryCount <= 0 || profile.tagsPerEntry <= 0) {
+        RecallProfile profile = RecallProfile.fromState(state);
+        if (profile.finalMemoryCap <= 0) {
             return new RecallResult(Collections.emptyList(), Collections.emptySet(), Collections.emptyList());
         }
 
@@ -251,39 +294,17 @@ public final class LTMRecallEngine {
 
         List<Seed> frontier = buildInitialSeeds(visibleContexts, focusProfile, state, profile, traceLines);
         if (frontier.isEmpty()) {
-            traceLines.add("[记忆起点] no detail-tag seeds, trying focus-only fallback");
-            List<MemoryCandidate> fallbackCandidates = collectFocusFallbackCandidates(
-                    visibleContexts, memory, Collections.emptySet(), focusProfile, state, now, nostalgia, currentGameTime);
-            if (fallbackCandidates.isEmpty()) {
-                traceLines.add("[记忆起点] focus-only fallback also found no candidate memories");
-                return new RecallResult(Collections.emptyList(), Collections.emptySet(), traceLines);
-            }
-
-            int fallbackBudget = Math.min(profile.finalMemoryCap, Math.max(1, Math.min(2, fallbackCandidates.size())));
-            List<MemoryCandidate> picked = sampleWeightedWithoutReplacement(
-                    fallbackCandidates, c -> c.combinedScore, fallbackBudget, wanderingMind);
-            List<LTMEntry> recalled = new ArrayList<>();
-            Set<String> triggerTags = new LinkedHashSet<>();
-            for (MemoryCandidate candidate : picked) {
-                recalled.add(candidate.entry);
-                candidate.entry.markAccessed(now);
-                traceLines.add(String.format(
-                        "[记忆召回-fallback] score=%.2f supports=%d focus=%.2f recentPenalty=%.2f ageFactor=%.2f memory=%s",
-                        candidate.combinedScore,
-                        candidate.supportCount,
-                        candidate.bestFocusAlignment,
-                        candidate.bestRecentPenalty,
-                        candidate.bestAgeFactor,
-                        candidate.entry.getDescription()));
-            }
-            memory.noteRecalledMemories(recalled);
-            return new RecallResult(recalled, triggerTags, traceLines);
+            traceLines.add("[记忆起点] no detail-tag seeds, recall aborted");
+            return new RecallResult(Collections.emptyList(), Collections.emptySet(), traceLines);
         }
 
         List<LTMEntry> recalled = new ArrayList<>();
         Set<String> triggerTags = new LinkedHashSet<>();
         Set<UUID> recalledIds = new LinkedHashSet<>();
         Set<String> seenSeedKeys = new LinkedHashSet<>();
+        // frontier 表示“当前联想层正在向外扩展的 seed 列表”：
+        // depth=0 时是由 visible contexts 聚合出的首层 detail tags，
+        // 后续层则来自上一层被选中记忆继续派生出的 associative tags。
         List<Seed> totalSeedPool = new ArrayList<>();
         TagRelationDictionary relationDict = TagRelationDictionary.getInstance();
 
@@ -306,14 +327,6 @@ public final class LTMRecallEngine {
             traceLines.add(String.format("[联想层 %d] frontier=%d", depth, layerSeeds.size()));
             List<MemoryCandidate> candidates = collectLayerCandidates(
                     layerSeeds, memory, recalledIds, relationDict, focusProfile, state, now, nostalgia, currentGameTime);
-            if (candidates.isEmpty() && depth == 0 && memory.getLtmRecords().size() <= SPARSE_MEMORY_FALLBACK_LIMIT) {
-                candidates = collectFocusFallbackCandidates(
-                        visibleContexts, memory, recalledIds, focusProfile, state, now, nostalgia, currentGameTime);
-                if (!candidates.isEmpty()) {
-                    traceLines.add(String.format("[联想层 %d] semantic path empty, switched to focus-only fallback (%d candidates)",
-                            depth, candidates.size()));
-                }
-            }
             if (candidates.isEmpty()) {
                 traceLines.add(String.format("[联想层 %d] no candidate memories", depth));
                 break;
@@ -384,7 +397,10 @@ public final class LTMRecallEngine {
             frontier = nextFrontier;
         }
 
-        if (nostalgia > 1.0f && !containsImplantedRecall(recalled) && !totalSeedPool.isEmpty()) {
+        if (state != null
+                && state.isImplantedMemorySafetyNetEnabled()
+                && !containsImplantedRecall(recalled)
+                && !totalSeedPool.isEmpty()) {
             LTMEntry implantedFallback = pickWeightedImplantedFallback(
                     totalSeedPool, memory, recalledIds, relationDict, wanderingMind, traceLines);
             if (implantedFallback != null && recalledIds.add(implantedFallback.getId())) {
@@ -436,31 +452,60 @@ public final class LTMRecallEngine {
         float concentration = state != null ? state.getConcentration() : 0.5f;
         float wanderingMind = state != null ? state.getWanderingMind() : 0.1f;
 
-        List<EntrySeedCandidate> entryCandidates = new ArrayList<>();
+        LinkedHashMap<String, InitialSeedAccumulator> accumulators = new LinkedHashMap<>();
         for (TaggedContextEntry entry : visibleContexts) {
             if (entry.getDetailTags().isEmpty()) {
                 continue;
             }
-            double attentionScore = AttentionFilter.calculateFinalScore(entry, concentration);
-            double focusAlignment = focusProfile.alignment(entry.getFocusTags());
-            double score = attentionScore * (0.78 + 0.72 * focusAlignment);
-            entryCandidates.add(new EntrySeedCandidate(entry, score));
-        }
-
-        List<EntrySeedCandidate> pickedEntries = sampleWeightedWithoutReplacement(
-                entryCandidates, c -> c.score, profile.seedEntryCount, wanderingMind);
-
-        List<Seed> result = new ArrayList<>();
-        for (EntrySeedCandidate picked : pickedEntries) {
-            traceLines.add(String.format("[记忆起点] context=\"%s\" score=%.2f",
-                    picked.entry.getDescription(), picked.score));
-            List<DetailTag> pickedTags = pickSeedTags(picked.entry.getDetailTags(), profile.tagsPerEntry, wanderingMind);
-            for (DetailTag tag : pickedTags) {
-                result.add(new Seed(tag, picked.entry.getFocusTags(), 0, picked.entry.getDescription(), "context",
-                        picked.score));
-                traceLines.add("  -> seed_tag: " + tag);
+            for (DetailTag tag : entry.getDetailTags()) {
+                InitialSeedAccumulator accumulator = accumulators.computeIfAbsent(
+                        tag.toString(), ignored -> new InitialSeedAccumulator(tag));
+                accumulator.note(entry);
             }
         }
+
+        List<Seed> result = new ArrayList<>();
+        if (accumulators.isEmpty()) {
+            return result;
+        }
+
+        List<InitialSeedAccumulator> orderedSeeds = new ArrayList<>(accumulators.values());
+        orderedSeeds.sort((left, right) -> {
+            int bySupport = Integer.compare(right.sourceCount, left.sourceCount);
+            if (bySupport != 0) {
+                return bySupport;
+            }
+            int byPriority = Double.compare(tagPriority(right.tag), tagPriority(left.tag));
+            if (byPriority != 0) {
+                return byPriority;
+            }
+            return left.tag.toString().compareTo(right.tag.toString());
+        });
+
+        traceLines.add(String.format("[记忆起点] visible_contexts=%d unique_seed_tags=%d",
+                visibleContexts.size(), orderedSeeds.size()));
+
+        int previewCount = 0;
+        for (InitialSeedAccumulator accumulator : orderedSeeds) {
+            Seed seed = new Seed(
+                    accumulator.tag,
+                    accumulator.focusTags,
+                    0,
+                    accumulator.summary(),
+                    "visible_tags",
+                    accumulator.sourceScore());
+            result.add(seed);
+            if (previewCount < INITIAL_SEED_TRACE_PREVIEW_LIMIT) {
+                traceLines.add(String.format("  -> seed_tag: %s supports=%d sourceScore=%.2f",
+                        accumulator.tag, accumulator.sourceCount, accumulator.sourceScore()));
+            }
+            previewCount++;
+        }
+        if (orderedSeeds.size() > INITIAL_SEED_TRACE_PREVIEW_LIMIT) {
+            traceLines.add(String.format("  -> ... %d more seed_tags",
+                    orderedSeeds.size() - INITIAL_SEED_TRACE_PREVIEW_LIMIT));
+        }
+
         return result;
     }
 
@@ -477,6 +522,12 @@ public final class LTMRecallEngine {
                 }
 
                 SemanticMatch semanticMatch = findBestSemanticMatch(seed.tag, entry.getAssociativeDetailTags(), relationDict);
+                int recentRank = memory.getRecentRecallRank(entry.getId());
+                if (recentRank >= 0
+                        && recentRank <= 1
+                        && semanticMatch.score < RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD) {
+                    continue;
+                }
                 double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
                 double seedFocusAlignment = computeSeedFocusAlignment(seed.focusTags, entry.getFocusTags());
                 double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
@@ -565,68 +616,6 @@ public final class LTMRecallEngine {
         return clamp(0.10, 0.95, chance);
     }
 
-    private static List<MemoryCandidate> collectFocusFallbackCandidates(List<TaggedContextEntry> visibleContexts,
-            AgentMemory memory, Set<UUID> recalledIds, FocusProfile focusProfile, AgentState state,
-            long now, float nostalgia, long currentGameTime) {
-        if (memory.getLtmRecords().size() > SPARSE_MEMORY_FALLBACK_LIMIT) {
-            return Collections.emptyList();
-        }
-
-        float concentration = state != null ? state.getConcentration() : 0.5f;
-        Map<UUID, MemoryCandidate> candidateMap = new LinkedHashMap<>();
-
-        for (LTMEntry entry : memory.getLtmRecords()) {
-            if (recalledIds.contains(entry.getId())) {
-                continue;
-            }
-
-            double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
-            double bestContextAlignment = 0.0;
-            double bestContextScore = 0.0;
-            String bestContextDescription = "(no context)";
-
-            for (TaggedContextEntry contextEntry : visibleContexts) {
-                double contextAlignment = computeSeedFocusAlignment(contextEntry.getFocusTags(), entry.getFocusTags());
-                if (contextAlignment <= 0.0) {
-                    continue;
-                }
-                double contextScore = AttentionFilter.calculateFinalScore(contextEntry, concentration);
-                double mergedContextScore = contextAlignment * (0.65 + clamp01(contextScore / 2.0) * 0.35);
-                if (mergedContextScore > bestContextScore) {
-                    bestContextScore = mergedContextScore;
-                    bestContextAlignment = contextAlignment;
-                    bestContextDescription = contextEntry.getDescription();
-                }
-            }
-
-            if (memoryFocusAlignment < 0.12 && bestContextAlignment < 0.12) {
-                continue;
-            }
-
-            double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
-            double ageFactor = computeAgeFactor(entry, nostalgia, currentGameTime, now);
-            double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
-            double strengthFactor = 0.70 + entry.getImportance() * 0.20 + entry.getClarity() * 0.10;
-            double totalScore = (0.24
-                    + memoryFocusAlignment * 0.80
-                    + bestContextAlignment * 0.55
-                    + desiredFocusBonus)
-                    * (0.55 + ageFactor * 0.45)
-                    * recentPenalty
-                    * strengthFactor;
-
-            if (totalScore < 0.14) {
-                continue;
-            }
-
-            MemoryCandidate candidate = candidateMap.computeIfAbsent(entry.getId(), id -> new MemoryCandidate(entry));
-            candidate.addFocusOnlyEvidence(bestContextDescription, totalScore, Math.max(memoryFocusAlignment, bestContextAlignment),
-                    ageFactor, recentPenalty);
-        }
-
-        return new ArrayList<>(candidateMap.values());
-    }
-
     private static boolean containsImplantedRecall(List<LTMEntry> recalled) {
         for (LTMEntry entry : recalled) {
             if (entry != null
@@ -646,6 +635,7 @@ public final class LTMRecallEngine {
 
         Map<UUID, ImplantedFallbackCandidate> candidateMap = new LinkedHashMap<>();
         for (LTMEntry entry : memory.getLtmRecords()) {
+            int recentRank = memory.getRecentRecallRank(entry.getId());
             if (entry == null
                     || entry.getId() == null
                     || recalledIds.contains(entry.getId())
@@ -655,6 +645,7 @@ public final class LTMRecallEngine {
             }
 
             ImplantedFallbackCandidate candidate = null;
+            double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
             for (Seed seed : totalSeedPool) {
                 SemanticMatch match = findBestSemanticMatch(seed.tag, entry.getAssociativeDetailTags(), relationDict);
                 if (match.score <= 0.0 || match.tag == null) {
@@ -662,9 +653,12 @@ public final class LTMRecallEngine {
                 }
                 if (candidate == null) {
                     candidate = candidateMap.computeIfAbsent(entry.getId(), ignored -> new ImplantedFallbackCandidate(entry));
+                    candidate.recentPenalty = recentPenalty;
+                    candidate.recentRank = recentRank;
                 }
-                candidate.weight += match.score;
+                candidate.rawWeight += match.score;
                 candidate.hitCount++;
+                candidate.maxSemanticScore = Math.max(candidate.maxSemanticScore, match.score);
                 candidate.matchedSeedTags.add(seed.tag.toString());
                 candidate.matchedMemoryTags.add(match.tag.toString());
             }
@@ -672,6 +666,12 @@ public final class LTMRecallEngine {
 
         List<ImplantedFallbackCandidate> candidates = new ArrayList<>();
         for (ImplantedFallbackCandidate candidate : candidateMap.values()) {
+            if (candidate.recentRank >= 0
+                    && candidate.recentRank <= 1
+                    && candidate.maxSemanticScore < RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD) {
+                continue;
+            }
+            candidate.weight = candidate.rawWeight * candidate.recentPenalty;
             if (candidate.weight > 0.0 && candidate.hitCount > 0) {
                 candidates.add(candidate);
             }
@@ -691,10 +691,12 @@ public final class LTMRecallEngine {
 
         ImplantedFallbackCandidate winner = picked.get(0);
         traceLines.add(String.format(
-                "[植入记忆保底] seed_pool=%d candidates=%d chosen_weight=%.2f hits=%d memory=%s",
+                "[植入记忆保底] seed_pool=%d candidates=%d chosen_weight=%.2f raw_weight=%.2f recentPenalty=%.2f hits=%d memory=%s",
                 totalSeedPool.size(),
                 candidates.size(),
                 winner.weight,
+                winner.rawWeight,
+                winner.recentPenalty,
                 winner.hitCount,
                 winner.entry.getDescription()));
         traceLines.add("    fallback_seed_tags=" + winner.matchedSeedTags);
@@ -737,17 +739,23 @@ public final class LTMRecallEngine {
             return 1.0;
         }
         if (rank == 0) {
-            return 0.06;
+            return 0.01;
         }
         if (rank == 1) {
-            return 0.16;
+            return 0.03;
         }
         if (rank == 2) {
-            return 0.28;
+            return 0.07;
+        }
+        if (rank == 3) {
+            return 0.14;
+        }
+        if (rank == 4) {
+            return 0.24;
         }
         int window = Math.max(1, memory.getRecentRecallWindow());
         double ratio = rank / (double) window;
-        return clamp(0.35, 0.92, 0.35 + ratio * 0.57);
+        return clamp(0.24, 0.86, 0.24 + Math.pow(clamp01(ratio), 1.8) * 0.62);
     }
 
     private static SemanticMatch findBestSemanticMatch(DetailTag seedTag, Collection<DetailTag> memoryTags,
