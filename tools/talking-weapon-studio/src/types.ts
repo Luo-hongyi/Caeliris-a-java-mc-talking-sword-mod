@@ -82,6 +82,7 @@ export interface AgentStateRecallTuning {
   main_candidates_per_cue: number;
   sandbox_cues_per_memory: number;
   conscious_memory_cap: number;
+  retention_memory_cap: number;
 }
 
 export interface MemoryRecallTuningFile {
@@ -90,12 +91,15 @@ export interface MemoryRecallTuningFile {
   mainCandidatesPerCue: number;
   sandboxCuesPerMemory: number;
   consciousMemoryCap: number;
+  retentionMemoryCap: number;
   recentRecallWindow: number;
   recentRecallWindowCap: number;
   implantedFallbackEntryScore: number;
   promptFillProbabilityScale: number;
   tagPoolHalfLifeDays: number;
+  tagPoolDecayShape: number;
   fermentationHalfLifeDays: number;
+  fermentationDecayShape: number;
   intervalBonusScale: number;
   intervalBonusSteepness: number;
   synthesizedMemoryHalfLife: number;

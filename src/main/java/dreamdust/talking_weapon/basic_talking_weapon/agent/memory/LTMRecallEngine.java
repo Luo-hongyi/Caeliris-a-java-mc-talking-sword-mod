@@ -49,8 +49,6 @@ public final class LTMRecallEngine {
     private static final double RECENT_RECALL_CURVE_EXPONENT = 1.8;
     private static final int INITIAL_SEED_TRACE_PREVIEW_LIMIT = 12;
     private static final double FERMENTATION_RETENTION_SCORE_THRESHOLD = 0.16;
-    private static final int RETENTION_BUFFER_MIN = 8;
-    private static final int RETENTION_BUFFER_MAX = 32;
 
     private LTMRecallEngine() {
     }
@@ -92,11 +90,14 @@ public final class LTMRecallEngine {
         final int mainCandidatesPerCue;
         final int sandboxCuesPerMemory;
         final int consciousMemoryCap;
+        final int retentionMemoryCap;
 
-        private RecallPresetProfile(int mainCandidatesPerCue, int sandboxCuesPerMemory, int consciousMemoryCap) {
+        private RecallPresetProfile(int mainCandidatesPerCue, int sandboxCuesPerMemory, int consciousMemoryCap,
+                int retentionMemoryCap) {
             this.mainCandidatesPerCue = mainCandidatesPerCue;
             this.sandboxCuesPerMemory = sandboxCuesPerMemory;
             this.consciousMemoryCap = consciousMemoryCap;
+            this.retentionMemoryCap = retentionMemoryCap;
         }
 
         static RecallPresetProfile fromState(AgentState state) {
@@ -106,11 +107,11 @@ public final class LTMRecallEngine {
             }
             switch (preset) {
                 case SEED_FIRST:
-                    return new RecallPresetProfile(1, 1, 2);
+                    return new RecallPresetProfile(4, 2, 2, 4);
                 case FULL_VISIBILITY:
-                    return new RecallPresetProfile(2, 1, 4);
+                    return new RecallPresetProfile(8, 4, 4, 8);
                 case HYBRID:
-                    return new RecallPresetProfile(1, 2, 3);
+                    return new RecallPresetProfile(6, 6, 3, 6);
                 case CUSTOM: {
                     AgentState.RecallTuning recallTuning = state != null
                             ? state.getRecallTuning()
@@ -118,10 +119,11 @@ public final class LTMRecallEngine {
                     return new RecallPresetProfile(
                             recallTuning.getMainCandidatesPerCue(),
                             recallTuning.getSandboxCuesPerMemory(),
-                            recallTuning.getConsciousMemoryCap());
+                            recallTuning.getConsciousMemoryCap(),
+                            recallTuning.getRetentionMemoryCap());
                 }
                 default:
-                    return new RecallPresetProfile(1, 2, 3);
+                    return new RecallPresetProfile(6, 6, 3, 6);
             }
         }
     }
@@ -159,12 +161,16 @@ public final class LTMRecallEngine {
         }
     }
 
-    private static final class TagSeedCandidate {
+    private static final class SandboxCueCandidate {
         final DetailTag tag;
+        final Set<FocusTag> focusTags;
+        final double sourceScore;
         final double score;
 
-        TagSeedCandidate(DetailTag tag, double score) {
+        SandboxCueCandidate(DetailTag tag, Collection<FocusTag> focusTags, double sourceScore, double score) {
             this.tag = tag;
+            this.focusTags = Collections.unmodifiableSet(new LinkedHashSet<>(focusTags));
+            this.sourceScore = sourceScore;
             this.score = score;
         }
     }
@@ -415,7 +421,7 @@ public final class LTMRecallEngine {
                 traceLines.add("[主召回] no candidate memories");
             } else {
                 int layerBudget = Math.min(retentionCap,
-                        Math.max(1, Math.min(candidates.size(), mainCueBatch.size() * profile.mainCandidatesPerCue)));
+                        Math.max(1, Math.min(candidates.size(), profile.mainCandidatesPerCue)));
                 List<MemoryCandidate> picked = selectPromotionCandidates(candidates, layerBudget, wanderingMind);
                 for (MemoryCandidate candidate : picked) {
                     if (!promotedIds.add(candidate.entry.getId())) {
@@ -527,8 +533,10 @@ public final class LTMRecallEngine {
     }
 
     private static int computeRetentionCapacity(RecallPresetProfile profile) {
-        int requested = Math.max(profile.consciousMemoryCap * 4, RETENTION_BUFFER_MIN);
-        return Math.max(RETENTION_BUFFER_MIN, Math.min(RETENTION_BUFFER_MAX, requested));
+        int requested = profile != null ? profile.retentionMemoryCap : AgentState.RecallTuning.MIN_RETENTION_MEMORY_CAP;
+        return Math.max(
+                AgentState.RecallTuning.MIN_RETENTION_MEMORY_CAP,
+                Math.min(AgentState.RecallTuning.MAX_RETENTION_MEMORY_CAP, requested));
     }
 
     private static List<MemoryCandidate> selectPromotionCandidates(List<MemoryCandidate> candidates, int limit,
@@ -886,7 +894,7 @@ public final class LTMRecallEngine {
             }
         }
 
-        int sandboxBudget = Math.max(1, Math.min(4, consciousSelection.size()));
+        int sandboxBudget = Math.max(1, Math.min(16, consciousSelection.size()));
         traceLines.add(String.format("[Sandbox联想] source_memories=%d cue_count=%d budget=%d",
                 consciousSelection.size(), sandboxCueInputs.size(), sandboxBudget));
         List<MemoryCandidate> candidates = collectLayerCandidates(
@@ -932,8 +940,8 @@ public final class LTMRecallEngine {
             return Collections.emptyList();
         }
 
-        int tagsPerMemory = Math.max(0, profile.sandboxCuesPerMemory);
-        List<Seed> cueInputs = new ArrayList<>();
+        int cueBudget = Math.max(1, profile.sandboxCuesPerMemory);
+        List<SandboxCueCandidate> candidates = new ArrayList<>();
         for (SelectionCandidate consciousCandidate : consciousSelection) {
             if (consciousCandidate == null || consciousCandidate.entry == null) {
                 continue;
@@ -941,16 +949,26 @@ public final class LTMRecallEngine {
             double consciousBaseScore = consciousCandidate.consciousScore > 0.0
                     ? consciousCandidate.consciousScore
                     : consciousCandidate.score;
-            List<DetailTag> selectedTags = pickCueTags(
-                    consciousCandidate.entry.getAssociativeDetailTags(),
-                    tagsPerMemory,
-                    wanderingMind);
-            for (DetailTag detailTag : selectedTags) {
-                cueInputs.add(new Seed(
+            double sourceScore = clamp(0.90, 2.40, 1.05 + consciousBaseScore * 0.50);
+            for (DetailTag detailTag : consciousCandidate.entry.getAssociativeDetailTags()) {
+                if (detailTag == null) {
+                    continue;
+                }
+                candidates.add(new SandboxCueCandidate(
                         detailTag,
                         consciousCandidate.entry.getFocusTags(),
-                        clamp(0.90, 2.40, 1.05 + consciousBaseScore * 0.50)));
+                        sourceScore,
+                        tagPriority(detailTag)));
             }
+        }
+        List<SandboxCueCandidate> sampled = sampleWeightedWithoutReplacement(
+                candidates,
+                candidate -> candidate.score,
+                Math.min(cueBudget, candidates.size()),
+                wanderingMind);
+        List<Seed> cueInputs = new ArrayList<>(sampled.size());
+        for (SandboxCueCandidate candidate : sampled) {
+            cueInputs.add(new Seed(candidate.tag, candidate.focusTags, candidate.sourceScore));
         }
         return cueInputs;
     }
@@ -1134,22 +1152,6 @@ public final class LTMRecallEngine {
         return new ArrayList<>(candidateMap.values());
     }
 
-    private static List<DetailTag> pickCueTags(Collection<DetailTag> tags, int limit, float wanderingMind) {
-        if (tags == null || tags.isEmpty() || limit <= 0) {
-            return Collections.emptyList();
-        }
-        List<TagSeedCandidate> candidates = new ArrayList<>();
-        for (DetailTag tag : tags) {
-            candidates.add(new TagSeedCandidate(tag, tagPriority(tag)));
-        }
-        List<TagSeedCandidate> sampled = sampleWeightedWithoutReplacement(candidates, c -> c.score, limit, wanderingMind);
-        List<DetailTag> result = new ArrayList<>();
-        for (TagSeedCandidate sampledTag : sampled) {
-            result.add(sampledTag.tag);
-        }
-        return result;
-    }
-
     private static Set<FocusTag> parseFocusTags(Collection<String> rawFocusTags) {
         if (rawFocusTags == null || rawFocusTags.isEmpty()) {
             return Collections.emptySet();
@@ -1307,7 +1309,10 @@ public final class LTMRecallEngine {
         if (remainingCooldown <= 0) {
             return 1.0;
         }
-        int window = Math.max(1, memory.getRecentRecallWindow());
+        int window = Math.max(0, memory.getRecentRecallWindow());
+        if (window <= 0) {
+            return 1.0;
+        }
         int releaseStep = window <= 1
                 ? 0
                 : Math.max(0, Math.min(window - 1, window - remainingCooldown));

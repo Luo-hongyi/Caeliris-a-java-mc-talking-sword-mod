@@ -348,24 +348,29 @@ public class AgentState {
      * <p>
      * 这些值分别控制：
      * <ul>
-     * <li>主召回阶段，每个活跃 cue 最多能提升多少条候选记忆</li>
-     * <li>sandbox 联想阶段，每条表层记忆最多贡献多少个联想 cue（0 = 关闭该回灌）</li>
+     * <li>主召回阶段，本轮最多提升多少条候选记忆</li>
+     * <li>sandbox 联想阶段，本轮最多投放多少个联想 cue</li>
      * <li>本轮最多允许多少条记忆进入表层意识</li>
+     * <li>retained fermentation 层最多保留多少条候选记忆</li>
      * </ul>
      */
     public static final class RecallTuning {
         public static final int MIN_MAIN_CANDIDATES_PER_CUE = 1;
-        public static final int MAX_MAIN_CANDIDATES_PER_CUE = 6;
-        public static final int MIN_SANDBOX_CUES_PER_MEMORY = 0;
-        public static final int MAX_SANDBOX_CUES_PER_MEMORY = 4;
-        public static final int MIN_CONSCIOUS_MEMORY_CAP = 0;
-        public static final int MAX_CONSCIOUS_MEMORY_CAP = 8;
+        public static final int MAX_MAIN_CANDIDATES_PER_CUE = 32;
+        public static final int MIN_SANDBOX_CUES_PER_MEMORY = 1;
+        public static final int MAX_SANDBOX_CUES_PER_MEMORY = 32;
+        public static final int MIN_CONSCIOUS_MEMORY_CAP = 1;
+        public static final int MAX_CONSCIOUS_MEMORY_CAP = 16;
+        public static final int MIN_RETENTION_MEMORY_CAP = 1;
+        public static final int MAX_RETENTION_MEMORY_CAP = 16;
 
         private final int mainCandidatesPerCue;
         private final int sandboxCuesPerMemory;
         private final int consciousMemoryCap;
+        private final int retentionMemoryCap;
 
-        public RecallTuning(int mainCandidatesPerCue, int sandboxCuesPerMemory, int consciousMemoryCap) {
+        public RecallTuning(int mainCandidatesPerCue, int sandboxCuesPerMemory, int consciousMemoryCap,
+                int retentionMemoryCap) {
             this.mainCandidatesPerCue = clampInt(
                     mainCandidatesPerCue,
                     MIN_MAIN_CANDIDATES_PER_CUE,
@@ -378,13 +383,18 @@ public class AgentState {
                     consciousMemoryCap,
                     MIN_CONSCIOUS_MEMORY_CAP,
                     MAX_CONSCIOUS_MEMORY_CAP);
+            this.retentionMemoryCap = clampInt(
+                    retentionMemoryCap,
+                    MIN_RETENTION_MEMORY_CAP,
+                    MAX_RETENTION_MEMORY_CAP);
         }
 
         public static RecallTuning defaults() {
             return new RecallTuning(
                     TalkingWeaponConfig.LTM_RECALL_MAIN_CANDIDATES_PER_CUE.get(),
                     TalkingWeaponConfig.LTM_RECALL_SANDBOX_CUES_PER_MEMORY.get(),
-                    TalkingWeaponConfig.LTM_RECALL_CONSCIOUS_MEMORY_CAP.get());
+                    TalkingWeaponConfig.LTM_RECALL_CONSCIOUS_MEMORY_CAP.get(),
+                    TalkingWeaponConfig.LTM_RECALL_RETENTION_MEMORY_CAP.get());
         }
 
         public int getMainCandidatesPerCue() {
@@ -397,6 +407,10 @@ public class AgentState {
 
         public int getConsciousMemoryCap() {
             return consciousMemoryCap;
+        }
+
+        public int getRetentionMemoryCap() {
+            return retentionMemoryCap;
         }
 
         private static int clampInt(int value, int min, int max) {

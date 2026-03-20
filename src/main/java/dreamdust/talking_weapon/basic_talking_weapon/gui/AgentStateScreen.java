@@ -64,6 +64,7 @@ public class AgentStateScreen extends Screen {
     private EditBox customMainCandidatesPerCueBox;
     private EditBox customSandboxCuesPerMemoryBox;
     private EditBox customConsciousMemoryCapBox;
+    private EditBox customRetentionMemoryCapBox;
     private EditBox desireDescBox;
     private int recallPresetIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
@@ -214,22 +215,28 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new LabelRow("§8  CUSTOM 调参（仅在自定义预设生效）"));
 
         customMainCandidatesPerCueBox = editBox(
-                "mainCandidatesPerCue",
+                "mainRecallBudget",
                 String.valueOf(recallTuning.getMainCandidatesPerCue()),
                 2);
-        scrollList.addEntry(new BoxRow("Main Candidates Per Cue", left, rowWidth, customMainCandidatesPerCueBox));
+        scrollList.addEntry(new BoxRow("Main Recall Budget", left, rowWidth, customMainCandidatesPerCueBox));
 
         customSandboxCuesPerMemoryBox = editBox(
-                "sandboxCuesPerMemory",
+                "sandboxCueBudget",
                 String.valueOf(recallTuning.getSandboxCuesPerMemory()),
                 2);
-        scrollList.addEntry(new BoxRow("Sandbox Cues Per Memory", left, rowWidth, customSandboxCuesPerMemoryBox));
+        scrollList.addEntry(new BoxRow("Sandbox Cue Budget", left, rowWidth, customSandboxCuesPerMemoryBox));
 
         customConsciousMemoryCapBox = editBox(
                 "consciousMemoryCap",
                 String.valueOf(recallTuning.getConsciousMemoryCap()),
                 2);
         scrollList.addEntry(new BoxRow("Conscious Memory Cap", left, rowWidth, customConsciousMemoryCapBox));
+
+        customRetentionMemoryCapBox = editBox(
+                "retentionMemoryCap",
+                String.valueOf(recallTuning.getRetentionMemoryCap()),
+                2);
+        scrollList.addEntry(new BoxRow("Retention Memory Cap", left, rowWidth, customRetentionMemoryCapBox));
 
         implantedMemorySafetyNetButton = Button.builder(
                 Component.literal(implantedMemorySafetyNetEnabled ? "开启" : "关闭"),
@@ -378,7 +385,8 @@ public class AgentStateScreen extends Screen {
         state.setRecallTuning(new AgentState.RecallTuning(
                 parseIntOrDefault(customMainCandidatesPerCueBox, currentRecallTuning.getMainCandidatesPerCue()),
                 parseIntOrDefault(customSandboxCuesPerMemoryBox, currentRecallTuning.getSandboxCuesPerMemory()),
-                parseIntOrDefault(customConsciousMemoryCapBox, currentRecallTuning.getConsciousMemoryCap())));
+                parseIntOrDefault(customConsciousMemoryCapBox, currentRecallTuning.getConsciousMemoryCap()),
+                parseIntOrDefault(customRetentionMemoryCapBox, currentRecallTuning.getRetentionMemoryCap())));
         state.setImplantedMemorySafetyNetEnabled(implantedMemorySafetyNetEnabled);
         state.setCurrentDesireTag(desireTagIndex == 0 ? null : DESIRE_TAGS[desireTagIndex - 1]);
         state.setDesireDescription(desireDescBox.getValue().trim());

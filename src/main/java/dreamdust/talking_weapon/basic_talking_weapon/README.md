@@ -189,7 +189,8 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - `LTMEntry` 现在会长期存储拆分后的时间锚点（`occurredDayIndex + occurredTimeOfDayTick`），并在运行时重建内部 `occurredGameTime`；召回老化只按游戏内时间推进，不再依赖现实时钟。
 - 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，Prompt 中会单独显示为“时间语义”。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
-- `RecallPreset.CUSTOM` 的具体参数优先读取 `agent_state.json.state.recall_tuning`，由游戏内 State Screen 与 Studio 共用；若该段缺失，则回退到 `talking_weapon-client.toml` 中的 `agent.memory_recall` 默认值。
+- `RecallPreset.CUSTOM` 的具体参数优先读取 `agent_state.json.state.recall_tuning`，目前包含 `main_candidates_per_cue`、`sandbox_cues_per_memory`、`conscious_memory_cap`、`retention_memory_cap` 四项；若该段缺失，则回退到 `memory_recall_tuning.json` / `TalkingWeaponConfig` 中的默认值。
+- recall 公式参数现在以 Studio workspace 中的 `memory_recall_tuning.json` 为 authored 真源；游戏内 config screen 不再直接暴露这一组细粒度公式参数。
 
 ### 长期记忆生成
 

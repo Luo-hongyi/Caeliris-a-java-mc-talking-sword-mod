@@ -9,17 +9,20 @@ const RECENT_RECALL_CURVE_EXPONENT = 1.8;
 const MAX_INTERVAL_BONUS = 2.6;
 
 export const DEFAULT_MEMORY_RECALL_TUNING_FILE: MemoryRecallTuningFile = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: "",
-  mainCandidatesPerCue: 1,
-  sandboxCuesPerMemory: 2,
+  mainCandidatesPerCue: 6,
+  sandboxCuesPerMemory: 6,
   consciousMemoryCap: 3,
+  retentionMemoryCap: 12,
   recentRecallWindow: 6,
-  recentRecallWindowCap: 20,
+  recentRecallWindowCap: 16,
   implantedFallbackEntryScore: 1.25,
   promptFillProbabilityScale: 1.0,
   tagPoolHalfLifeDays: 0.4,
-  fermentationHalfLifeDays: 2.5,
+  tagPoolDecayShape: 1.0,
+  fermentationHalfLifeDays: 1.2,
+  fermentationDecayShape: 1.0,
   intervalBonusScale: 0.95,
   intervalBonusSteepness: 4.0,
   synthesizedMemoryHalfLife: 63.0,
@@ -37,40 +40,42 @@ export function clamp01(value: number): number {
 
 export function sanitizeMemoryRecallTuningFile(value: MemoryRecallTuningFile): MemoryRecallTuningFile {
   return {
-    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 1,
+    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 2,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
-    mainCandidatesPerCue: Math.round(clampNumber(value.mainCandidatesPerCue, 1, 6)),
-    sandboxCuesPerMemory: Math.round(clampNumber(value.sandboxCuesPerMemory, 0, 4)),
-    consciousMemoryCap: Math.round(clampNumber(value.consciousMemoryCap, 0, 8)),
-    recentRecallWindowCap: Math.round(clampNumber(value.recentRecallWindowCap, 1, 256)),
-    recentRecallWindow: Math.round(
-      clampNumber(value.recentRecallWindow, 1, Math.round(clampNumber(value.recentRecallWindowCap, 1, 256)))
-    ),
+    mainCandidatesPerCue: Math.round(clampNumber(value.mainCandidatesPerCue, 1, 32)),
+    sandboxCuesPerMemory: Math.round(clampNumber(value.sandboxCuesPerMemory, 1, 32)),
+    consciousMemoryCap: Math.round(clampNumber(value.consciousMemoryCap, 1, 16)),
+    retentionMemoryCap: Math.round(clampNumber(value.retentionMemoryCap, 1, 16)),
+    recentRecallWindowCap: 16,
+    recentRecallWindow: Math.round(clampNumber(value.recentRecallWindow, 0, 16)),
     implantedFallbackEntryScore: clampNumber(value.implantedFallbackEntryScore, 0, 3),
-    promptFillProbabilityScale: clampNumber(value.promptFillProbabilityScale, 0, 3),
-    tagPoolHalfLifeDays: clampNumber(value.tagPoolHalfLifeDays, 0.05, 30),
-    fermentationHalfLifeDays: clampNumber(value.fermentationHalfLifeDays, 0.1, 120),
-    intervalBonusScale: clampNumber(value.intervalBonusScale, 0, 10),
-    intervalBonusSteepness: clampNumber(value.intervalBonusSteepness, 0.1, 20),
+    promptFillProbabilityScale: clampNumber(value.promptFillProbabilityScale, 0, 2),
+    tagPoolHalfLifeDays: clampNumber(value.tagPoolHalfLifeDays, 0.1, 1),
+    tagPoolDecayShape: clampNumber(value.tagPoolDecayShape, 0.25, 4),
+    fermentationHalfLifeDays: clampNumber(value.fermentationHalfLifeDays, 0.1, 2),
+    fermentationDecayShape: clampNumber(value.fermentationDecayShape, 0.25, 4),
+    intervalBonusScale: clampNumber(value.intervalBonusScale, 0, 2.5),
+    intervalBonusSteepness: clampNumber(value.intervalBonusSteepness, 0.25, 8),
     synthesizedMemoryHalfLife: clampNumber(value.synthesizedMemoryHalfLife, 1, 240),
     desireProfileBonusScale: clampNumber(value.desireProfileBonusScale, 0, 2),
     desiredFocusBonusScale: clampNumber(value.desiredFocusBonusScale, 0, 2)
   };
 }
 
-export function computeDecayFactor(deltaDays: number, halfLifeDays: number): number {
+export function computeDecayFactor(deltaDays: number, halfLifeDays: number, decayShape: number): number {
   if (deltaDays <= 0 || halfLifeDays <= 0) {
     return 1;
   }
-  return Math.exp(-deltaDays / halfLifeDays);
+  const ratio = Math.max(0, deltaDays) / Math.max(0.0001, halfLifeDays);
+  return Math.exp(-Math.pow(ratio, clampNumber(decayShape, 0.25, 4)));
 }
 
 export function computeTagPoolDecay(deltaDays: number, tuning: MemoryRecallTuningFile): number {
-  return computeDecayFactor(deltaDays, tuning.tagPoolHalfLifeDays);
+  return computeDecayFactor(deltaDays, tuning.tagPoolHalfLifeDays, tuning.tagPoolDecayShape);
 }
 
 export function computeFermentationDecay(deltaDays: number, tuning: MemoryRecallTuningFile): number {
-  return computeDecayFactor(deltaDays, tuning.fermentationHalfLifeDays);
+  return computeDecayFactor(deltaDays, tuning.fermentationHalfLifeDays, tuning.fermentationDecayShape);
 }
 
 export function computeIntervalBonus(deltaDays: number, tuning: MemoryRecallTuningFile): number {
@@ -91,12 +96,15 @@ export function computeSynthesizedAgeFactor(ageDays: number, tuning: MemoryRecal
   return clampNumber(decay, 0.15, 1);
 }
 
-export function computeEffectiveRecentRecallWindow(window: number, cap: number): number {
-  return Math.max(1, Math.min(Math.round(window), Math.round(cap)));
+export function computeEffectiveRecentRecallWindow(window: number, _cap: number): number {
+  return Math.max(0, Math.min(Math.round(window), 16));
 }
 
 export function computeRecentRecallPenalty(turnsSincePrompt: number, tuning: MemoryRecallTuningFile): number {
   const effectiveWindow = computeEffectiveRecentRecallWindow(tuning.recentRecallWindow, tuning.recentRecallWindowCap);
+  if (effectiveWindow <= 0) {
+    return 1;
+  }
   if (turnsSincePrompt >= effectiveWindow) {
     return 1;
   }
@@ -133,16 +141,16 @@ export function applyTemperature(score: number, wanderingMind: number): number {
   return Math.pow(Math.max(0.0001, score), computeTemperatureExponent(wanderingMind));
 }
 
-export function computePromotionBudget(cueCount: number, mainCandidatesPerCue: number): number {
-  return Math.max(1, cueCount * Math.max(1, Math.round(mainCandidatesPerCue)));
+export function computePromotionBudget(mainCandidatesPerCue: number): number {
+  return Math.round(clampNumber(mainCandidatesPerCue, 1, 32));
 }
 
-export function computeSandboxCueBudget(consciousMemoryCount: number, sandboxCuesPerMemory: number): number {
-  return Math.max(0, consciousMemoryCount * Math.max(0, Math.round(sandboxCuesPerMemory)));
+export function computeSandboxCueBudget(sandboxCuesPerMemory: number): number {
+  return Math.round(clampNumber(sandboxCuesPerMemory, 1, 32));
 }
 
-export function computeRetentionCap(consciousMemoryCap: number): number {
-  return clampNumber(Math.max(consciousMemoryCap * 4, 8), 8, 32);
+export function computeRetentionCap(retentionMemoryCap: number): number {
+  return Math.round(clampNumber(retentionMemoryCap, 1, 16));
 }
 
 export function computeSandboxRecallBudget(consciousMemoryCount: number): number {

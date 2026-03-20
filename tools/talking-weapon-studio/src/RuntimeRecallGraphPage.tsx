@@ -11,7 +11,7 @@ import {
   type Node,
   type NodeProps
 } from "@xyflow/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import "@xyflow/react/dist/style.css";
 import {
   applyTemperature,
@@ -95,6 +95,31 @@ type RuntimeRecallGraphPageProps = {
   onAgentStateChange: (patch: Partial<AgentStateFile["state"]>) => void;
   onMemoryRecallTuningChange: (patch: Partial<MemoryRecallTuningFile>) => void;
   recallTrace: RuntimeRecallTraceFile;
+};
+
+type LayerChip = {
+  label: string;
+  tone?: "default" | "muted" | "warn";
+};
+
+type LayerMonitorItem = {
+  id: string;
+  title: string;
+  scoreLabel?: string;
+  detail?: string;
+  chips?: LayerChip[];
+};
+
+type ParsedSandboxTrace = {
+  cueCount: number;
+  selectedEntries: Array<{
+    description: string;
+    matched: string;
+    score: number;
+    supports: number;
+  }>;
+  sourceMemoryCount: number;
+  budget: number;
 };
 
 function abbreviateText(text: string | undefined, maxLength: number, fallback = "(无)"): string {
@@ -326,8 +351,8 @@ function buildRecallFlow(recallTrace: RuntimeRecallTraceFile): {
   return { edges, nodes };
 }
 
-function NumberField({
-  hint,
+function RangeField({
+  formatValue,
   label,
   max,
   min,
@@ -336,7 +361,7 @@ function NumberField({
   step,
   value
 }: {
-  hint?: string;
+  formatValue?: (value: number) => string;
   label: string;
   max: number;
   min: number;
@@ -345,37 +370,12 @@ function NumberField({
   step: number;
   value: number;
 }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        max={max}
-        min={min}
-        onChange={(event) => onChange(readNumber(event.target.value, value, round))}
-        step={step}
-        type="number"
-        value={value}
-      />
-      {hint ? <small className="field-hint">{hint}</small> : null}
-    </label>
-  );
-}
+  const output = formatValue
+    ? formatValue(value)
+    : round || step >= 1
+      ? `${Math.round(value)}`
+      : value.toFixed(2);
 
-function RangeField({
-  label,
-  max,
-  min,
-  onChange,
-  step,
-  value
-}: {
-  label: string;
-  max: number;
-  min: number;
-  onChange: (next: number) => void;
-  step: number;
-  value: number;
-}) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -383,12 +383,12 @@ function RangeField({
         <input
           max={max}
           min={min}
-          onChange={(event) => onChange(readNumber(event.target.value, value))}
+          onChange={(event) => onChange(readNumber(event.target.value, value, round))}
           step={step}
           type="range"
           value={value}
         />
-        <strong className="range-field-output">{value.toFixed(2)}</strong>
+        <strong className="range-field-output">{output}</strong>
       </div>
     </label>
   );
@@ -510,37 +510,99 @@ function FormulaCard({
   );
 }
 
-function MemoryListBlock({
+function chipClassName(tone?: LayerChip["tone"]): string {
+  switch (tone) {
+    case "warn":
+      return "badge warn";
+    case "muted":
+      return "badge muted";
+    default:
+      return "badge";
+  }
+}
+
+function buildLayerChips(values: Array<string | undefined>, tone: LayerChip["tone"] = "muted", limit = 6): LayerChip[] {
+  const normalized = Array.from(new Set(values
+    .map((value) => (value ?? "").trim())
+    .filter((value) => value.length > 0)));
+  const chips = normalized.slice(0, limit).map((label) => ({ label, tone }));
+  if (normalized.length > limit) {
+    chips.push({ label: `+${normalized.length - limit}`, tone: "muted" });
+  }
+  return chips;
+}
+
+function parseSandboxTrace(traceLines: string[]): ParsedSandboxTrace {
+  const parsed: ParsedSandboxTrace = {
+    cueCount: 0,
+    selectedEntries: [],
+    sourceMemoryCount: 0,
+    budget: 0
+  };
+
+  for (const line of traceLines) {
+    const headerMatch = line.match(/^\[Sandbox联想\] source_memories=(\d+) cue_count=(\d+) budget=(\d+)$/);
+    if (headerMatch) {
+      parsed.sourceMemoryCount = Number.parseInt(headerMatch[1] ?? "0", 10) || 0;
+      parsed.cueCount = Number.parseInt(headerMatch[2] ?? "0", 10) || 0;
+      parsed.budget = Number.parseInt(headerMatch[3] ?? "0", 10) || 0;
+      continue;
+    }
+
+    const pickedMatch = line.match(/^\[Sandbox联想\] score=([0-9.]+) supports=(\d+) matched=(.+?) memory=(.*)$/);
+    if (pickedMatch) {
+      parsed.selectedEntries.push({
+        description: pickedMatch[4] ?? "",
+        matched: pickedMatch[3] ?? "",
+        score: Number.parseFloat(pickedMatch[1] ?? "0") || 0,
+        supports: Number.parseInt(pickedMatch[2] ?? "0", 10) || 0
+      });
+    }
+  }
+
+  return parsed;
+}
+
+function LayerMonitorBlock({
   emptyText,
-  label,
-  memories
+  items,
+  stats,
+  summary,
+  title
 }: {
   emptyText: string;
-  label: string;
-  memories: RuntimeRecalledMemoryEntry[];
+  items: LayerMonitorItem[];
+  stats?: React.ReactNode;
+  summary: string;
+  title: string;
 }) {
   return (
     <section className="info-block">
       <div className="section-head">
         <div>
-          <h3>{label}</h3>
-          <p className="muted-copy">{`当前 ${memories.length} 条。`}</p>
+          <h3>{title}</h3>
+          <p className="muted-copy">{summary}</p>
         </div>
-        <span className="badge">{`${memories.length} 条`}</span>
+        {stats ? <div className="stacked-badges">{stats}</div> : <span className="badge">{`${items.length} 项`}</span>}
       </div>
-      {memories.length ? (
-        <div className="recall-memory-list">
-          {memories.map((memory, index) => (
-            <article className="recall-memory-pill" key={`${memory.id}-${index}`}>
-              <strong>{formatMemoryTitle(index)}</strong>
-              <p>{abbreviateText(memory.description, 96)}</p>
-              <div className="chip-row compact">
-                {memory.focusTags.map((focusTag) => (
-                  <span className="chip" key={`${memory.id}-${focusTag}`}>
-                    {FOCUS_TAG_LABELS[focusTag as FocusTag] ?? focusTag}
-                  </span>
-                ))}
+      {items.length ? (
+        <div className="layer-entry-list">
+          {items.map((item) => (
+            <article className="layer-entry-card" key={item.id}>
+              <div className="layer-entry-head">
+                <strong>{item.title}</strong>
+                {item.scoreLabel ? <span className="layer-entry-score">{item.scoreLabel}</span> : null}
               </div>
+              {item.detail ? <p className="layer-entry-copy">{item.detail}</p> : null}
+              {item.chips && item.chips.length ? (
+                <div className="chip-row compact">
+                  {item.chips.map((chip, index) => (
+                    <span className={chipClassName(chip.tone)} key={`${item.id}-${chip.label}-${index}`}>
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
@@ -559,131 +621,195 @@ export function RuntimeRecallGraphPage({
   onMemoryRecallTuningChange,
   recallTrace
 }: RuntimeRecallGraphPageProps) {
-  const [visibleContextsExpanded, setVisibleContextsExpanded] = useState(false);
   const flow = useMemo(() => buildRecallFlow(recallTrace), [recallTrace]);
   const promptMemories = useMemo(() => activePromptMemories(recallTrace), [recallTrace]);
   const consciousMemories = useMemo(() => activeConsciousMemories(recallTrace), [recallTrace]);
   const effectiveRecentWindow = useMemo(
-    () => computeEffectiveRecentRecallWindow(memoryRecallTuningFile.recentRecallWindow, memoryRecallTuningFile.recentRecallWindowCap),
-    [memoryRecallTuningFile.recentRecallWindow, memoryRecallTuningFile.recentRecallWindowCap]
+    () => computeEffectiveRecentRecallWindow(memoryRecallTuningFile.recentRecallWindow, 16),
+    [memoryRecallTuningFile.recentRecallWindow]
   );
   const currentDeltaDays = useMemo(
     () => gameTicksToDays(recallTrace.runtimeState.deltaGameTime),
     [recallTrace.runtimeState.deltaGameTime]
   );
   const currentRetentionCap = useMemo(
-    () => computeRetentionCap(agentStateFile.state.recall_tuning.conscious_memory_cap),
-    [agentStateFile.state.recall_tuning.conscious_memory_cap]
+    () => computeRetentionCap(agentStateFile.state.recall_tuning.retention_memory_cap),
+    [agentStateFile.state.recall_tuning.retention_memory_cap]
   );
   const runtimeConsciousCount = recallTrace.runtimeState.consciousMemories.length || consciousMemories.length;
-  const parameterLedger = useMemo(() => [
-    {
-      currentValue: formatShortNumber(agentStateFile.state.wandering_mind),
-      formula: "sampleWeight = max(0.0001, score) ^ (2.6 - clamp01(wanderingMind) * 2.0)",
-      label: "wandering_mind",
-      source: "agent_state.json.state"
-    },
-    {
-      currentValue: String(agentStateFile.state.recall_tuning.main_candidates_per_cue),
-      formula: "layerBudget = max(1, mainCueCount * mainCandidatesPerCue)",
-      label: "recall_tuning.main_candidates_per_cue",
-      source: "agent_state.json.state"
-    },
-    {
-      currentValue: String(agentStateFile.state.recall_tuning.sandbox_cues_per_memory),
-      formula: "cueCountPerMemory = sandboxCuesPerMemory",
-      label: "recall_tuning.sandbox_cues_per_memory",
-      source: "agent_state.json.state"
-    },
-    {
-      currentValue: String(agentStateFile.state.recall_tuning.conscious_memory_cap),
-      formula: "consciousCap = consciousMemoryCap; retentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))",
-      label: "recall_tuning.conscious_memory_cap",
-      source: "agent_state.json.state"
-    },
-    {
-      currentValue: String(memoryRecallTuningFile.recentRecallWindow),
-      formula: "effectiveWindow = min(recentRecallWindow, recentRecallWindowCap)",
-      label: "recentRecallWindow",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: String(memoryRecallTuningFile.recentRecallWindowCap),
-      formula: "effectiveWindow = min(recentRecallWindow, recentRecallWindowCap)",
-      label: "recentRecallWindowCap",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.implantedFallbackEntryScore),
-      formula: "fallbackEntryScore = implantedFallbackEntryScore",
-      label: "implantedFallbackEntryScore",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.promptFillProbabilityScale),
-      formula: "speakProbability = clamp(0, 1, (0.08 + normalized * 0.84) * promptFillProbabilityScale)",
-      label: "promptFillProbabilityScale",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.tagPoolHalfLifeDays),
-      formula: "tagPoolDecay = exp(-deltaDays / tagPoolHalfLifeDays)",
-      label: "tagPoolHalfLifeDays",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.fermentationHalfLifeDays),
-      formula: "fermentationDecay = exp(-deltaDays / fermentationHalfLifeDays)",
-      label: "fermentationHalfLifeDays",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.intervalBonusScale),
-      formula: "intervalBonus = clamp(1, 2.6, 1 + min(1.6, log1p(days * intervalBonusSteepness) * intervalBonusScale))",
-      label: "intervalBonusScale",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.intervalBonusSteepness),
-      formula: "intervalBonus = clamp(1, 2.6, 1 + min(1.6, log1p(days * intervalBonusSteepness) * intervalBonusScale))",
-      label: "intervalBonusSteepness",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.synthesizedMemoryHalfLife),
-      formula: "ageFactor = clamp(0.15, 1.0, exp(-ageDays / synthesizedMemoryHalfLife))",
-      label: "synthesizedMemoryHalfLife",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.desireProfileBonusScale),
-      formula: "desireBonus = desireProfileBonusScale * focusWeight(tag)",
-      label: "desireProfileBonusScale",
-      source: "memory_recall_tuning.json"
-    },
-    {
-      currentValue: formatShortNumber(memoryRecallTuningFile.desiredFocusBonusScale),
-      formula: "desiredFocusBonus = desiredFocusBonusScale * focusWeight(desireTag)",
-      label: "desiredFocusBonusScale",
-      source: "memory_recall_tuning.json"
+  const promptScoreById = useMemo(() => {
+    const scores = new Map<string, number>();
+    for (const entry of recallTrace.runtimeState.consciousMemories) {
+      if (!entry.memoryId) {
+        continue;
+      }
+      scores.set(entry.memoryId, entry.score);
     }
-  ], [agentStateFile.state.recall_tuning, agentStateFile.state.wandering_mind, memoryRecallTuningFile]);
+    return scores;
+  }, [recallTrace.runtimeState.consciousMemories]);
+
+  const sandboxTrace = useMemo(() => parseSandboxTrace(recallTrace.traceLines), [recallTrace.traceLines]);
+  const memoryDescriptionById = useMemo(() => {
+    const descriptions = new Map<string, string>();
+    for (const entry of recallTrace.runtimeState.fermentationBuffer) {
+      if (entry.memoryId && entry.description) {
+        descriptions.set(entry.memoryId, entry.description);
+      }
+    }
+    for (const entry of recallTrace.runtimeState.consciousMemories) {
+      if (entry.memoryId && entry.description) {
+        descriptions.set(entry.memoryId, entry.description);
+      }
+    }
+    for (const entry of consciousMemories) {
+      if (entry.id && entry.description) {
+        descriptions.set(entry.id, entry.description);
+      }
+    }
+    for (const entry of promptMemories) {
+      if (entry.id && entry.description) {
+        descriptions.set(entry.id, entry.description);
+      }
+    }
+    return descriptions;
+  }, [consciousMemories, promptMemories, recallTrace.runtimeState.consciousMemories, recallTrace.runtimeState.fermentationBuffer]);
+
+  const visibleContextLayerItems = useMemo(
+    () =>
+      [...recallTrace.visibleContexts]
+        .sort((left, right) => right.finalScore - left.finalScore)
+        .map((entry, index) => ({
+          id: `visible-${index}`,
+          title: abbreviateText(entry.description, 80, "(无描述)"),
+          scoreLabel: `final ${formatShortNumber(entry.finalScore)}`,
+          detail: `base ${formatShortNumber(entry.baseImportance)}`,
+          chips: [
+            ...buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 4),
+            ...buildLayerChips(entry.detailTags.map((tag) => `detail:${tag}`), "default", 5)
+          ]
+        })),
+    [recallTrace.visibleContexts]
+  );
+
+  const tagPoolLayerItems = useMemo(
+    () =>
+      recallTrace.runtimeState.tagPool.map((entry, index) => ({
+        id: `tag-pool-${entry.tag}-${index}`,
+        title: entry.tag || "(空 tag)",
+        scoreLabel: `score ${formatShortNumber(entry.score)}`,
+        detail: `sources ${entry.sourceCount} · injected ${formatShortNumber(entry.injectedScoreThisTurn)}`
+          + (entry.newlyInjectedThisTurn ? " · 本轮新注入" : ""),
+        chips: buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 6)
+      })),
+    [recallTrace.runtimeState.tagPool]
+  );
+
+  const fermentationLayerItems = useMemo(
+    () =>
+      recallTrace.runtimeState.fermentationBuffer.map((entry, index) => ({
+        id: entry.memoryId || `fermentation-${index}`,
+        title: abbreviateText(entry.description, 80, "(无描述)"),
+        scoreLabel: `score ${formatShortNumber(entry.score)}`,
+        detail: `${entry.sourceType || "UNKNOWN"} · cueBoost ${formatShortNumber(entry.cueBoostThisTurn)}`
+          + (entry.enteredConsciousThisTurn ? " · 本轮进入 conscious" : ""),
+        chips: [
+          { label: `supports:${entry.supportTags.length}`, tone: "warn" as const },
+          { label: `assoc:${entry.associativeTags.length}`, tone: "muted" as const },
+          ...buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 3),
+          ...buildLayerChips(entry.supportTags.map((tag) => `support:${tag}`), "default", 4)
+        ]
+      })),
+    [recallTrace.runtimeState.fermentationBuffer]
+  );
+
+  const consciousLayerItems = useMemo(
+    () =>
+      recallTrace.runtimeState.consciousMemories.map((entry, index) => ({
+        id: entry.memoryId || `conscious-${index}`,
+        title: abbreviateText(entry.description, 80, "(无描述)"),
+        scoreLabel: `score ${formatShortNumber(entry.score)}`,
+        detail: entry.sourceType || "UNKNOWN",
+        chips: [
+          ...buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 3),
+          ...buildLayerChips(entry.supportTags.map((tag) => `support:${tag}`), "default", 4),
+          ...buildLayerChips(entry.associativeTags.map((tag) => `assoc:${tag}`), "muted", 4)
+        ]
+      })),
+    [recallTrace.runtimeState.consciousMemories]
+  );
+
+  const promptLayerItems = useMemo(
+    () =>
+      promptMemories.map((entry, index) => ({
+        id: entry.id || `prompt-${index}`,
+        title: abbreviateText(entry.description, 80, "(无描述)"),
+        scoreLabel: entry.id && promptScoreById.has(entry.id)
+          ? `score ${formatShortNumber(promptScoreById.get(entry.id) ?? 0)}`
+          : "score 未记录",
+        detail: entry.semanticTimeLabel ? `time ${entry.semanticTimeLabel}` : "进入 prompt 的最终输出子集",
+        chips: [
+          ...buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 3),
+          ...buildLayerChips(entry.detailTags.map((tag) => `detail:${tag}`), "default", 4)
+        ]
+      })),
+    [promptMemories, promptScoreById]
+  );
+
+  const sandboxSourceItems = useMemo(
+    () =>
+      recallTrace.runtimeState.associationSandbox.sourceMemoryIds.map((memoryId, index) => ({
+        id: `sandbox-source-${memoryId}-${index}`,
+        title: abbreviateText(memoryDescriptionById.get(memoryId) ?? memoryId, 80, memoryId || "(空 id)"),
+        scoreLabel: promptScoreById.has(memoryId)
+          ? `score ${formatShortNumber(promptScoreById.get(memoryId) ?? 0)}`
+          : undefined,
+        detail: memoryId,
+        chips: [{ label: "来自 conscious", tone: "muted" as const }]
+      })),
+    [memoryDescriptionById, promptScoreById, recallTrace.runtimeState.associationSandbox.sourceMemoryIds]
+  );
+
+  const sandboxCueItems = useMemo(
+    () =>
+      recallTrace.runtimeState.associationSandbox.cueTags.map((tag, index) => ({
+        id: `sandbox-cue-${tag}-${index}`,
+        title: tag || "(空 cue)",
+        detail: "来自 source memories 的 associative tag 池",
+        chips: [{ label: "sandbox cue", tone: "warn" as const }]
+      })),
+    [recallTrace.runtimeState.associationSandbox.cueTags]
+  );
+
+  const sandboxResultItems = useMemo(() => {
+    if (sandboxTrace.selectedEntries.length) {
+      return sandboxTrace.selectedEntries.map((entry, index) => ({
+        id: `sandbox-result-${index}`,
+        title: abbreviateText(entry.description, 80, "(无描述)"),
+        scoreLabel: `score ${formatShortNumber(entry.score)}`,
+        detail: `matched ${entry.matched} · supports ${entry.supports}`,
+        chips: [{ label: "1-hop", tone: "muted" as const }]
+      }));
+    }
+
+    const sourceSet = new Set(recallTrace.runtimeState.associationSandbox.sourceMemoryIds);
+    return recallTrace.runtimeState.associationSandbox.memoryIds
+      .filter((memoryId) => !sourceSet.has(memoryId))
+      .map((memoryId, index) => ({
+        id: `sandbox-result-${memoryId}-${index}`,
+        title: abbreviateText(memoryDescriptionById.get(memoryId) ?? memoryId, 80, memoryId || "(空 id)"),
+        detail: memoryId,
+        chips: [{ label: "score 未结构化记录", tone: "muted" as const }]
+      }));
+  }, [
+    memoryDescriptionById,
+    recallTrace.runtimeState.associationSandbox.memoryIds,
+    recallTrace.runtimeState.associationSandbox.sourceMemoryIds,
+    sandboxTrace.selectedEntries
+  ]);
 
   const wanderingSamples = useMemo(
     () => buildSampleSeries(2.4, 36, (score) => applyTemperature(score + 0.1, agentStateFile.state.wandering_mind)),
     [agentStateFile.state.wandering_mind]
-  );
-  const promotionBudgetSamples = useMemo(
-    () => Array.from({ length: 12 }, (_, index) => ({ x: index + 1, y: computePromotionBudget(index + 1, agentStateFile.state.recall_tuning.main_candidates_per_cue) })),
-    [agentStateFile.state.recall_tuning.main_candidates_per_cue]
-  );
-  const sandboxCueSamples = useMemo(
-    () => Array.from({ length: 8 }, (_, index) => ({ x: index + 1, y: computeSandboxCueBudget(index + 1, agentStateFile.state.recall_tuning.sandbox_cues_per_memory) })),
-    [agentStateFile.state.recall_tuning.sandbox_cues_per_memory]
-  );
-  const consciousCapSamples = useMemo(
-    () => Array.from({ length: 9 }, (_, index) => ({ x: index, y: computeRetentionCap(index) })),
-    []
   );
   const tagPoolDecaySamples = useMemo(
     () => buildSampleSeries(Math.max(1.2, memoryRecallTuningFile.tagPoolHalfLifeDays * 3), 36, (days) => computeTagPoolDecay(days, memoryRecallTuningFile)),
@@ -704,18 +830,6 @@ export function RuntimeRecallGraphPage({
   const recentPenaltySamples = useMemo(
     () => Array.from({ length: effectiveRecentWindow + 3 }, (_, index) => ({ x: index, y: computeRecentRecallPenalty(index, memoryRecallTuningFile) })),
     [effectiveRecentWindow, memoryRecallTuningFile]
-  );
-  const promptFillSamples = useMemo(
-    () => buildSampleSeries(2.4, 36, (score) => computePromptFillProbability(score, memoryRecallTuningFile)),
-    [memoryRecallTuningFile]
-  );
-  const desireProfileSamples = useMemo(
-    () => buildSampleSeries(1, 24, (focusWeight) => computeDesireProfileBonus(focusWeight, memoryRecallTuningFile)),
-    [memoryRecallTuningFile]
-  );
-  const desiredFocusSamples = useMemo(
-    () => buildSampleSeries(1, 24, (focusWeight) => computeDesiredFocusBonus(focusWeight, memoryRecallTuningFile)),
-    [memoryRecallTuningFile]
   );
 
   return (
@@ -846,37 +960,50 @@ export function RuntimeRecallGraphPage({
           <div className="section-head">
             <div>
               <h3>CUSTOM Runtime Tuning</h3>
-              <p className="muted-copy">这三项写回 `agent_state.json.state.recall_tuning`。只有 preset = `CUSTOM` 时，它们才直接接管运行时预算。</p>
+              <p className="muted-copy">这四项写回 `agent_state.json.state.recall_tuning`。只有 preset = `CUSTOM` 时，它们才直接接管运行时预算。</p>
             </div>
             <span className="badge">{agentStateFile.state.recall_preset}</span>
           </div>
           <div className="form-grid recall-form-grid">
-            <NumberField
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
               label="main_candidates_per_cue"
-              max={6}
+              max={32}
               min={1}
               onChange={(next) => onAgentRecallTuningChange("main_candidates_per_cue", Math.round(next))}
               round
               step={1}
               value={agentStateFile.state.recall_tuning.main_candidates_per_cue}
             />
-            <NumberField
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
               label="sandbox_cues_per_memory"
-              max={4}
-              min={0}
+              max={32}
+              min={1}
               onChange={(next) => onAgentRecallTuningChange("sandbox_cues_per_memory", Math.round(next))}
               round
               step={1}
               value={agentStateFile.state.recall_tuning.sandbox_cues_per_memory}
             />
-            <NumberField
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
               label="conscious_memory_cap"
-              max={8}
-              min={0}
+              max={16}
+              min={1}
               onChange={(next) => onAgentRecallTuningChange("conscious_memory_cap", Math.round(next))}
               round
               step={1}
               value={agentStateFile.state.recall_tuning.conscious_memory_cap}
+            />
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
+              label="retention_memory_cap"
+              max={16}
+              min={1}
+              onChange={(next) => onAgentRecallTuningChange("retention_memory_cap", Math.round(next))}
+              round
+              step={1}
+              value={agentStateFile.state.recall_tuning.retention_memory_cap}
             />
           </div>
           <div className="chip-row compact">
@@ -890,22 +1017,90 @@ export function RuntimeRecallGraphPage({
       <section className="info-block">
         <div className="section-head">
           <div>
-            <h3>参数索引</h3>
-            <p className="muted-copy">{"这里把每个可调参数明确绑定到一个公式说明，便于核对“参数 -> 公式 -> 输出”的关系。"}</p>
+            <h3>Recall 分层监测</h3>
+            <p className="muted-copy">按一次 recall 的真实流水线查看每一层当前留下了什么，以及这一层的分数或核心状态。</p>
           </div>
-          <span className="badge muted">{`${parameterLedger.length} 个参数`}</span>
+          <div className="stacked-badges">
+            <span className="badge">{`${visibleContextLayerItems.length} visible`}</span>
+            <span className="badge muted">{`${tagPoolLayerItems.length} tag_pool`}</span>
+            <span className="badge muted">{`${fermentationLayerItems.length} fermentation`}</span>
+            <span className="badge muted">{`${consciousLayerItems.length} conscious`}</span>
+            <span className="badge muted">{`${promptLayerItems.length} prompt`}</span>
+          </div>
         </div>
-        <div className="recall-ledger-grid">
-          {parameterLedger.map((entry) => (
-            <article className="recall-ledger-card" key={entry.label}>
-              <div className="custom-tag-meta">
-                <span className="badge">{entry.label}</span>
-                <span className="badge muted">{entry.source}</span>
-              </div>
-              <strong>{entry.currentValue}</strong>
-              <p>{entry.formula}</p>
-            </article>
-          ))}
+        <div className="recall-layer-grid">
+          <LayerMonitorBlock
+            emptyText="当前 trace 里没有 visible contexts。"
+            items={visibleContextLayerItems}
+            summary="原始 visible context 层。这里展示真正进入 recall 起点的上下文条目，以及它们的最终 attention 分。"
+            title="1. Visible Context"
+          />
+          <LayerMonitorBlock
+            emptyText="当前 tag_pool 为空。"
+            items={tagPoolLayerItems}
+            summary="跨轮维护的 cue 缓冲层。这里能看到每个 detail tag 当前在池中的活跃分数。"
+            title="2. Tag Pool"
+          />
+          <LayerMonitorBlock
+            emptyText="当前 fermentation buffer 为空。"
+            items={fermentationLayerItems}
+            summary="发酵层记忆缓冲。这里展示还在脑中发热、但未必浮到表层的记忆。"
+            title="3. Fermentation"
+          />
+          <LayerMonitorBlock
+            emptyText="当前没有进入 conscious 的记忆。"
+            items={consciousLayerItems}
+            summary="显性意识层。这里的 score 就是本轮 conscious 层实际保留下来的分数。"
+            title="4. Conscious"
+          />
+          <LayerMonitorBlock
+            emptyText="当前没有进入 prompt 的记忆。"
+            items={promptLayerItems}
+            summary="最终进入 prompt 的输出子集。分数优先复用 conscious 层记录，方便对照 prompt fill 阀门。"
+            title="5. Prompt"
+          />
+        </div>
+      </section>
+
+      <section className="info-block">
+        <div className="section-head">
+          <div>
+            <h3>Sandbox 结构</h3>
+            <p className="muted-copy">当前 sandbox 是一个独立的 1-hop 联想沙盒，不会回写主 fermentation。这里拆开看 source memories、cue 池和最终联想到的结果。</p>
+          </div>
+          <div className="stacked-badges">
+            <span className="badge">{recallTrace.runtimeState.associationSandbox.active ? "active" : "inactive"}</span>
+            <span className="badge muted">{`hop ${recallTrace.runtimeState.associationSandbox.hopLimit}`}</span>
+            <span className="badge muted">{`budget ${sandboxTrace.budget || recallTrace.runtimeState.associationSandbox.recallBudget}`}</span>
+            <span className="badge muted">{`sampled cues ${sandboxTrace.cueCount || recallTrace.runtimeState.associationSandbox.cueTags.length}`}</span>
+          </div>
+        </div>
+        <p className="muted-copy">
+          当前 snapshot 里的 `cueTags` 是 source memories 的 associative tag 池；真正被抽样出来参与 sandbox recall 的 cue 数量，优先从 trace line 里的
+          `cue_count` 读取。
+        </p>
+        <div className="recall-layer-grid">
+          <LayerMonitorBlock
+            emptyText="当前没有 sandbox source memories。"
+            items={sandboxSourceItems}
+            stats={<span className="badge">{`${sandboxSourceItems.length} 条`}</span>}
+            summary="这层直接来自 conscious memories，是 sandbox 的输入记忆层。"
+            title="Sandbox Source Memories"
+          />
+          <LayerMonitorBlock
+            emptyText="当前没有 sandbox cue tags。"
+            items={sandboxCueItems}
+            stats={<span className="badge">{`${sandboxCueItems.length} 个 tag`}</span>}
+            summary="这层是由 source memories 的 associative tags 汇总出来的 cue 池。当前 UI 看到的是池内容，不一定等于最终被抽中的 sampled cue 子集。"
+            title="Sandbox Cue Pool"
+          />
+          <LayerMonitorBlock
+            emptyText="当前没有 sandbox recall 结果。"
+            items={sandboxResultItems}
+            stats={<span className="badge">{`${sandboxResultItems.length} 条结果`}</span>}
+            summary="这层是 sandbox 最终联想到的 1-hop 记忆结果。若 trace line 可用，会直接显示结构化 score。"
+            title="Sandbox Results"
+          />
         </div>
       </section>
 
@@ -913,7 +1108,7 @@ export function RuntimeRecallGraphPage({
         <div className="section-head">
           <div>
             <h3>Recall 公式参数</h3>
-            <p className="muted-copy">这些字段写回 `memory_recall_tuning.json`，游戏发布时会同步回 `TalkingWeaponConfig` 与真实 toml。</p>
+            <p className="muted-copy">这些字段写回 `memory_recall_tuning.json`，并在游戏启动或 Studio 发布时同步到 `TalkingWeaponConfig` 与真实 toml。前四项同时也是 CUSTOM 缺省预算的 workspace 兜底值。</p>
           </div>
           <span className="badge muted">memory_recall_tuning.json</span>
         </div>
@@ -942,96 +1137,123 @@ export function RuntimeRecallGraphPage({
           </FormulaCard>
 
           <FormulaCard
-            formula={`layerBudget = max(1, mainCueCount * mainCandidatesPerCue)`}
-            stats={<span className="chip">{`cue=4 时 budget ${computePromotionBudget(4, agentStateFile.state.recall_tuning.main_candidates_per_cue)}`}</span>}
-            summary="主召回阶段，每个 cue 最多带出多少个提升候选。"
-            title="主召回候选预算"
-          >
-            <NumberField
-              label="main_candidates_per_cue"
-              max={6}
-              min={1}
-              onChange={(next) => onAgentRecallTuningChange("main_candidates_per_cue", Math.round(next))}
-              round
-              step={1}
-              value={agentStateFile.state.recall_tuning.main_candidates_per_cue}
-            />
-            <FormulaChart
-              formatX={(value) => `${Math.round(value)} cues`}
-              formatY={(value) => `${Math.round(value)}`}
-              samples={promotionBudgetSamples}
-              xLabel="mainCueCount"
-              yLabel="layerBudget"
-            />
-          </FormulaCard>
-
-          <FormulaCard
-            formula={`cueCountPerMemory = sandboxCuesPerMemory`}
-            stats={<span className="chip">{`conscious=3 时最多 ${computeSandboxCueBudget(3, agentStateFile.state.recall_tuning.sandbox_cues_per_memory)} 个 cue`}</span>}
-            summary="每条表层记忆能向 sandbox 回灌多少个 associative cue。"
-            title="Sandbox Cue 预算"
-          >
-            <NumberField
-              label="sandbox_cues_per_memory"
-              max={4}
-              min={0}
-              onChange={(next) => onAgentRecallTuningChange("sandbox_cues_per_memory", Math.round(next))}
-              round
-              step={1}
-              value={agentStateFile.state.recall_tuning.sandbox_cues_per_memory}
-            />
-            <FormulaChart
-              formatX={(value) => `${Math.round(value)} conscious`}
-              formatY={(value) => `${Math.round(value)}`}
-              samples={sandboxCueSamples}
-              xLabel="consciousMemoryCount"
-              yLabel="max cue count"
-            />
-          </FormulaCard>
-
-          <FormulaCard
-            formula={`consciousCap = consciousMemoryCap\nretentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))`}
+            formula={`promotionBudget = clamp(1, 32, round(mainCandidatesPerCue))`}
             stats={
               <>
-                <span className="chip">{`consciousCap ${agentStateFile.state.recall_tuning.conscious_memory_cap}`}</span>
-                <span className="chip">{`retentionCap ${currentRetentionCap}`}</span>
+                <span className="chip">{`workspace 默认 ${computePromotionBudget(memoryRecallTuningFile.mainCandidatesPerCue)}`}</span>
+                <span className="chip muted">{`runtime 当前 ${computePromotionBudget(agentStateFile.state.recall_tuning.main_candidates_per_cue)}`}</span>
               </>
             }
-            summary="当前一个参数同时决定 conscious 上限，并派生 retained fermentation 的容量上限。"
-            title="表层容量"
+            summary="这是 `memory_recall_tuning.json` 里的 CUSTOM 兜底默认值。当前不再乘 `mainCueCount`，而是直接控制本轮主召回提升预算。"
+            title="主召回候选预算"
           >
-            <NumberField
-              label="conscious_memory_cap"
-              max={8}
-              min={0}
-              onChange={(next) => onAgentRecallTuningChange("conscious_memory_cap", Math.round(next))}
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
+              label="mainCandidatesPerCue"
+              max={32}
+              min={1}
+              onChange={(next) => onMemoryRecallTuningChange({ mainCandidatesPerCue: Math.round(next) })}
               round
               step={1}
-              value={agentStateFile.state.recall_tuning.conscious_memory_cap}
-            />
-            <FormulaChart
-              formatX={(value) => `${Math.round(value)} cap`}
-              formatY={(value) => `${Math.round(value)}`}
-              samples={consciousCapSamples}
-              xLabel="conscious_memory_cap"
-              yLabel="retentionCap"
+              value={memoryRecallTuningFile.mainCandidatesPerCue}
             />
           </FormulaCard>
 
           <FormulaCard
-            formula={`decayFactor = exp(-deltaDays / tagPoolHalfLifeDays)`}
+            formula={`sandboxCueBudget = clamp(1, 32, round(sandboxCuesPerMemory))`}
+            stats={
+              <>
+                <span className="chip">{`workspace 默认 ${computeSandboxCueBudget(memoryRecallTuningFile.sandboxCuesPerMemory)}`}</span>
+                <span className="chip muted">{`runtime 当前 ${computeSandboxCueBudget(agentStateFile.state.recall_tuning.sandbox_cues_per_memory)}`}</span>
+              </>
+            }
+            summary="这是 `memory_recall_tuning.json` 里的 CUSTOM 兜底默认值。当前不再按每条 conscious 记忆分别乘预算，而是直接控制本轮 sandbox cue 总预算。"
+            title="Sandbox Cue 预算"
+          >
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
+              label="sandboxCuesPerMemory"
+              max={32}
+              min={1}
+              onChange={(next) => onMemoryRecallTuningChange({ sandboxCuesPerMemory: Math.round(next) })}
+              round
+              step={1}
+              value={memoryRecallTuningFile.sandboxCuesPerMemory}
+            />
+          </FormulaCard>
+
+          <FormulaCard
+            formula={`consciousCap = clamp(1, 16, round(consciousMemoryCap))`}
+            stats={
+              <>
+                <span className="chip">{`workspace 默认 ${Math.round(memoryRecallTuningFile.consciousMemoryCap)}`}</span>
+                <span className="chip muted">{`runtime 当前 ${agentStateFile.state.recall_tuning.conscious_memory_cap}`}</span>
+              </>
+            }
+            summary="这是 `memory_recall_tuning.json` 里的 CUSTOM 兜底默认值。表层意识现在单独控制，不再顺带派生 retained fermentation 容量。"
+            title="表层容量"
+          >
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
+              label="consciousMemoryCap"
+              max={16}
+              min={1}
+              onChange={(next) => onMemoryRecallTuningChange({ consciousMemoryCap: Math.round(next) })}
+              round
+              step={1}
+              value={memoryRecallTuningFile.consciousMemoryCap}
+            />
+          </FormulaCard>
+
+          <FormulaCard
+            formula={`retentionCap = clamp(1, 16, round(retentionMemoryCap))`}
+            stats={
+              <>
+                <span className="chip">{`workspace 默认 ${computeRetentionCap(memoryRecallTuningFile.retentionMemoryCap)}`}</span>
+                <span className="chip muted">{`runtime 当前 ${currentRetentionCap}`}</span>
+              </>
+            }
+            summary="这是 `memory_recall_tuning.json` 里的 CUSTOM 兜底默认值。发酵层 retained selection 现在由单独参数控制。"
+            title="发酵层容量"
+          >
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}`}
+              label="retentionMemoryCap"
+              max={16}
+              min={1}
+              onChange={(next) => onMemoryRecallTuningChange({ retentionMemoryCap: Math.round(next) })}
+              round
+              step={1}
+              value={memoryRecallTuningFile.retentionMemoryCap}
+            />
+          </FormulaCard>
+
+          <FormulaCard
+            formula={`decayFactor = exp(- (deltaDays / tagPoolHalfLifeDays) ^ tagPoolDecayShape)`}
             stats={<span className="chip">{`当前 Δt=${formatShortNumber(currentDeltaDays)} 天 -> ${formatShortNumber(computeTagPoolDecay(currentDeltaDays, memoryRecallTuningFile))}`}</span>}
             summary="控制 tag_pool 的跨轮衰减速度。"
             title="Tag Pool 半衰期"
           >
-            <NumberField
-              label="tagPoolHalfLifeDays"
-              max={30}
-              min={0.05}
-              onChange={(next) => onMemoryRecallTuningChange({ tagPoolHalfLifeDays: next })}
-              step={0.05}
-              value={memoryRecallTuningFile.tagPoolHalfLifeDays}
-            />
+            <div className="form-grid recall-form-grid">
+              <RangeField
+                formatValue={(value) => `${formatShortNumber(value)}d`}
+                label="tagPoolHalfLifeDays"
+                max={1}
+                min={0.1}
+                onChange={(next) => onMemoryRecallTuningChange({ tagPoolHalfLifeDays: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.tagPoolHalfLifeDays}
+              />
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
+                label="tagPoolDecayShape"
+                max={4}
+                min={0.25}
+                onChange={(next) => onMemoryRecallTuningChange({ tagPoolDecayShape: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.tagPoolDecayShape}
+              />
+            </div>
             <FormulaChart
               formatX={(value) => `${formatShortNumber(value)}d`}
               formatY={(value) => formatShortNumber(value)}
@@ -1042,19 +1264,31 @@ export function RuntimeRecallGraphPage({
           </FormulaCard>
 
           <FormulaCard
-            formula={`decayFactor = exp(-deltaDays / fermentationHalfLifeDays)`}
+            formula={`decayFactor = exp(- (deltaDays / fermentationHalfLifeDays) ^ fermentationDecayShape)`}
             stats={<span className="chip">{`当前 Δt=${formatShortNumber(currentDeltaDays)} 天 -> ${formatShortNumber(computeFermentationDecay(currentDeltaDays, memoryRecallTuningFile))}`}</span>}
             summary="控制 fermentation_buffer 的跨轮保温时长。"
             title="Fermentation 半衰期"
           >
-            <NumberField
-              label="fermentationHalfLifeDays"
-              max={120}
-              min={0.1}
-              onChange={(next) => onMemoryRecallTuningChange({ fermentationHalfLifeDays: next })}
-              step={0.1}
-              value={memoryRecallTuningFile.fermentationHalfLifeDays}
-            />
+            <div className="form-grid recall-form-grid">
+              <RangeField
+                formatValue={(value) => `${formatShortNumber(value)}d`}
+                label="fermentationHalfLifeDays"
+                max={2}
+                min={0.1}
+                onChange={(next) => onMemoryRecallTuningChange({ fermentationHalfLifeDays: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.fermentationHalfLifeDays}
+              />
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
+                label="fermentationDecayShape"
+                max={4}
+                min={0.25}
+                onChange={(next) => onMemoryRecallTuningChange({ fermentationDecayShape: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.fermentationDecayShape}
+              />
+            </div>
             <FormulaChart
               formatX={(value) => `${formatShortNumber(value)}d`}
               formatY={(value) => formatShortNumber(value)}
@@ -1071,20 +1305,22 @@ export function RuntimeRecallGraphPage({
             title="长间隔补偿"
           >
             <div className="form-grid recall-form-grid">
-              <NumberField
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
                 label="intervalBonusScale"
-                max={10}
+                max={2.5}
                 min={0}
                 onChange={(next) => onMemoryRecallTuningChange({ intervalBonusScale: next })}
                 step={0.05}
                 value={memoryRecallTuningFile.intervalBonusScale}
               />
-              <NumberField
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
                 label="intervalBonusSteepness"
-                max={20}
-                min={0.1}
+                max={8}
+                min={0.25}
                 onChange={(next) => onMemoryRecallTuningChange({ intervalBonusSteepness: next })}
-                step={0.1}
+                step={0.05}
                 value={memoryRecallTuningFile.intervalBonusSteepness}
               />
             </div>
@@ -1103,11 +1339,13 @@ export function RuntimeRecallGraphPage({
             summary="只用于合成记忆的年龄衰减；IMPLANTED 不参与这条公式。"
             title="合成记忆年龄衰减"
           >
-            <NumberField
+            <RangeField
+              formatValue={(value) => `${Math.round(value)}d`}
               label="synthesizedMemoryHalfLife"
               max={240}
               min={1}
               onChange={(next) => onMemoryRecallTuningChange({ synthesizedMemoryHalfLife: next })}
+              round
               step={1}
               value={memoryRecallTuningFile.synthesizedMemoryHalfLife}
             />
@@ -1121,36 +1359,31 @@ export function RuntimeRecallGraphPage({
           </FormulaCard>
 
           <FormulaCard
-            formula={`effectiveWindow = min(recentRecallWindow, recentRecallWindowCap)\nrecentPenalty = releaseCurve(turnsSincePrompt, effectiveWindow)`}
+            formula={`effectiveWindow = clamp(0, 16, round(recentRecallWindow))\nrecentPenalty = releaseCurve(turnsSincePrompt, effectiveWindow)`}
             stats={
               <>
                 <span className="chip">{`effectiveWindow ${effectiveRecentWindow}`}</span>
                 <span className="chip">{`turn=0 时 ${formatShortNumber(computeRecentRecallPenalty(0, memoryRecallTuningFile))}`}</span>
               </>
             }
-            summary="只在 conscious 显性排序与 implanted fallback 权重里生效；不参与 fermentation 保留公式。"
+            summary="这里只保留一个滑块。`recentRecallWindowCap` 现在只作为兼容字段保留，Studio 不再暴露；`0` 表示关闭最近召回抑制。"
             title="最近召回抑制"
           >
-            <div className="form-grid recall-form-grid">
-              <NumberField
-                label="recentRecallWindow"
-                max={256}
-                min={1}
-                onChange={(next) => onMemoryRecallTuningChange({ recentRecallWindow: Math.round(next) })}
-                round
-                step={1}
-                value={memoryRecallTuningFile.recentRecallWindow}
-              />
-              <NumberField
-                label="recentRecallWindowCap"
-                max={256}
-                min={1}
-                onChange={(next) => onMemoryRecallTuningChange({ recentRecallWindowCap: Math.round(next) })}
-                round
-                step={1}
-                value={memoryRecallTuningFile.recentRecallWindowCap}
-              />
-            </div>
+            <RangeField
+              formatValue={(value) => `${Math.round(value)} 轮`}
+              label="recentRecallWindow"
+              max={16}
+              min={0}
+              onChange={(next) => onMemoryRecallTuningChange({ recentRecallWindow: Math.round(next) })}
+              round
+              step={1}
+              value={memoryRecallTuningFile.recentRecallWindow}
+            />
+            <p className="muted-copy">
+              {effectiveRecentWindow <= 0
+                ? "当前 recent recall 抑制已关闭。"
+                : `当前会对最近 ${effectiveRecentWindow} 轮内真正进入 prompt 的记忆做平滑抑制。`}
+            </p>
             <FormulaChart
               formatX={(value) => `${Math.round(value)} 轮`}
               formatY={(value) => formatShortNumber(value)}
@@ -1166,20 +1399,14 @@ export function RuntimeRecallGraphPage({
             summary="只影响 conscious -> prompt 的阀门；不会影响 conscious 层本身的排序。"
             title="Prompt Fill 阀门"
           >
-            <NumberField
+            <RangeField
+              formatValue={(value) => formatShortNumber(value)}
               label="promptFillProbabilityScale"
-              max={3}
+              max={2}
               min={0}
               onChange={(next) => onMemoryRecallTuningChange({ promptFillProbabilityScale: next })}
               step={0.05}
               value={memoryRecallTuningFile.promptFillProbabilityScale}
-            />
-            <FormulaChart
-              formatX={(value) => formatShortNumber(value)}
-              formatY={(value) => formatShortNumber(value)}
-              samples={promptFillSamples}
-              xLabel="consciousScore"
-              yLabel="speakProbability"
             />
           </FormulaCard>
 
@@ -1189,20 +1416,14 @@ export function RuntimeRecallGraphPage({
             summary="用于 buildFocusProfile，影响 desire tag 在焦点分布里的额外权重。"
             title="渴望 Focus Profile 加权"
           >
-            <NumberField
+            <RangeField
+              formatValue={(value) => formatShortNumber(value)}
               label="desireProfileBonusScale"
               max={2}
               min={0}
               onChange={(next) => onMemoryRecallTuningChange({ desireProfileBonusScale: next })}
               step={0.01}
               value={memoryRecallTuningFile.desireProfileBonusScale}
-            />
-            <FormulaChart
-              formatX={(value) => formatShortNumber(value)}
-              formatY={(value) => formatShortNumber(value)}
-              samples={desireProfileSamples}
-              xLabel="focusWeight(tag)"
-              yLabel="desireBonus"
             />
           </FormulaCard>
 
@@ -1212,20 +1433,14 @@ export function RuntimeRecallGraphPage({
             summary="用于主召回评分阶段，给携带 desire focus 的记忆追加额外得分。"
             title="渴望记忆评分加成"
           >
-            <NumberField
+            <RangeField
+              formatValue={(value) => formatShortNumber(value)}
               label="desiredFocusBonusScale"
               max={2}
               min={0}
               onChange={(next) => onMemoryRecallTuningChange({ desiredFocusBonusScale: next })}
               step={0.01}
               value={memoryRecallTuningFile.desiredFocusBonusScale}
-            />
-            <FormulaChart
-              formatX={(value) => formatShortNumber(value)}
-              formatY={(value) => formatShortNumber(value)}
-              samples={desiredFocusSamples}
-              xLabel="focusWeight(desireTag)"
-              yLabel="desiredFocusBonus"
             />
           </FormulaCard>
 
@@ -1235,7 +1450,8 @@ export function RuntimeRecallGraphPage({
             summary="这不是权重曲线，而是 fallback 记忆被补入 conscious / retained 后的固定注入分。"
             title="植入记忆保底注入分"
           >
-            <NumberField
+            <RangeField
+              formatValue={(value) => formatShortNumber(value)}
               label="implantedFallbackEntryScore"
               max={3}
               min={0}
@@ -1243,56 +1459,8 @@ export function RuntimeRecallGraphPage({
               step={0.05}
               value={memoryRecallTuningFile.implantedFallbackEntryScore}
             />
-            <div className="recall-scalar-meter">
-              <div
-                className="recall-scalar-meter-fill"
-                style={{ width: `${(memoryRecallTuningFile.implantedFallbackEntryScore / 3) * 100}%` }}
-              />
-            </div>
           </FormulaCard>
         </div>
-      </section>
-
-      <div className="two-col runtime-recall-summary">
-        <MemoryListBlock emptyText="当前 trace 里没有单独记录 conscious 层。" label="Conscious Memories" memories={consciousMemories} />
-        <MemoryListBlock emptyText="当前 trace 里没有 prompt 输出。" label="Prompt Memories" memories={promptMemories} />
-      </div>
-
-      <section className="info-block">
-        <div className="section-head">
-          <div>
-            <h3>可见上下文</h3>
-            <p className="muted-copy">{`共 ${recallTrace.visibleContexts.length} 条，可展开后滚动查看。`}</p>
-          </div>
-          <button className="action-button quiet" onClick={() => setVisibleContextsExpanded((value) => !value)} type="button">
-            {visibleContextsExpanded ? "收起" : "展开"}
-          </button>
-        </div>
-        {visibleContextsExpanded ? (
-          <div className="runtime-visible-contexts-scroll">
-            <div className="runtime-visible-contexts">
-              {recallTrace.visibleContexts.length ? (
-                recallTrace.visibleContexts.map((entry, index) => (
-                  <article className="runtime-visible-context-card" key={`${entry.description}-${index}`}>
-                    <strong>{abbreviateText(entry.description, 40, "(无描述)")}</strong>
-                    <p>{`score ${entry.finalScore.toFixed(2)} / base ${entry.baseImportance.toFixed(2)}`}</p>
-                    <div className="chip-row compact">
-                      {entry.focusTags.map((focusTag) => (
-                        <span className="chip" key={`${entry.description}-${focusTag}`}>
-                          {focusTag}
-                        </span>
-                      ))}
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <p className="muted-copy">当前 trace 里没有可见上下文摘要。</p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <p className="runtime-mind-map-status">已折叠可见上下文。</p>
-        )}
       </section>
 
       {promptMemories.length ? (

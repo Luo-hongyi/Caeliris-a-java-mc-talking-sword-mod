@@ -308,12 +308,14 @@ public final class AgentStateStorage {
      * <li>主召回阶段：每个 cue 最多能提起多少条候选记忆</li>
      * <li>sandbox 联想阶段：每条表层记忆最多回灌多少个联想 cue</li>
      * <li>最终阶段：最多允许多少条记忆进入表层意识</li>
+     * <li>retained fermentation 层：最多保留多少条发酵中的候选记忆</li>
      * </ul>
      */
     public static final class RecallTuningSection {
         public int main_candidates_per_cue = TalkingWeaponConfig.LTM_RECALL_MAIN_CANDIDATES_PER_CUE.get();
         public int sandbox_cues_per_memory = TalkingWeaponConfig.LTM_RECALL_SANDBOX_CUES_PER_MEMORY.get();
         public int conscious_memory_cap = TalkingWeaponConfig.LTM_RECALL_CONSCIOUS_MEMORY_CAP.get();
+        public int retention_memory_cap = TalkingWeaponConfig.LTM_RECALL_RETENTION_MEMORY_CAP.get();
 
         public static RecallTuningSection fromConfig(AgentState.RecallTuning config) {
             AgentState.RecallTuning normalized = config != null
@@ -323,6 +325,7 @@ public final class AgentStateStorage {
             section.main_candidates_per_cue = normalized.getMainCandidatesPerCue();
             section.sandbox_cues_per_memory = normalized.getSandboxCuesPerMemory();
             section.conscious_memory_cap = normalized.getConsciousMemoryCap();
+            section.retention_memory_cap = normalized.getRetentionMemoryCap();
             return section;
         }
 
@@ -334,7 +337,8 @@ public final class AgentStateStorage {
             return new AgentState.RecallTuning(
                     main_candidates_per_cue,
                     sandbox_cues_per_memory,
-                    conscious_memory_cap);
+                    conscious_memory_cap,
+                    retention_memory_cap);
         }
     }
 

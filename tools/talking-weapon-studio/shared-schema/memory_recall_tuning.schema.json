@@ -10,12 +10,15 @@
     "mainCandidatesPerCue",
     "sandboxCuesPerMemory",
     "consciousMemoryCap",
+    "retentionMemoryCap",
     "recentRecallWindow",
     "recentRecallWindowCap",
     "implantedFallbackEntryScore",
     "promptFillProbabilityScale",
     "tagPoolHalfLifeDays",
+    "tagPoolDecayShape",
     "fermentationHalfLifeDays",
+    "fermentationDecayShape",
     "intervalBonusScale",
     "intervalBonusSteepness",
     "synthesizedMemoryHalfLife",
@@ -25,7 +28,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "const": 2
     },
     "generatedAt": {
       "type": "string"
@@ -33,27 +36,32 @@
     "mainCandidatesPerCue": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 6
+      "maximum": 32
     },
     "sandboxCuesPerMemory": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 4
+      "minimum": 1,
+      "maximum": 32
     },
     "consciousMemoryCap": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 8
+      "minimum": 1,
+      "maximum": 16
+    },
+    "retentionMemoryCap": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
     },
     "recentRecallWindow": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 256
+      "minimum": 0,
+      "maximum": 16
     },
     "recentRecallWindowCap": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 256
+      "minimum": 0,
+      "maximum": 16
     },
     "implantedFallbackEntryScore": {
       "type": "number",
@@ -63,27 +71,37 @@
     "promptFillProbabilityScale": {
       "type": "number",
       "minimum": 0,
-      "maximum": 3
+      "maximum": 2
     },
     "tagPoolHalfLifeDays": {
       "type": "number",
-      "minimum": 0.05,
-      "maximum": 30
+      "minimum": 0.1,
+      "maximum": 1
+    },
+    "tagPoolDecayShape": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4
     },
     "fermentationHalfLifeDays": {
       "type": "number",
       "minimum": 0.1,
-      "maximum": 120
+      "maximum": 2
+    },
+    "fermentationDecayShape": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4
     },
     "intervalBonusScale": {
       "type": "number",
       "minimum": 0,
-      "maximum": 10
+      "maximum": 2.5
     },
     "intervalBonusSteepness": {
       "type": "number",
-      "minimum": 0.1,
-      "maximum": 20
+      "minimum": 0.25,
+      "maximum": 8
     },
     "synthesizedMemoryHalfLife": {
       "type": "number",

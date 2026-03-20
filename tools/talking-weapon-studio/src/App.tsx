@@ -446,9 +446,10 @@ const RECALL_PRESET_LABELS: Record<string, string> = {
 };
 
 const DEFAULT_AGENT_STATE_RECALL_TUNING: AgentStateRecallTuning = {
-  main_candidates_per_cue: 1,
-  sandbox_cues_per_memory: 2,
-  conscious_memory_cap: 3
+  main_candidates_per_cue: 6,
+  sandbox_cues_per_memory: 6,
+  conscious_memory_cap: 3,
+  retention_memory_cap: 6
 };
 
 const AGENT_STATE_RECALL_TUNING_FIELDS: Array<{
@@ -460,24 +461,31 @@ const AGENT_STATE_RECALL_TUNING_FIELDS: Array<{
 }> = [
   {
     key: "main_candidates_per_cue",
-    label: "Main Candidates Per Cue",
+    label: "Main Recall Budget",
     min: 1,
-    max: 6,
-    note: "每个主 cue 最多能提起多少条候选记忆。"
+    max: 32,
+    note: "主召回阶段本轮最多提升多少条候选记忆。"
   },
   {
     key: "sandbox_cues_per_memory",
-    label: "Sandbox Cues Per Memory",
-    min: 0,
-    max: 4,
-    note: "每条表层记忆最多回灌多少个联想 cue；0 表示关闭 sandbox 回灌。"
+    label: "Sandbox Cue Budget",
+    min: 1,
+    max: 32,
+    note: "sandbox 联想阶段本轮最多投放多少个联想 cue。"
   },
   {
     key: "conscious_memory_cap",
     label: "Conscious Memory Cap",
-    min: 0,
-    max: 8,
+    min: 1,
+    max: 16,
     note: "最终最多允许多少条记忆进入表层意识。"
+  },
+  {
+    key: "retention_memory_cap",
+    label: "Retention Memory Cap",
+    min: 1,
+    max: 16,
+    note: "retained fermentation 层最多保留多少条候选记忆。"
   }
 ];
 
@@ -862,16 +870,20 @@ function normalizeAgentStateRecallTuning(value: unknown): AgentStateRecallTuning
   return {
     main_candidates_per_cue:
       typeof source.main_candidates_per_cue === "number"
-        ? Math.round(clampNumber(source.main_candidates_per_cue, 1, 6))
+        ? Math.round(clampNumber(source.main_candidates_per_cue, 1, 32))
         : DEFAULT_AGENT_STATE_RECALL_TUNING.main_candidates_per_cue,
     sandbox_cues_per_memory:
       typeof source.sandbox_cues_per_memory === "number"
-        ? Math.round(clampNumber(source.sandbox_cues_per_memory, 0, 4))
+        ? Math.round(clampNumber(source.sandbox_cues_per_memory, 1, 32))
         : DEFAULT_AGENT_STATE_RECALL_TUNING.sandbox_cues_per_memory,
     conscious_memory_cap:
       typeof source.conscious_memory_cap === "number"
-        ? Math.round(clampNumber(source.conscious_memory_cap, 0, 8))
-        : DEFAULT_AGENT_STATE_RECALL_TUNING.conscious_memory_cap
+        ? Math.round(clampNumber(source.conscious_memory_cap, 1, 16))
+        : DEFAULT_AGENT_STATE_RECALL_TUNING.conscious_memory_cap,
+    retention_memory_cap:
+      typeof source.retention_memory_cap === "number"
+        ? Math.round(clampNumber(source.retention_memory_cap, 1, 16))
+        : DEFAULT_AGENT_STATE_RECALL_TUNING.retention_memory_cap
   };
 }
 
@@ -977,7 +989,7 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
   }
 
   return sanitizeMemoryRecallTuningFile({
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     mainCandidatesPerCue:
       typeof value.mainCandidatesPerCue === "number"
@@ -991,6 +1003,10 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
       typeof value.consciousMemoryCap === "number"
         ? value.consciousMemoryCap
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.consciousMemoryCap,
+    retentionMemoryCap:
+      typeof value.retentionMemoryCap === "number"
+        ? value.retentionMemoryCap
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.retentionMemoryCap,
     recentRecallWindow:
       typeof value.recentRecallWindow === "number"
         ? value.recentRecallWindow
@@ -1011,10 +1027,18 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
       typeof value.tagPoolHalfLifeDays === "number"
         ? value.tagPoolHalfLifeDays
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolHalfLifeDays,
+    tagPoolDecayShape:
+      typeof value.tagPoolDecayShape === "number"
+        ? value.tagPoolDecayShape
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolDecayShape,
     fermentationHalfLifeDays:
       typeof value.fermentationHalfLifeDays === "number"
         ? value.fermentationHalfLifeDays
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.fermentationHalfLifeDays,
+    fermentationDecayShape:
+      typeof value.fermentationDecayShape === "number"
+        ? value.fermentationDecayShape
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.fermentationDecayShape,
     intervalBonusScale:
       typeof value.intervalBonusScale === "number"
         ? value.intervalBonusScale
@@ -5822,7 +5846,7 @@ function AgentStatePage({
 
   const recallTuningSummary = useMemo(() => {
     const tuning = agentStateFile.state.recall_tuning;
-    return `main=${tuning.main_candidates_per_cue}, sandbox=${tuning.sandbox_cues_per_memory}, conscious=${tuning.conscious_memory_cap}`;
+    return `main=${tuning.main_candidates_per_cue}, sandbox=${tuning.sandbox_cues_per_memory}, conscious=${tuning.conscious_memory_cap}, retention=${tuning.retention_memory_cap}`;
   }, [agentStateFile.state.recall_tuning]);
 
   const recallPresetDescription = useMemo(() => {

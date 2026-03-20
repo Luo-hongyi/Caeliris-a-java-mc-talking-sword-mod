@@ -114,23 +114,24 @@
 
 `recall_preset` 只是在统一模型上选一组参数：
 
-| Preset | `main_candidates_per_cue` | `sandbox_cues_per_memory` | `conscious_memory_cap` |
-|---|---:|---:|---:|
-| `SEED_FIRST` | 1 | 1 | 2 |
-| `FULL_VISIBILITY` | 2 | 1 | 4 |
-| `HYBRID` | 1 | 2 | 3 |
-| `CUSTOM` | 读取 `recall_tuning` | 读取 `recall_tuning` | 读取 `recall_tuning` |
+| Preset | `main_candidates_per_cue` | `sandbox_cues_per_memory` | `conscious_memory_cap` | `retention_memory_cap` |
+|---|---:|---:|---:|---:|
+| `SEED_FIRST` | 4 | 2 | 2 | 4 |
+| `FULL_VISIBILITY` | 8 | 4 | 4 | 8 |
+| `HYBRID` | 6 | 6 | 3 | 6 |
+| `CUSTOM` | 读取 `recall_tuning` | 读取 `recall_tuning` | 读取 `recall_tuning` | 读取 `recall_tuning` |
 
 ## 3. 运行时缓冲层公式
 
 ### 3.1 Tag Pool 衰减
 
 - 半衰期：`LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS * 游戏内一天`
+- 形状参数：`LTM_RECALL_TAG_POOL_DECAY_SHAPE`
 - 当前默认值：`0.40 * 游戏内一天`
 - 公式：
 
 ```text
-decayFactor = exp(-deltaGameTime / TAG_POOL_HALF_LIFE_TICKS)
+decayFactor = exp(- (deltaGameTime / TAG_POOL_HALF_LIFE_TICKS) ^ TAG_POOL_DECAY_SHAPE)
 newScore = oldScore * decayFactor
 ```
 
@@ -139,11 +140,12 @@ newScore = oldScore * decayFactor
 ### 3.2 Fermentation Buffer 衰减
 
 - 半衰期：`LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS * 游戏内一天`
-- 当前默认值：`2.50 * 游戏内一天`
+- 形状参数：`LTM_RECALL_FERMENTATION_DECAY_SHAPE`
+- 当前默认值：`1.20 * 游戏内一天`
 - 公式：
 
 ```text
-decayFactor = exp(-deltaGameTime / FERMENTATION_HALF_LIFE_TICKS)
+decayFactor = exp(- (deltaGameTime / FERMENTATION_HALF_LIFE_TICKS) ^ FERMENTATION_DECAY_SHAPE)
 newScore = oldScore * decayFactor
 ```
 
@@ -389,6 +391,7 @@ else:
 - 越靠近窗口尾部，惩罚越接近释放完成，但在窗口内仍保留少量抑制
 - 同一条记忆不会因为后来又有别的记忆被显性提起，就被从队列尾部挤掉而提前解除抑制
 - `LTM_RECALL_RECENT_WINDOW` 现在表示“抑制持续轮数”，而不是“队列容量”
+- `LTM_RECALL_RECENT_WINDOW = 0` 时，整条 recent recall 抑制逻辑关闭，`recentPenalty` 恒为 `1.0`
 - 当前 `recentPenalty` 会用于：
   - `retained fermentation -> conscious memories` 的显性浮现排序
   - `implanted fallback` 的候选权重
@@ -533,7 +536,7 @@ filledIntoPrompt = random(0, 1) < speakProbability
 发酵层保留上限：
 
 ```text
-retentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))
+retentionCap = retention_memory_cap
 ```
 
 排序规则：
@@ -593,7 +596,7 @@ consciousCap = conscious_memory_cap
 每条表层记忆先挑若干个 associative tags，构造 sandbox cue：
 
 ```text
-cueCountPerMemory = sandbox_cues_per_memory
+sandboxCueBudget = sandbox_cues_per_memory
 ```
 
 tag priority：
@@ -618,7 +621,8 @@ sandboxBudget = max(1, min(4, consciousMemoryCount))
 
 注意：
 
-- `sandbox_cues_per_memory = 0` 会直接关闭 cue 回灌
+- `sandbox_cues_per_memory` 现在表示“本轮 sandbox cue 总预算”，不是“每条 conscious memory 分到多少个 cue”
+- Studio 当前将其限制为 `1 ~ 32`
 - sandbox 结果只写入 `association_sandbox.memoryIds`
 - 不会污染主 `fermentation_buffer`
 
@@ -676,6 +680,7 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 - `recall_tuning.main_candidates_per_cue`
 - `recall_tuning.sandbox_cues_per_memory`
 - `recall_tuning.conscious_memory_cap`
+- `recall_tuning.retention_memory_cap`
 - `implanted_memory_safety_net`
 - `current_desire_tag`
 
@@ -684,12 +689,14 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 - `LTM_RECALL_MAIN_CANDIDATES_PER_CUE`
 - `LTM_RECALL_SANDBOX_CUES_PER_MEMORY`
 - `LTM_RECALL_CONSCIOUS_MEMORY_CAP`
+- `LTM_RECALL_RETENTION_MEMORY_CAP`
 - `LTM_RECALL_RECENT_WINDOW`
-- `LTM_RECALL_RECENT_WINDOW_CAP`
 - `LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE`
 - `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE`
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
+- `LTM_RECALL_TAG_POOL_DECAY_SHAPE`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
+- `LTM_RECALL_FERMENTATION_DECAY_SHAPE`
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
 - `LTM_RECALL_INTERVAL_BONUS_STEEPNESS`
 - `LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE`
@@ -709,7 +716,10 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 
 - `memory_recall_tuning.json` 是 recall 公式参数的 workspace 真源
 - Studio 的 `Recall Workbench` 页面直接编辑这份文件
+- 不改变函数形状的参数，在 Studio 上用简单滑块调节
+- 会改变函数曲线形状的参数，在 Studio 上保留函数图像
 - 游戏启动和 Studio 发布时，都会先读取这份文件，再同步回 `TalkingWeaponConfig` 与 `talking_weapon-client.toml`
+- `LTM_RECALL_RECENT_WINDOW_CAP` 只作为兼容旧配置的保留字段继续存在，运行时和 Studio 现在都不再把它当成有效调参项
 
 ### Attention Layer
 
@@ -727,38 +737,39 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 | 参数 | 主公式 | 输入 | 输出 |
 |---|---|---|---|
 | `wandering_mind` | `exponent = 2.6 - clamp01(wanderingMind) * 2.0` | `candidate score` | `sampleWeight` |
-| `recall_tuning.main_candidates_per_cue` | `layerBudget = max(1, mainCueCount * mainCandidatesPerCue)` | `mainCueCount` | `promotion budget` |
-| `recall_tuning.sandbox_cues_per_memory` | `cueCountPerMemory = sandboxCuesPerMemory` | `consciousMemoryCount` | `sandbox cue count` |
-| `recall_tuning.conscious_memory_cap` | `consciousCap = consciousMemoryCap` | `retained candidates` | `max conscious count` |
+| `recall_tuning.main_candidates_per_cue` | `promotionBudget = clamp(1, 32, round(mainCandidatesPerCue))` | configured budget | `promotion budget` |
+| `recall_tuning.sandbox_cues_per_memory` | `sandboxCueBudget = clamp(1, 32, round(sandboxCuesPerMemory))` | configured budget | `sandbox cue count` |
+| `recall_tuning.conscious_memory_cap` | `consciousCap = clamp(1, 16, round(consciousMemoryCap))` | retained candidates | `max conscious count` |
+| `recall_tuning.retention_memory_cap` | `retentionCap = clamp(1, 16, round(retentionMemoryCap))` | retained candidates | `max retained count` |
 | `implanted_memory_safety_net` | fallback trigger gate | `cue_pool` + implanted hit presence | `是否运行 implanted fallback` |
 | `current_desire_tag` | desire branch selector | memory / focus 是否含该 tag | `是否激活 desire bonus 分支` |
-
-补充：
-
-- `conscious_memory_cap` 还会派生 `retentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))`
-- 这个派生关系当前仍然保留，所以它是 recall 页里唯一一个“同一卡片里同时展示主输出和派生输出”的参数
 
 #### Config / Formula Mirror
 
 | 参数 | 主公式 | 输入 | 输出 |
 |---|---|---|---|
-| `LTM_RECALL_RECENT_WINDOW` | `effectiveWindow = min(window, windowCap)` + release curve | `turnsSincePrompt` | `recentPenalty` |
-| `LTM_RECALL_RECENT_WINDOW_CAP` | `effectiveWindow = min(window, windowCap)` | `configured window` | `effective window` |
+| `LTM_RECALL_MAIN_CANDIDATES_PER_CUE` | `promotionBudget = clamp(1, 32, round(mainCandidatesPerCue))` | configured budget | `default promotion budget` |
+| `LTM_RECALL_SANDBOX_CUES_PER_MEMORY` | `sandboxCueBudget = clamp(1, 32, round(sandboxCuesPerMemory))` | configured budget | `default sandbox cue count` |
+| `LTM_RECALL_CONSCIOUS_MEMORY_CAP` | `consciousCap = clamp(1, 16, round(consciousMemoryCap))` | retained candidates | `default conscious cap` |
+| `LTM_RECALL_RETENTION_MEMORY_CAP` | `retentionCap = clamp(1, 16, round(retentionMemoryCap))` | retained candidates | `default retained cap` |
+| `LTM_RECALL_RECENT_WINDOW` | `effectiveWindow = clamp(0, 16, round(recentRecallWindow))` + release curve | `turnsSincePrompt` | `recentPenalty` |
 | `LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE` | `fallbackEntryScore = config` | selected fallback memory | injected selection score |
 | `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE` | `speakProbability = clamp(0, 1, rawProbability * scale)` | `consciousScore` | `speakProbability` |
-| `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS` | `decayFactor = exp(-deltaDays / halfLifeDays)` | `deltaDays` | `tagPool decayFactor` |
-| `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS` | `decayFactor = exp(-deltaDays / halfLifeDays)` | `deltaDays` | `fermentation decayFactor` |
+| `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `tagPool decayFactor` |
+| `LTM_RECALL_TAG_POOL_DECAY_SHAPE` | 同上 | `deltaDays` | `tagPool decayFactor` |
+| `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `fermentation decayFactor` |
+| `LTM_RECALL_FERMENTATION_DECAY_SHAPE` | 同上 | `deltaDays` | `fermentation decayFactor` |
 | `LTM_RECALL_INTERVAL_BONUS_SCALE` | `intervalBonus = clamp(1, 2.6, 1 + min(1.6, log1p(days * steepness) * scale))` | `deltaDays` | `intervalBonus` |
 | `LTM_RECALL_INTERVAL_BONUS_STEEPNESS` | 同上 | `deltaDays` | `intervalBonus` |
 | `LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` | `ageFactor = clamp(0.15, 1.0, exp(-ageDays / halfLifeDays))` | `ageDays` | `ageFactor` |
 | `LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE` | `desireBonus = scale * focusWeight(tag)` | `focusWeight(tag)` | `desireBonus` |
 | `LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE` | `desiredFocusBonus = scale * focusWeight(desireTag)` | `focusWeight(desireTag)` | `desiredFocusBonus` |
 
-`LTM_RECALL_MAIN_CANDIDATES_PER_CUE`、`LTM_RECALL_SANDBOX_CUES_PER_MEMORY`、`LTM_RECALL_CONSCIOUS_MEMORY_CAP` 的定位补充：
+`LTM_RECALL_MAIN_CANDIDATES_PER_CUE`、`LTM_RECALL_SANDBOX_CUES_PER_MEMORY`、`LTM_RECALL_CONSCIOUS_MEMORY_CAP`、`LTM_RECALL_RETENTION_MEMORY_CAP` 的定位补充：
 
 - 它们是 `TalkingWeaponConfig` 中给 `RecallPreset.CUSTOM` 兜底的默认值
 - 真正运行时若 `agent_state.json.state.recall_tuning` 存在，则优先吃 Agent State
-- Studio recall 页会把这三项和 runtime 的 `recall_tuning.*` 分开显示，避免把“默认值”和“当前生效值”混在一起
+- Studio recall 页会把这四项和 runtime 的 `recall_tuning.*` 分开显示，避免把“默认值”和“当前生效值”混在一起
 
 ## 12. 调参建议
 
@@ -783,7 +794,6 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 ### 想减少重复提及
 
 - 提高 `LTM_RECALL_RECENT_WINDOW`
-- 若当前窗口值已经顶到上限，再提高 `LTM_RECALL_RECENT_WINDOW_CAP`
 - 降低 `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE`
 
 ### 想让手工植入记忆更容易显性出现
@@ -795,4 +805,4 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 
 ### 想关闭一跳回灌联想
 
-- 将 `sandbox_cues_per_memory` 设为 `0`
+- 当前 Studio 滑块最小值为 `1`，因此不会在页面上直接关到 `0`

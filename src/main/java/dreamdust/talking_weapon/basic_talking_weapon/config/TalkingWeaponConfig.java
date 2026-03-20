@@ -100,12 +100,15 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.IntValue LTM_RECALL_MAIN_CANDIDATES_PER_CUE;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_SANDBOX_CUES_PER_MEMORY;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_CONSCIOUS_MEMORY_CAP;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_RETENTION_MEMORY_CAP;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW_CAP;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_DECAY_SHAPE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_DECAY_SHAPE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_SCALE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_STEEPNESS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE;
@@ -135,7 +138,7 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.BooleanValue LOOKING_AT_ATTENTION_BONUS_ENABLED;
         public static final ForgeConfigSpec.DoubleValue LOOKING_AT_ATTENTION_BONUS_VALUE;
 
-        private static final int RECENT_RECALL_WINDOW_ABSOLUTE_CAP = 256;
+        private static final int RECENT_RECALL_WINDOW_ABSOLUTE_CAP = 16;
 
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -318,38 +321,47 @@ public final class TalkingWeaponConfig {
 
                 builder.push("memory_recall");
                 LTM_RECALL_MAIN_CANDIDATES_PER_CUE = builder
-                                .comment("CUSTOM 召回预设默认值：主召回阶段中，每个 cue 最多可提起多少条候选记忆；仅在 agent_state.json 未提供 recall_tuning 时使用")
-                                .defineInRange("mainCandidatesPerCue", 1, 1, 6);
+                                .comment("CUSTOM 召回预设默认值：主召回阶段的总提升预算；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("mainCandidatesPerCue", 6, 1, 32);
                 LTM_RECALL_SANDBOX_CUES_PER_MEMORY = builder
-                                .comment("CUSTOM 召回预设默认值：sandbox 联想阶段中，每条表层记忆最多回灌多少个联想 cue；仅在 agent_state.json 未提供 recall_tuning 时使用")
-                                .defineInRange("sandboxCuesPerMemory", 2, 0, 4);
+                                .comment("CUSTOM 召回预设默认值：sandbox 联想阶段的总 cue 预算；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("sandboxCuesPerMemory", 6, 1, 32);
                 LTM_RECALL_CONSCIOUS_MEMORY_CAP = builder
                                 .comment("CUSTOM 召回预设默认值：最终最多允许多少条记忆进入表层意识；仅在 agent_state.json 未提供 recall_tuning 时使用")
-                                .defineInRange("consciousMemoryCap", 3, 0, 8);
+                                .defineInRange("consciousMemoryCap", 3, 1, 16);
+                LTM_RECALL_RETENTION_MEMORY_CAP = builder
+                                .comment("CUSTOM 召回预设默认值：retained fermentation 层的容量上限；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("retentionMemoryCap", 12, 1, 16);
                 LTM_RECALL_RECENT_WINDOW = builder
-                                .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆；实际生效值还会受 recentRecallWindowCap 限制")
-                                .defineInRange("recentRecallWindow", 6, 1, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
+                                .comment("最近召回记忆抑制窗口：0 表示关闭抑制，越大越不容易连续几轮重复同一段记忆")
+                                .defineInRange("recentRecallWindow", 6, 0, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
                 LTM_RECALL_RECENT_WINDOW_CAP = builder
-                                .comment("最近召回窗口上限：用于限制 recentRecallWindow 的最大有效值，便于在运行时快速收紧或放宽抑制范围")
-                                .defineInRange("recentRecallWindowCap", 20, 1, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
+                                .comment("兼容旧配置保留字段：recent recall cap 已退役，运行时不再使用该值")
+                                .defineInRange("recentRecallWindowCap", RECENT_RECALL_WINDOW_ABSOLUTE_CAP, 0, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
                 LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE = builder
                                 .comment("植入记忆保底被补入 conscious/retained 时的注入分数；越高越容易压过本轮普通召回结果")
                                 .defineInRange("implantedFallbackEntryScore", 1.25, 0.0, 3.0);
                 LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE = builder
                                 .comment("prompt fill 阀门的整体开合系数；越低越不愿意把已意识到的记忆说出口，越高越容易真的填入 prompt")
-                                .defineInRange("promptFillProbabilityScale", 1.0, 0.0, 3.0);
+                                .defineInRange("promptFillProbabilityScale", 1.0, 0.0, 2.0);
                 LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS = builder
                                 .comment("tag_pool 半衰期，单位为游戏内天数；越大代表 cue 保留越久")
-                                .defineInRange("tagPoolHalfLifeDays", 0.40, 0.05, 30.0);
+                                .defineInRange("tagPoolHalfLifeDays", 0.40, 0.10, 1.0);
+                LTM_RECALL_TAG_POOL_DECAY_SHAPE = builder
+                                .comment("tag_pool 衰减曲线形状；1.0=标准指数衰减，<1 更长尾，>1 前期衰减更快")
+                                .defineInRange("tagPoolDecayShape", 1.0, 0.25, 4.0);
                 LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS = builder
                                 .comment("fermentation_buffer 半衰期，单位为游戏内天数；越大代表潜意识候选记忆保留越久")
-                                .defineInRange("fermentationHalfLifeDays", 2.50, 0.10, 120.0);
+                                .defineInRange("fermentationHalfLifeDays", 1.20, 0.10, 2.0);
+                LTM_RECALL_FERMENTATION_DECAY_SHAPE = builder
+                                .comment("fermentation_buffer 衰减曲线形状；1.0=标准指数衰减，<1 更长尾，>1 前期衰减更快")
+                                .defineInRange("fermentationDecayShape", 1.0, 0.25, 4.0);
                 LTM_RECALL_INTERVAL_BONUS_SCALE = builder
                                 .comment("长间隔补偿的整体缩放系数；越大代表隔一段时间后新注入 cue 的额外加成越高")
-                                .defineInRange("intervalBonusScale", 0.95, 0.0, 10.0);
+                                .defineInRange("intervalBonusScale", 0.95, 0.0, 2.5);
                 LTM_RECALL_INTERVAL_BONUS_STEEPNESS = builder
                                 .comment("长间隔补偿曲线的陡峭程度；越大代表少量游戏内时间也能更快接近补偿上限")
-                                .defineInRange("intervalBonusSteepness", 4.0, 0.1, 20.0);
+                                .defineInRange("intervalBonusSteepness", 4.0, 0.25, 8.0);
                 LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE = builder
                                 .comment("合成记忆时间衰减的半衰期，单位为游戏内天数；当前 recall 不再回退到现实时间衰减")
                                 .defineInRange("synthesizedMemoryHalfLife", 63.0, 1.0, 240.0);
@@ -380,11 +392,11 @@ public final class TalkingWeaponConfig {
         }
 
         public static int getRecentRecallWindowCapValue() {
-                return Math.max(1, Math.min(RECENT_RECALL_WINDOW_ABSOLUTE_CAP, LTM_RECALL_RECENT_WINDOW_CAP.get()));
+                return RECENT_RECALL_WINDOW_ABSOLUTE_CAP;
         }
 
         public static int getEffectiveRecentRecallWindow() {
-                return Math.max(1, Math.min(LTM_RECALL_RECENT_WINDOW.get(), getRecentRecallWindowCapValue()));
+                return Math.max(0, Math.min(LTM_RECALL_RECENT_WINDOW.get(), RECENT_RECALL_WINDOW_ABSOLUTE_CAP));
         }
 
         public static double getImplantedFallbackEntryScoreValue() {
@@ -392,7 +404,7 @@ public final class TalkingWeaponConfig {
         }
 
         public static double getPromptFillProbabilityScaleValue() {
-                return Math.max(0.0, Math.min(3.0, LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE.get()));
+                return Math.max(0.0, Math.min(2.0, LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE.get()));
         }
 
         @SubscribeEvent

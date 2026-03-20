@@ -130,7 +130,7 @@ public class AgentMemory {
     }
 
     public synchronized void setRecentRecallWindow(int window) {
-        this.recentRecallWindow = Math.max(1, window);
+        this.recentRecallWindow = Math.max(0, window);
         trimRecentRecallSuppressionTable();
     }
 
@@ -155,6 +155,10 @@ public class AgentMemory {
     }
 
     public synchronized void noteRecalledMemories(List<LTMEntry> recalledEntries) {
+        if (recentRecallWindow <= 0) {
+            recentRecallSuppressionTable.clear();
+            return;
+        }
         if (recalledEntries == null || recalledEntries.isEmpty()) {
             return;
         }
@@ -185,6 +189,10 @@ public class AgentMemory {
 
     private void trimRecentRecallSuppressionTable() {
         if (recentRecallSuppressionTable.isEmpty()) {
+            return;
+        }
+        if (recentRecallWindow <= 0) {
+            recentRecallSuppressionTable.clear();
             return;
         }
         int maxCooldown = recentRecallWindow + 1;

@@ -206,7 +206,7 @@ public final class RecallRuntimeState {
         if (deltaGameTime <= 0L || tagPool.isEmpty()) {
             return;
         }
-        double factor = decayFactor(deltaGameTime, resolveTagPoolHalfLifeTicks());
+        double factor = decayFactor(deltaGameTime, resolveTagPoolHalfLifeTicks(), resolveTagPoolDecayShape());
         Iterator<Map.Entry<String, TagPoolEntry>> iterator = tagPool.entrySet().iterator();
         while (iterator.hasNext()) {
             TagPoolEntry entry = iterator.next().getValue();
@@ -221,7 +221,7 @@ public final class RecallRuntimeState {
         if (deltaGameTime <= 0L || fermentationBuffer.isEmpty()) {
             return;
         }
-        double factor = decayFactor(deltaGameTime, resolveFermentationHalfLifeTicks());
+        double factor = decayFactor(deltaGameTime, resolveFermentationHalfLifeTicks(), resolveFermentationDecayShape());
         Iterator<Map.Entry<UUID, FermentationMemoryEntry>> iterator = fermentationBuffer.entrySet().iterator();
         while (iterator.hasNext()) {
             FermentationMemoryEntry entry = iterator.next().getValue();
@@ -495,16 +495,18 @@ public final class RecallRuntimeState {
         }
         double days = deltaGameTime / (double) WorldTimeSemantics.TICKS_PER_DAY;
         double scale = Math.max(0.0, TalkingWeaponConfig.LTM_RECALL_INTERVAL_BONUS_SCALE.get());
-        double steepness = Math.max(0.1, TalkingWeaponConfig.LTM_RECALL_INTERVAL_BONUS_STEEPNESS.get());
+        double steepness = Math.max(0.25, TalkingWeaponConfig.LTM_RECALL_INTERVAL_BONUS_STEEPNESS.get());
         double bonus = 1.0 + Math.min(MAX_INTERVAL_BONUS - 1.0, Math.log1p(days * steepness) * scale);
         return clamp(1.0, MAX_INTERVAL_BONUS, bonus);
     }
 
-    private static double decayFactor(long deltaGameTime, long halfLifeTicks) {
+    private static double decayFactor(long deltaGameTime, long halfLifeTicks, double decayShape) {
         if (deltaGameTime <= 0L || halfLifeTicks <= 0L) {
             return 1.0;
         }
-        return Math.exp(-deltaGameTime / (double) halfLifeTicks);
+        double ratio = Math.max(0.0, deltaGameTime / (double) halfLifeTicks);
+        double safeShape = clamp(0.25, 4.0, decayShape);
+        return Math.exp(-Math.pow(ratio, safeShape));
     }
 
     private static long resolveTagPoolHalfLifeTicks() {
@@ -515,6 +517,14 @@ public final class RecallRuntimeState {
     private static long resolveFermentationHalfLifeTicks() {
         double days = TalkingWeaponConfig.LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS.get();
         return Math.max(1L, Math.round(WorldTimeSemantics.TICKS_PER_DAY * days));
+    }
+
+    private static double resolveTagPoolDecayShape() {
+        return TalkingWeaponConfig.LTM_RECALL_TAG_POOL_DECAY_SHAPE.get();
+    }
+
+    private static double resolveFermentationDecayShape() {
+        return TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DECAY_SHAPE.get();
     }
 
     private static double clamp(double min, double max, double value) {
