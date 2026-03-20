@@ -16,7 +16,7 @@
   - `FEEDBACK`
 - `implanted_visibility`
   - `SUBTLE`
-  - `BALANCED`
+  - `STANDARD`
   - `EXPLICIT`
 
 含义：
@@ -152,12 +152,9 @@
 
 要重新审视这些旧字段：
 
-- `maxDepth`
-- `branchPerMemory`
-- `memoryPickPerSeed`
-- `finalMemoryCap`
-- `seedEntryCount`
-- `tagsPerEntry`
+- `mainCandidatesPerCue`
+- `sandboxCuesPerMemory`
+- `consciousMemoryCap`
 
 目标：
 

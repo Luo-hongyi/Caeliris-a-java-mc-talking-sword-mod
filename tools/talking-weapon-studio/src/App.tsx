@@ -20,7 +20,7 @@ import {
 } from "./workspaceBridge";
 import { pingGameBridge, publishWorkspaceToGame } from "./gameBridge";
 import {
-  AgentStateCustomRecall,
+  AgentStateRecallTuning,
   AgentStateFile,
   AgentStateWeightKey,
   CustomTagEntry,
@@ -49,6 +49,7 @@ type PageId =
   | "locations";
 type CustomTagKind = Extract<DetailTagKind, "custom_specific" | "custom_generic">;
 type RelationBatchOperation = "add" | "remove";
+const MEMORY_TICKS_PER_DAY = 24000;
 type TagBrowserCategoryId =
   | "all"
   | "custom"
@@ -98,7 +99,8 @@ type MemoryDraft = {
   semantic_time_tag: string;
   detail_tags: string[];
   importance: string;
-  occurred_game_time: string;
+  occurred_day_index: string;
+  occurred_time_of_day_tick: string;
   notes: string;
 };
 
@@ -371,7 +373,8 @@ const EMPTY_MEMORY_DRAFT: MemoryDraft = {
   semantic_time_tag: "",
   detail_tags: [],
   importance: "",
-  occurred_game_time: "-1",
+  occurred_day_index: "",
+  occurred_time_of_day_tick: "",
   notes: ""
 };
 
@@ -400,7 +403,8 @@ const AGENT_STATE_WEIGHT_KEYS = [
   "status",
   "consumable",
   "block",
-  "tool"
+  "tool",
+  "common"
 ] as const;
 
 const PRIMARY_EMOTION_OPTIONS = [
@@ -427,68 +431,48 @@ const PRIMARY_EMOTION_LABELS: Record<string, string> = {
   ANXIOUS: "焦虑"
 };
 
-const ASSOCIATION_MODE_OPTIONS = ["DIVERGENT", "BALANCED", "DEEP", "CUSTOM"] as const;
+const RECALL_PRESET_OPTIONS = ["SEED_FIRST", "FULL_VISIBILITY", "HYBRID", "CUSTOM"] as const;
 
-const ASSOCIATION_MODE_LABELS: Record<string, string> = {
-  DIVERGENT: "发散",
-  BALANCED: "均衡",
-  DEEP: "深度",
+const RECALL_PRESET_LABELS: Record<string, string> = {
+  SEED_FIRST: "种子优先",
+  FULL_VISIBILITY: "全量可视",
+  HYBRID: "混合",
   CUSTOM: "自定义"
 };
 
-const DEFAULT_AGENT_STATE_CUSTOM_RECALL: AgentStateCustomRecall = {
-  seed_entry_count: 3,
-  tags_per_entry: 2,
-  memory_pick_per_seed: 1,
-  max_depth: 1,
-  branch_per_memory: 1,
-  final_memory_cap: 3
+const DEFAULT_AGENT_STATE_RECALL_TUNING: AgentStateRecallTuning = {
+  main_candidates_per_cue: 1,
+  sandbox_cues_per_memory: 2,
+  conscious_memory_cap: 3
 };
 
-const AGENT_STATE_CUSTOM_RECALL_FIELDS: Array<{
-  key: keyof AgentStateCustomRecall;
+const AGENT_STATE_RECALL_TUNING_FIELDS: Array<{
+  key: keyof AgentStateRecallTuning;
   label: string;
   min: number;
   max: number;
   note?: string;
 }> = [
   {
-    key: "seed_entry_count",
-    label: "Seed Entry Count",
-    min: 1,
-    max: 12,
-    note: "兼容字段。首层 recall 已改为全量 visible detail-tag seed 池，这一项不会再裁掉起点数量。"
-  },
-  {
-    key: "tags_per_entry",
-    label: "Tags Per Entry",
+    key: "main_candidates_per_cue",
+    label: "Main Candidates Per Cue",
     min: 1,
     max: 6,
-    note: "兼容字段。首层 recall 不再按单条 context entry 截断 seed tags。"
+    note: "每个主 cue 最多能提起多少条候选记忆。"
   },
   {
-    key: "memory_pick_per_seed",
-    label: "Memory Pick Per Seed",
-    min: 1,
-    max: 6
-  },
-  {
-    key: "max_depth",
-    label: "Max Depth",
+    key: "sandbox_cues_per_memory",
+    label: "Sandbox Cues Per Memory",
     min: 0,
-    max: 4
+    max: 4,
+    note: "每条表层记忆最多回灌多少个联想 cue；0 表示关闭 sandbox 回灌。"
   },
   {
-    key: "branch_per_memory",
-    label: "Branch Per Memory",
+    key: "conscious_memory_cap",
+    label: "Conscious Memory Cap",
     min: 0,
-    max: 4
-  },
-  {
-    key: "final_memory_cap",
-    label: "Final Memory Cap",
-    min: 0,
-    max: 8
+    max: 8,
+    note: "最终最多允许多少条记忆进入表层意识。"
   }
 ];
 
@@ -504,7 +488,8 @@ const AGENT_STATE_WEIGHT_TO_FOCUS_TAG: Record<AgentStateWeightKey, FocusTag> = {
   status: "STATUS",
   consumable: "CONSUMABLE",
   block: "BLOCK",
-  tool: "TOOL"
+  tool: "TOOL",
+  common: "COMMON"
 };
 
 function createSeedNativeCatalogSnapshot(): NativeCatalogSnapshotFile {
@@ -532,16 +517,37 @@ function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFi
 
 function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: "",
     triggerSource: "",
     userPrompt: "",
-    associationMode: "",
+    recallPreset: "",
     currentDesireTag: "",
     triggerTags: [],
     traceLines: [],
     visibleContexts: [],
-    recalledMemories: []
+    recalledMemories: [],
+    runtimeState: {
+      captureMode: "unified-runtime-v1",
+      turnCounter: 0,
+      currentGameTime: -1,
+      previousGameTime: -1,
+      deltaGameTime: 0,
+      wallClockTime: -1,
+      visibleContextCount: 0,
+      recalledMemoryCount: 0,
+      tagPool: [],
+      fermentationBuffer: [],
+      consciousMemories: [],
+      associationSandbox: {
+        active: false,
+        cueTags: [],
+        sourceMemoryIds: [],
+        memoryIds: [],
+        hopLimit: 1,
+        recallBudget: 0
+      }
+    }
   };
 }
 
@@ -612,7 +618,23 @@ function isAgentStateWorkspaceFile(value: unknown): value is AgentStateWorkspace
     return false;
   }
 
+  const state = value.state;
   const weights = value.attention_weights;
+  if (
+    typeof state.recall_preset !== "string" ||
+    !isRecord(state.recall_tuning) ||
+    typeof state.recall_tuning.main_candidates_per_cue !== "number" ||
+    typeof state.recall_tuning.sandbox_cues_per_memory !== "number" ||
+    typeof state.recall_tuning.conscious_memory_cap !== "number" ||
+    typeof state.implanted_memory_safety_net !== "boolean"
+  ) {
+    return false;
+  }
+
+  if ("association_mode" in state || "custom_recall" in state) {
+    return false;
+  }
+
   return AGENT_STATE_WEIGHT_KEYS.every((key) => typeof weights[key] === "number");
 }
 
@@ -639,7 +661,7 @@ function normalizeCustomTagsFile(value: unknown): CustomTagsFile | null {
     return null;
   }
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
     tags: value.tags
   };
 }
@@ -746,12 +768,12 @@ function normalizeAgentStateWorkspaceFile(value: unknown): AgentStateWorkspaceFi
       concentration: typeof value.state.concentration === "number" ? value.state.concentration : 0.5,
       wandering_mind: typeof value.state.wandering_mind === "number" ? value.state.wandering_mind : 0.1,
       nostalgia: typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5,
-      association_mode: typeof value.state.association_mode === "string" ? value.state.association_mode : "BALANCED",
-      custom_recall: normalizeAgentStateCustomRecall(value.state.custom_recall),
+      recall_preset: typeof value.state.recall_preset === "string" ? value.state.recall_preset : "HYBRID",
+      recall_tuning: normalizeAgentStateRecallTuning(value.state.recall_tuning),
       implanted_memory_safety_net:
         typeof value.state.implanted_memory_safety_net === "boolean"
           ? value.state.implanted_memory_safety_net
-          : (typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5) > 1,
+          : false,
       current_desire_tag: currentDesireTag,
       desire_description: typeof value.state.desire_description === "string" ? value.state.desire_description : ""
     },
@@ -821,34 +843,22 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizeAgentStateCustomRecall(value: unknown): AgentStateCustomRecall {
+function normalizeAgentStateRecallTuning(value: unknown): AgentStateRecallTuning {
   const source = isRecord(value) ? value : {};
 
   return {
-    seed_entry_count:
-      typeof source.seed_entry_count === "number"
-        ? Math.round(clampNumber(source.seed_entry_count, 1, 12))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.seed_entry_count,
-    tags_per_entry:
-      typeof source.tags_per_entry === "number"
-        ? Math.round(clampNumber(source.tags_per_entry, 1, 6))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.tags_per_entry,
-    memory_pick_per_seed:
-      typeof source.memory_pick_per_seed === "number"
-        ? Math.round(clampNumber(source.memory_pick_per_seed, 1, 6))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.memory_pick_per_seed,
-    max_depth:
-      typeof source.max_depth === "number"
-        ? Math.round(clampNumber(source.max_depth, 0, 4))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.max_depth,
-    branch_per_memory:
-      typeof source.branch_per_memory === "number"
-        ? Math.round(clampNumber(source.branch_per_memory, 0, 4))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.branch_per_memory,
-    final_memory_cap:
-      typeof source.final_memory_cap === "number"
-        ? Math.round(clampNumber(source.final_memory_cap, 0, 8))
-        : DEFAULT_AGENT_STATE_CUSTOM_RECALL.final_memory_cap
+    main_candidates_per_cue:
+      typeof source.main_candidates_per_cue === "number"
+        ? Math.round(clampNumber(source.main_candidates_per_cue, 1, 6))
+        : DEFAULT_AGENT_STATE_RECALL_TUNING.main_candidates_per_cue,
+    sandbox_cues_per_memory:
+      typeof source.sandbox_cues_per_memory === "number"
+        ? Math.round(clampNumber(source.sandbox_cues_per_memory, 0, 4))
+        : DEFAULT_AGENT_STATE_RECALL_TUNING.sandbox_cues_per_memory,
+    conscious_memory_cap:
+      typeof source.conscious_memory_cap === "number"
+        ? Math.round(clampNumber(source.conscious_memory_cap, 0, 8))
+        : DEFAULT_AGENT_STATE_RECALL_TUNING.conscious_memory_cap
   };
 }
 
@@ -859,7 +869,7 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
       : null;
 
   return {
-    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 1,
+    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 2,
     state: {
       primary_emotion:
         typeof file.state.primary_emotion === "string" && file.state.primary_emotion.trim()
@@ -874,11 +884,11 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
       concentration: clampNumber(file.state.concentration, 0, 1),
       wandering_mind: clampNumber(file.state.wandering_mind, 0, 1),
       nostalgia: clampNumber(file.state.nostalgia, 0, 2),
-      association_mode:
-        typeof file.state.association_mode === "string" && file.state.association_mode.trim()
-          ? file.state.association_mode.trim().toUpperCase()
-          : "BALANCED",
-      custom_recall: normalizeAgentStateCustomRecall(file.state.custom_recall),
+      recall_preset:
+        typeof file.state.recall_preset === "string" && file.state.recall_preset.trim()
+          ? file.state.recall_preset.trim().toUpperCase()
+          : "HYBRID",
+      recall_tuning: normalizeAgentStateRecallTuning(file.state.recall_tuning),
       implanted_memory_safety_net: Boolean(file.state.implanted_memory_safety_net),
       current_desire_tag: currentDesireTag,
       desire_description: typeof file.state.desire_description === "string" ? file.state.desire_description : ""
@@ -954,11 +964,11 @@ function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile
   }
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     triggerSource: typeof value.triggerSource === "string" ? value.triggerSource : "",
     userPrompt: typeof value.userPrompt === "string" ? value.userPrompt : "",
-    associationMode: typeof value.associationMode === "string" ? value.associationMode : "",
+    recallPreset: typeof value.recallPreset === "string" ? value.recallPreset : "",
     currentDesireTag: typeof value.currentDesireTag === "string" ? value.currentDesireTag : "",
     triggerTags: stringArrayOf(value.triggerTags),
     traceLines: stringArrayOf(value.traceLines),
@@ -984,7 +994,94 @@ function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile
             semanticTimeTag: typeof entry.semanticTimeTag === "string" ? entry.semanticTimeTag : "",
             semanticTimeLabel: typeof entry.semanticTimeLabel === "string" ? entry.semanticTimeLabel : ""
           }))
-      : []
+      : [],
+    runtimeState: normalizeRuntimeRecallRuntimeState(value.runtimeState)
+  };
+}
+
+function normalizeRuntimeRecallRuntimeState(value: unknown): RuntimeRecallTraceFile["runtimeState"] {
+  if (!isRecord(value)) {
+    return createEmptyRuntimeRecallTraceFile().runtimeState;
+  }
+
+  return {
+    captureMode: typeof value.captureMode === "string" ? value.captureMode : "unified-runtime-v1",
+    turnCounter: typeof value.turnCounter === "number" ? value.turnCounter : 0,
+    currentGameTime: typeof value.currentGameTime === "number" ? value.currentGameTime : -1,
+    previousGameTime: typeof value.previousGameTime === "number" ? value.previousGameTime : -1,
+    deltaGameTime: typeof value.deltaGameTime === "number" ? value.deltaGameTime : 0,
+    wallClockTime: typeof value.wallClockTime === "number" ? value.wallClockTime : -1,
+    visibleContextCount: typeof value.visibleContextCount === "number" ? value.visibleContextCount : 0,
+    recalledMemoryCount: typeof value.recalledMemoryCount === "number" ? value.recalledMemoryCount : 0,
+    tagPool: Array.isArray(value.tagPool)
+      ? value.tagPool
+          .filter(isRecord)
+          .map((entry) => ({
+            tag: typeof entry.tag === "string" ? entry.tag : "",
+            score: typeof entry.score === "number" ? entry.score : 0,
+            sourceCount: typeof entry.sourceCount === "number" ? entry.sourceCount : 0,
+            focusTags: stringArrayOf(entry.focusTags),
+            lastInjectedGameTime:
+              typeof entry.lastInjectedGameTime === "number" ? entry.lastInjectedGameTime : -1,
+            lastMatchedGameTime:
+              typeof entry.lastMatchedGameTime === "number" ? entry.lastMatchedGameTime : -1,
+            newlyInjectedThisTurn: entry.newlyInjectedThisTurn === true,
+            injectedScoreThisTurn:
+              typeof entry.injectedScoreThisTurn === "number" ? entry.injectedScoreThisTurn : 0
+          }))
+      : [],
+    fermentationBuffer: Array.isArray(value.fermentationBuffer)
+      ? value.fermentationBuffer
+          .filter(isRecord)
+          .map((entry) => ({
+            memoryId: typeof entry.memoryId === "string" ? entry.memoryId : "",
+            description: typeof entry.description === "string" ? entry.description : "",
+            score: typeof entry.score === "number" ? entry.score : 0,
+            sourceType: typeof entry.sourceType === "string" ? entry.sourceType : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            supportTags: stringArrayOf(entry.supportTags),
+            associativeTags: stringArrayOf(entry.associativeTags),
+            lastUpdatedGameTime:
+              typeof entry.lastUpdatedGameTime === "number" ? entry.lastUpdatedGameTime : -1,
+            lastConsciousGameTime:
+              typeof entry.lastConsciousGameTime === "number" ? entry.lastConsciousGameTime : -1,
+            enteredConsciousThisTurn: entry.enteredConsciousThisTurn === true,
+            cueBoostThisTurn:
+              typeof entry.cueBoostThisTurn === "number" ? entry.cueBoostThisTurn : 0,
+            reinforcementCount:
+              typeof entry.reinforcementCount === "number" ? entry.reinforcementCount : 0
+          }))
+      : [],
+    consciousMemories: Array.isArray(value.consciousMemories)
+      ? value.consciousMemories
+          .filter(isRecord)
+          .map((entry) => ({
+            memoryId: typeof entry.memoryId === "string" ? entry.memoryId : "",
+            description: typeof entry.description === "string" ? entry.description : "",
+            score: typeof entry.score === "number" ? entry.score : 0,
+            sourceType: typeof entry.sourceType === "string" ? entry.sourceType : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            supportTags: stringArrayOf(entry.supportTags)
+          }))
+      : [],
+    associationSandbox: isRecord(value.associationSandbox)
+      ? {
+          active: value.associationSandbox.active === true,
+          cueTags: stringArrayOf(value.associationSandbox.cueTags),
+          sourceMemoryIds: stringArrayOf(value.associationSandbox.sourceMemoryIds),
+          memoryIds: stringArrayOf(value.associationSandbox.memoryIds),
+          hopLimit: typeof value.associationSandbox.hopLimit === "number" ? value.associationSandbox.hopLimit : 1,
+          recallBudget:
+            typeof value.associationSandbox.recallBudget === "number" ? value.associationSandbox.recallBudget : 0
+        }
+      : {
+          active: false,
+          cueTags: [],
+          sourceMemoryIds: [],
+          memoryIds: [],
+          hopLimit: 1,
+          recallBudget: 0
+        }
   };
 }
 
@@ -1539,6 +1636,20 @@ function buildMemoryDraft(memory?: ImplantedMemoryEntry): MemoryDraft {
     return { ...EMPTY_MEMORY_DRAFT };
   }
 
+  const legacyOccurredGameTime = memory.occurred_game_time;
+  const occurredDayIndex =
+    memory.occurred_day_index !== undefined
+      ? memory.occurred_day_index
+      : legacyOccurredGameTime !== undefined && legacyOccurredGameTime >= 0
+        ? Math.floor(legacyOccurredGameTime / MEMORY_TICKS_PER_DAY) + 1
+        : undefined;
+  const occurredTimeOfDayTick =
+    memory.occurred_time_of_day_tick !== undefined
+      ? normalizeStudioTimeOfDayTick(memory.occurred_time_of_day_tick)
+      : legacyOccurredGameTime !== undefined && legacyOccurredGameTime >= 0
+        ? normalizeStudioTimeOfDayTick(legacyOccurredGameTime)
+        : undefined;
+
   return {
     label: memory.label ?? "",
     description: memory.description,
@@ -1546,7 +1657,9 @@ function buildMemoryDraft(memory?: ImplantedMemoryEntry): MemoryDraft {
     semantic_time_tag: memory.semantic_time_tag ?? "",
     detail_tags: [...(memory.detail_tags ?? [])],
     importance: memory.importance !== undefined ? String(memory.importance) : "",
-    occurred_game_time: memory.occurred_game_time !== undefined ? String(memory.occurred_game_time) : "-1",
+    occurred_day_index: occurredDayIndex !== undefined && occurredDayIndex > 0 ? String(occurredDayIndex) : "",
+    occurred_time_of_day_tick:
+      occurredTimeOfDayTick !== undefined && occurredTimeOfDayTick >= 0 ? String(occurredTimeOfDayTick) : "",
     notes: memory.notes ?? ""
   };
 }
@@ -1605,6 +1718,14 @@ function buildMemoryEntryFromDraft(
   baseMemory?: ImplantedMemoryEntry,
   derivedTimeLabel?: string
 ): ImplantedMemoryEntry {
+  const occurredDayIndex = parseOptionalInteger(draft.occurred_day_index);
+  const occurredTimeOfDayTick = parseOptionalInteger(draft.occurred_time_of_day_tick);
+  const hasAbsoluteTimeAnchor =
+    occurredDayIndex !== undefined &&
+    occurredDayIndex > 0 &&
+    occurredTimeOfDayTick !== undefined &&
+    occurredTimeOfDayTick >= 0;
+
   const nextMemory: ImplantedMemoryEntry = {
     ...(baseMemory ?? {}),
     label: draft.label.trim() || undefined,
@@ -1613,9 +1734,11 @@ function buildMemoryEntryFromDraft(
     semantic_time_tag: draft.semantic_time_tag.trim() || undefined,
     detail_tags: draft.detail_tags.length ? draft.detail_tags : undefined,
     importance: draft.importance.trim() ? Number.parseFloat(draft.importance) : undefined,
-    occurred_game_time: draft.occurred_game_time.trim()
-      ? Number.parseInt(draft.occurred_game_time, 10)
+    occurred_day_index: hasAbsoluteTimeAnchor ? occurredDayIndex : undefined,
+    occurred_time_of_day_tick: hasAbsoluteTimeAnchor
+      ? normalizeStudioTimeOfDayTick(occurredTimeOfDayTick)
       : undefined,
+    occurred_game_time: undefined,
     time_label: derivedTimeLabel,
     notes: draft.notes.trim() || undefined
   };
@@ -1630,6 +1753,20 @@ function buildMemoryEntryFromDraft(
 function focusTagRank(focusTag: FocusTag): number {
   const index = FOCUS_TAGS.indexOf(focusTag);
   return index === -1 ? FOCUS_TAGS.length : index;
+}
+
+function parseOptionalInteger(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeStudioTimeOfDayTick(rawTick: number): number {
+  const normalized = rawTick % MEMORY_TICKS_PER_DAY;
+  return normalized >= 0 ? normalized : normalized + MEMORY_TICKS_PER_DAY;
 }
 
 function normalizePersonaFocusTags(focusTags: FocusTag[] | undefined, fallback?: FocusTag): FocusTag[] {
@@ -1665,8 +1802,8 @@ function formatPrimaryEmotionLabel(emotion: string): string {
   return `${PRIMARY_EMOTION_LABELS[emotion] ?? emotion} (${emotion})`;
 }
 
-function formatAssociationModeLabel(mode: string): string {
-  return `${ASSOCIATION_MODE_LABELS[mode] ?? mode} (${mode})`;
+function formatRecallPresetLabel(mode: string): string {
+  return `${RECALL_PRESET_LABELS[mode] ?? mode} (${mode})`;
 }
 
 function formatAgentStateWeightLabel(weightKey: AgentStateWeightKey): string {
@@ -5354,12 +5491,24 @@ function MemoryEditor({
           />
         </label>
         <label className="field">
-          <span>Occurred Game Time</span>
+          <span>Occurred Day Index</span>
           <input
             type="number"
-            value={mode.draft.occurred_game_time}
-            onChange={(event) => onDraftChange({ occurred_game_time: event.target.value })}
-            placeholder="可选；一般不建议手填，优先使用上方语义时间锚"
+            min={1}
+            value={mode.draft.occurred_day_index}
+            onChange={(event) => onDraftChange({ occurred_day_index: event.target.value })}
+            placeholder="可选；如需绝对时间锚点，请与右侧字段成对填写"
+          />
+        </label>
+        <label className="field">
+          <span>Occurred Time Of Day Tick</span>
+          <input
+            type="number"
+            min={0}
+            max={23999}
+            value={mode.draft.occurred_time_of_day_tick}
+            onChange={(event) => onDraftChange({ occurred_time_of_day_tick: event.target.value })}
+            placeholder="0 - 23999；留空则视为无绝对时间锚点"
           />
         </label>
         <label className="field full">
@@ -5516,29 +5665,29 @@ function AgentStatePage({
       .sort((left, right) => left.value - right.value)[0];
   }, [agentStateFile.attention_weights]);
 
-  const customRecallSummary = useMemo(() => {
-    const recall = agentStateFile.state.custom_recall;
-    return `pick=${recall.memory_pick_per_seed}, depth=${recall.max_depth}, branch=${recall.branch_per_memory}, cap=${recall.final_memory_cap}`;
-  }, [agentStateFile.state.custom_recall]);
+  const recallTuningSummary = useMemo(() => {
+    const tuning = agentStateFile.state.recall_tuning;
+    return `main=${tuning.main_candidates_per_cue}, sandbox=${tuning.sandbox_cues_per_memory}, conscious=${tuning.conscious_memory_cap}`;
+  }, [agentStateFile.state.recall_tuning]);
 
-  const associationModeDescription = useMemo(() => {
-    switch (agentStateFile.state.association_mode) {
-      case "DIVERGENT":
-        return "发散模式会在单层保留更多候选记忆，但联想链更浅，适合让剑更容易东想西想。";
-      case "DEEP":
-        return "深度模式会减少单层命中数，但更愿意沿着已经命中的记忆继续往下追。";
+  const recallPresetDescription = useMemo(() => {
+    switch (agentStateFile.state.recall_preset) {
+      case "SEED_FIRST":
+        return "Seed First 会更严格地压低弱 cue 的影响，只有少数强 cue 能主导召回，命中更稀疏但也更像被偶然触发。";
+      case "FULL_VISIBILITY":
+        return "Full Visibility 会尽量让当前可见 cue 全部参与主召回，反馈最强，最容易命中玩家手工编辑的记忆。";
       case "CUSTOM":
-        return "自定义模式会读取下方 custom recall 参数。当前算法首层总是从全部 visible detail tags 建 seed 池，再按这些参数控制每层候选、分支和最终注入上限。";
-      case "BALANCED":
+        return "自定义预设会读取下方 recall tuning 参数。当前统一模型始终先维护 tag pool，再做主召回、发酵层筛选、表层意识筛选和 sandbox 联想。";
+      case "HYBRID":
       default:
-        return "均衡模式会在宽度和深度之间折中，既不会过度发散，也不会只盯着一条链往下钻。";
+        return "Hybrid 是默认模式。主召回相对克制，但允许表层记忆在 sandbox 中带出更多联想 cue，兼顾命中率和稳定性。";
     }
-  }, [agentStateFile.state.association_mode]);
+  }, [agentStateFile.state.recall_preset]);
 
-  const updateCustomRecall = (key: keyof AgentStateCustomRecall, nextValue: number) => {
+  const updateRecallTuning = (key: keyof AgentStateRecallTuning, nextValue: number) => {
     onStateChange({
-      custom_recall: {
-        ...agentStateFile.state.custom_recall,
+      recall_tuning: {
+        ...agentStateFile.state.recall_tuning,
         [key]: nextValue
       }
     });
@@ -5556,7 +5705,7 @@ function AgentStatePage({
       : "";
 
     return [
-      `[AgentState] emotion=${agentStateFile.state.primary_emotion} (intensity=${agentStateFile.state.emotion_intensity}/100), familiarity=${agentStateFile.state.familiarity}, concentration=${agentStateFile.state.concentration.toFixed(2)}, wandering=${agentStateFile.state.wandering_mind.toFixed(2)}, nostalgia=${agentStateFile.state.nostalgia.toFixed(2)}, associationMode=${agentStateFile.state.association_mode}, 对玩家称呼=${agentStateFile.state.player_address}${currentDesireText}${desireDescriptionText}`,
+      `[AgentState] emotion=${agentStateFile.state.primary_emotion} (intensity=${agentStateFile.state.emotion_intensity}/100), familiarity=${agentStateFile.state.familiarity}, concentration=${agentStateFile.state.concentration.toFixed(2)}, wandering=${agentStateFile.state.wandering_mind.toFixed(2)}, nostalgia=${agentStateFile.state.nostalgia.toFixed(2)}, recallPreset=${agentStateFile.state.recall_preset}, 对玩家称呼=${agentStateFile.state.player_address}${currentDesireText}${desireDescriptionText}`,
       `[AgentPersona]`,
       `好感度: ${agentStateFile.persona_state.favorability}/100${playerProfileText}`
     ].join("\n");
@@ -5577,7 +5726,7 @@ function AgentStatePage({
         </div>
         <div className="stacked-badges">
           <span className="badge">{formatPrimaryEmotionLabel(agentStateFile.state.primary_emotion)}</span>
-          <span className="badge muted">{formatAssociationModeLabel(agentStateFile.state.association_mode)}</span>
+          <span className="badge muted">{formatRecallPresetLabel(agentStateFile.state.recall_preset)}</span>
           <span className={agentStateFile.persona_state.favorability >= 0 ? "badge good" : "badge warn"}>
             {`Favorability ${agentStateFile.persona_state.favorability}`}
           </span>
@@ -5592,10 +5741,10 @@ function AgentStatePage({
             <span className="chip">{`熟悉度：${agentStateFile.state.familiarity}`}</span>
             <span className="chip">{`专注度：${agentStateFile.state.concentration.toFixed(2)}`}</span>
             <span className="chip">{`随想值：${agentStateFile.state.wandering_mind.toFixed(2)}`}</span>
-            <span className="chip">{`忆旧值：${agentStateFile.state.nostalgia.toFixed(2)}`}</span>
+            <span className="chip">{`忆旧值（预留）：${agentStateFile.state.nostalgia.toFixed(2)}`}</span>
             <span className="chip">{`植入保底：${agentStateFile.state.implanted_memory_safety_net ? "开启" : "关闭"}`}</span>
-            {agentStateFile.state.association_mode === "CUSTOM" ? (
-              <span className="chip">{`Custom Recall：${customRecallSummary}`}</span>
+            {agentStateFile.state.recall_preset === "CUSTOM" ? (
+              <span className="chip">{`Recall Tuning：${recallTuningSummary}`}</span>
             ) : null}
             <span className="chip">
               {agentStateFile.state.current_desire_tag
@@ -5708,28 +5857,28 @@ function AgentStatePage({
           </label>
 
           <label className="field">
-            <span>Association Mode</span>
+            <span>Recall Preset</span>
             <select
-              value={agentStateFile.state.association_mode}
-              onChange={(event) => onStateChange({ association_mode: event.target.value })}
+              value={agentStateFile.state.recall_preset}
+              onChange={(event) => onStateChange({ recall_preset: event.target.value })}
             >
-              {ASSOCIATION_MODE_OPTIONS.map((mode) => (
+              {RECALL_PRESET_OPTIONS.map((mode) => (
                 <option key={mode} value={mode}>
-                  {formatAssociationModeLabel(mode)}
+                  {formatRecallPresetLabel(mode)}
                 </option>
               ))}
             </select>
-            <p className="muted-copy">{associationModeDescription}</p>
+            <p className="muted-copy">{recallPresetDescription}</p>
           </label>
 
-          {agentStateFile.state.association_mode === "CUSTOM" ? (
+          {agentStateFile.state.recall_preset === "CUSTOM" ? (
             <div className="field full">
-              <span>Custom Recall Parameters</span>
+              <span>Recall Tuning</span>
               <p className="muted-copy">
-                这组数值会写入 <code>agent_state.json.state.custom_recall</code>，游戏内 State Screen 与 Studio 共用。
+                这组数值会写入 <code>agent_state.json.state.recall_tuning</code>，游戏内 State Screen 与 Studio 共用。
               </p>
               <div className="form-grid state-form-grid">
-                {AGENT_STATE_CUSTOM_RECALL_FIELDS.map((field) => (
+                {AGENT_STATE_RECALL_TUNING_FIELDS.map((field) => (
                   <label key={field.key} className="field">
                     <span>{field.label}</span>
                     <input
@@ -5737,14 +5886,14 @@ function AgentStatePage({
                       min={field.min}
                       step={1}
                       type="number"
-                      value={agentStateFile.state.custom_recall[field.key]}
+                      value={agentStateFile.state.recall_tuning[field.key]}
                       onChange={(event) => {
                         const nextValue = Number.parseInt(event.target.value, 10);
-                        updateCustomRecall(
+                        updateRecallTuning(
                           field.key,
                           Number.isFinite(nextValue)
                             ? Math.round(clampNumber(nextValue, field.min, field.max))
-                            : agentStateFile.state.custom_recall[field.key]
+                            : agentStateFile.state.recall_tuning[field.key]
                         );
                       }}
                     />
@@ -5786,7 +5935,7 @@ function AgentStatePage({
           </label>
 
           <label className="field">
-            <span>Nostalgia</span>
+            <span>Nostalgia (Reserved)</span>
             <div className="range-field">
               <input
                 max={2}
@@ -5798,7 +5947,7 @@ function AgentStatePage({
               />
               <strong className="range-field-output">{agentStateFile.state.nostalgia.toFixed(2)}</strong>
             </div>
-            <p className="muted-copy">现在只控制时间衰退强度，不再负责触发植入记忆保底。</p>
+            <p className="muted-copy">当前为预留参数，暂未接入 recall 公式。</p>
           </label>
 
           <label className="field full">

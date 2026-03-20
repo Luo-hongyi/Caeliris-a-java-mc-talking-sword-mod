@@ -16,7 +16,6 @@
         "custom_generic:homeland"
       ],
       "importance": 1.0,
-      "occurred_game_time": -1,
       "time_label": "发生在极久远过去、难以用精确日数标定的往昔阶段。",
       "notes": "典型的植入式背景记忆。"
     },
@@ -32,7 +31,8 @@
         "custom_generic:trust_beginning"
       ],
       "importance": 0.78,
-      "occurred_game_time": 48231,
+      "occurred_day_index": 3,
+      "occurred_time_of_day_tick": 231,
       "time_label": "与主人关系刚刚开始松动、信任仍在萌芽中的早期阶段。"
     }
   ]

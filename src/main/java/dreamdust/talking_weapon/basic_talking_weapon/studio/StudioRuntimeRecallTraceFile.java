@@ -8,6 +8,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMRecallEngine;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.RecallRuntimeState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
 import java.io.IOException;
@@ -34,7 +35,7 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final String FILENAME = "studio_runtime_recall_trace.json";
     public static final String VERSION_KEY = "runtimeRecallTrace";
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private StudioRuntimeRecallTraceFile() {
     }
@@ -67,7 +68,7 @@ public final class StudioRuntimeRecallTraceFile {
         file.generatedAt = OffsetDateTime.now().toString();
         file.triggerSource = ctx != null && ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "";
         file.userPrompt = userPrompt != null ? userPrompt : "";
-        file.associationMode = state != null && state.getAssociationMode() != null ? state.getAssociationMode().name() : "";
+        file.recallPreset = state != null && state.getRecallPreset() != null ? state.getRecallPreset().name() : "";
         file.currentDesireTag = state != null && state.getCurrentDesireTag() != null ? state.getCurrentDesireTag().name() : "";
 
         if (visibleContexts != null) {
@@ -94,6 +95,9 @@ public final class StudioRuntimeRecallTraceFile {
         if (recallResult != null) {
             file.triggerTags.addAll(recallResult.triggerTags);
             file.traceLines.addAll(recallResult.traceLines);
+            file.runtimeState = recallResult.runtimeState != null
+                    ? recallResult.runtimeState
+                    : new RecallRuntimeState.Snapshot();
             for (LTMEntry memory : recallResult.recalledMemories) {
                 if (memory == null) {
                     continue;
@@ -135,12 +139,13 @@ public final class StudioRuntimeRecallTraceFile {
         public String generatedAt = "";
         public String triggerSource = "";
         public String userPrompt = "";
-        public String associationMode = "";
+        public String recallPreset = "";
         public String currentDesireTag = "";
         public List<String> triggerTags = new ArrayList<>();
         public List<String> traceLines = new ArrayList<>();
         public List<VisibleContextEntry> visibleContexts = new ArrayList<>();
         public List<RecalledMemoryEntry> recalledMemories = new ArrayList<>();
+        public RecallRuntimeState.Snapshot runtimeState = new RecallRuntimeState.Snapshot();
 
         private void normalize() {
             if (schemaVersion <= 0) {
@@ -155,8 +160,8 @@ public final class StudioRuntimeRecallTraceFile {
             if (userPrompt == null) {
                 userPrompt = "";
             }
-            if (associationMode == null) {
-                associationMode = "";
+            if (recallPreset == null) {
+                recallPreset = "";
             }
             if (currentDesireTag == null) {
                 currentDesireTag = "";
@@ -172,6 +177,9 @@ public final class StudioRuntimeRecallTraceFile {
             }
             if (recalledMemories == null) {
                 recalledMemories = new ArrayList<>();
+            }
+            if (runtimeState == null) {
+                runtimeState = new RecallRuntimeState.Snapshot();
             }
         }
     }

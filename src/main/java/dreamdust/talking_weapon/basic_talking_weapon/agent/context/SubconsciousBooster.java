@@ -102,15 +102,15 @@ public class SubconsciousBooster {
      */
     private static double getFocusWeight(TaggedContextEntry entry) {
         if (entry.getFocusTags().isEmpty()) {
-            return 0.5; // 无标签的默认中位权重
+            return Math.min(1.0, 0.5 + AttentionFilter.getNormalizedCrosshairTargetBonus(entry)); // 无标签的默认中位权重
         }
         double maxWeight = 0.0;
         for (FocusTag tag : entry.getFocusTags()) {
             double w = getConfigWeight(tag);
             if (w > maxWeight) maxWeight = w;
         }
-        // 归一化到 0~1 范围（配置权重为 0~10）
-        return maxWeight / 10.0;
+        // 归一化到 0~1 范围（配置权重为 0~10），再叠加映射后的准心加分。
+        return Math.min(1.0, maxWeight / 10.0 + AttentionFilter.getNormalizedCrosshairTargetBonus(entry));
     }
 
     private static double getConfigWeight(FocusTag tag) {
@@ -128,7 +128,7 @@ public class SubconsciousBooster {
                 case CONSUMABLE: return TalkingWeaponConfig.WEIGHT_CONSUMABLE.get();
                 case BLOCK: return TalkingWeaponConfig.WEIGHT_BLOCK.get();
                 case TOOL: return TalkingWeaponConfig.WEIGHT_TOOL.get();
-                case COMMON: return 5.0;
+                case COMMON: return TalkingWeaponConfig.WEIGHT_COMMON.get();
                 default: return 5.0;
             }
         } catch (Exception e) {

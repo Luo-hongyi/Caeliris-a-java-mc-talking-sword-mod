@@ -140,16 +140,21 @@ public class BaseContextCollector implements IContextCollector {
         }
 
         if (level != null) {
-            long dayTime = level.getDayTime();
-            builder.dayTime(dayTime)
+            long gameTime = level.getGameTime();
+            long worldDayTime = level.getDayTime();
+            long dayIndex = WorldTimeSemantics.dayIndex(gameTime);
+            long timeOfDayTick = WorldTimeSemantics.timeOfDay(worldDayTime);
+            builder.gameTime(gameTime)
+                    .dayIndex(dayIndex)
+                    .timeOfDayTick(timeOfDayTick)
                     .raining(level.isRaining());
 
             // 将 tick 转为直观的时段描述
-            String timeDesc = WorldTimeSemantics.describeTimeOfDay(dayTime);
+            String timeDesc = WorldTimeSemantics.describeTimeOfDay(timeOfDayTick);
             builder.extra("time_desc", timeDesc);
 
             // ── 标签：时间状态 ──
-            String timeState = WorldTimeSemantics.categorizeTime(dayTime);
+            String timeState = WorldTimeSemantics.categorizeTime(timeOfDayTick);
             builder.addTaggedEntry(TaggedContextEntry.builder()
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, timeState)

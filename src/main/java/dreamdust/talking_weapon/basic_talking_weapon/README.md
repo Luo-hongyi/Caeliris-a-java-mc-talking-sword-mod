@@ -13,7 +13,7 @@
 - `native_catalog.snapshot.json` 现在会尽可能附带本地化 `displayName`，并为可渲染对象附带轻量图标提示（如 item / block item / spawn egg）。
 - native icon 导出链已落地：`native_catalog_icons/` 只为 `native_specific` 导出 PNG 图标；`native_generic` 不导出图标文件。图标路径直接写入 `native_catalog.snapshot.json` 的 metadata，workspace 协议不再依赖额外的 `icons.json`。
 - `PersonaMatcher` 已按最新定义修正 `specific` / `generic` 匹配逻辑。
-- 长期记忆召回链已按“visible context 起点 + 温度采样 + recent recall 抑制 + nostalgia 时间衰退”的新方案重构完成。
+- 长期记忆召回链已按“visible context 起点 + 温度采样 + recent recall 抑制 + 可调半衰期时间衰退”的新方案重构完成。
 - `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
 - 全局植入记忆 (`implanted memories`) 的读写链路可用。
 - 植入记忆支持独立的 `semantic_time_tag`：它会参与记忆之间的联想边，并在 Prompt 中以独立时间语义输出，但不会并入普通 `detail_tags` 的 cue 列表。
@@ -178,18 +178,18 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 
 ### 长期记忆召回
 
-- `LLMInteractionTask` 会先从当前 `visibleContexts` 中提取全部 detail tags，聚合成首层 seed 池，再逐层联想到少量 `LTMEntry`。
-- 长期记忆不是全量匹配，而是“visible tag seed 池 + 温度采样 + 分层联想”的召回链：`wanderingMind` 提供随机温度，`concentration` 与当前 Focus 压力共同决定联想方向和联想深度。
+- `LLMInteractionTask` 会先把当前 `visibleContexts` 注入跨轮维护的 `tag_pool`，再由 `tag_pool` 派生首层 seed，逐层联想到少量 `LTMEntry`。
+- 长期记忆不是全量匹配，而是“visible tag cue 池 + 温度采样 + 分层联想”的召回链：`wanderingMind` 提供随机温度，`concentration` 与当前 Focus 压力共同决定联想方向和联想强度。
 - 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
-- 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；`nostalgia` 则控制旧记忆随时间衰退的力度。
+- 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；合成记忆的时间衰退半衰期则由 `TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` 控制，并且只按游戏内时间推进。
+- 植入记忆的 `ageFactor` 固定为 `1.0`，不参与时间衰退。
 - 对最近 1~2 次刚回忆过的记忆，若这轮的语义命中强度不足，系统会直接跳过它们，而不是仅仅降权，避免弱相关记忆连续占据高位。
-- `nostalgia` 当前允许到 `2.0`，但现在只控制时间衰退强度，不再负责触发植入记忆保底。
-- 植入记忆保底现在是独立开关：当 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆时，系统会复用本轮总 seed 池，对符合条件的植入记忆做一次轻量加权保底，最多额外补入 1 条。
-- `LTMEntry` 现在会记录轻量的游戏内时间锚点（如“第 N 天的深夜”），并在召回时优先按游戏内时间而不是现实时间计算记忆老化。
+- `nostalgia` 目前保留在 `AgentState` 中，但暂未接入 recall 公式；植入记忆保底仍然是独立开关。
+- 植入记忆保底现在是独立开关：当 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆时，系统会复用本轮总 cue 池，对符合条件的植入记忆做一次轻量加权保底，最多额外补入 1 条。
+- `LTMEntry` 现在会长期存储拆分后的时间锚点（`occurredDayIndex + occurredTimeOfDayTick`），并在运行时重建内部 `occurredGameTime`；召回老化只按游戏内时间推进，不再依赖现实时钟。
 - 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，Prompt 中会单独显示为“时间语义”。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
-- `AssociationMode.CUSTOM` 的具体参数优先读取 `agent_state.json.state.custom_recall`，由游戏内 State Screen 与 Studio 共用；若该段缺失，则回退到 `talking_weapon-client.toml` 中的 `agent.memory_recall` 默认值。
-- 其中 `seedEntryCount` 与 `tagsPerEntry` 仅保留作历史兼容字段：当前首层 recall 已改为“全量 visible detail-tag seed 池”，所以它们不会再裁掉首层起点。
+- `RecallPreset.CUSTOM` 的具体参数优先读取 `agent_state.json.state.recall_tuning`，由游戏内 State Screen 与 Studio 共用；若该段缺失，则回退到 `talking_weapon-client.toml` 中的 `agent.memory_recall` 默认值。
 
 ### 长期记忆生成
 

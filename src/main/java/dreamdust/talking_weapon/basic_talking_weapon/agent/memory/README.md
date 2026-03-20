@@ -5,14 +5,15 @@
 另见：
 
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
+- [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
 
 截至 `2026-03-16`，`agent.memory` 子系统的状态可以概括为：
 
 - `ActionBuffer`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
-- 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：从 `visibleContexts` 中汇总全部可见 detail tags 作为首层 seed 池，再按温度、recent recall 和 nostalgia 进行联想式召回。
-- `LTMEntry` 已补入可持久化的游戏内语义时间锚点，用于叙事展示与基于游戏时间的衰退计算。
+- 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：先由 `visibleContexts` 注入跨轮维护的 `tag_pool`，再从 `tag_pool` 派生首层 cue，对长期记忆做联想式召回。
+- `LTMEntry` 已补入可持久化的游戏内语义时间锚点；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
 - `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue。
 - 当前仍未完成的关键环节，是和这套新 recall 架构一致的 **LTM 生成闭环**。
 
@@ -43,19 +44,22 @@
 当前的 `LTMRecallEngine` 采用的是“联想式召回”，而不是旧式的全量 deterministic top-k：
 
 - 起点是当前 `visibleContexts`。
-- 首层召回不再先抽少量 seed entries / seed tags，而是直接将当前 `visibleContexts` 中全部 detail tags 聚合为一个去重后的初始 seed 池，再由这些 seed 对长期记忆做统一评分。
-- recall 内部的 `frontier` 指“当前这一层还在继续向外扩展的 seed 列表”：第 0 层是可见上下文聚合出的 detail tags，后续层则来自上一层被选中的记忆继续派生出的 associative tags。
-- 每层联想都会对候选记忆做 semantic match、focus 对齐、recent recall 抑制和时间衰退加权；真正的过滤与筛选发生在记忆层，而不是 seed 层。
-- 时间衰退优先根据游戏内时间推进，而不是现实时钟。
+- 首层召回不再先抽少量 seed entries / seed tags，而是直接将当前 `visibleContexts` 中全部 detail tags 聚合为一个去重后的初始 cue 池，再由这些 cue 对长期记忆做统一评分。
+- recall 内部当前维护的是“活跃 cue 输入批次”：第 0 层来自 `tag_pool` 中当前活跃的 detail tags，sandbox 阶段则来自表层记忆回灌出的 associative tags。
+- 每层联想都会对候选记忆做 semantic match、focus 对齐、recent recall 抑制和时间衰退加权；真正的过滤与筛选发生在记忆层，而不是 cue 层。
+- 时间衰退现在只根据游戏内时间推进，不再回退到现实时钟。
+- 当前实现会把“衰退时钟”和“叙事时钟”分开：前者依赖单调的 `gameTime`，后者依赖长期保存的 `dayIndex + timeOfDayTick`。
 - 不同 seed 可以共同支持同一条记忆，证据会在 memory layer 聚合。
 - `native_generic` 可以参与内部检索，但不会直接进入 Prompt。
 - `semantic_time_tag` 会加入记忆的 associative tag 视图，因此可以成为记忆到记忆的联想边；但它仍然保持为独立时间语义，不会被塞进普通 detail cue 列表。
 - `wanderingMind` 当前不再表示“随机塞一条无关记忆”，而是采样温度：值越低越稳定地偏向高分候选，值越高越容易从次高分候选中抽到意外联想。
-- `nostalgia` 当前取值范围为 `0.0 ~ 2.0`，现在只影响旧记忆随时间衰退的力度。
+- 植入记忆 (`IMPLANTED`) 的 `ageFactor` 固定为 `1.0`，不参与任何时间衰退。
+- 合成记忆的时间衰退半衰期现在由 `TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` 控制，单位固定为游戏内天数。
+- 当前 recall 要求 `SYNTHESIZED` 记忆和本轮运行时都带有有效的游戏内时间；若缺失会直接报错，不再回退到现实小时衰退。
+- `nostalgia` 目前保留在 `AgentState` 中，但暂未接入 recall 公式。
 - “植入记忆保底”现在由 `agent_state.json.state.implanted_memory_safety_net` 单独控制，不再和 `nostalgia` 绑定。
-- 这个“植入记忆保底”不会重跑整套 recall；它只复用本轮已经产生的总 seed 池，遍历所有 `SourceType.IMPLANTED && occurredGameTime < 0` 的记忆，并仅按 seed 与记忆 associative tags 的语义命中强度做一次加权抽取，最终最多补入 1 条记忆。
+- 这个“植入记忆保底”不会重跑整套 recall；它只复用本轮已经产生的总 cue 池，遍历所有 `SourceType.IMPLANTED && occurredGameTime < 0` 的记忆，并仅按 cue 与记忆 associative tags 的语义命中强度做一次加权抽取，最终最多补入 1 条记忆。
 - 对最近刚回忆过的记忆，系统不仅会乘上更强的 `recent recall penalty`，还会在最近 1~2 次回忆窗口内对“语义命中不足”的候选直接跳过，避免低相关但高排名的记忆连续喋喋不休。
-- 因为首层 recall 已改为“全量 visible tag seed 池”，旧配置里的 `seedEntryCount` / `tagsPerEntry` 不再决定首层起点数量；当前它们只作为历史兼容字段保留。
 
 ## 当前缺口：LTM 生成
 

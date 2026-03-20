@@ -16,6 +16,11 @@
 - `tag/`
   数据标签与分类模型。包含 `FocusTag` (注意力分类)、`DetailTag` (具体词条) 以及封装数据的 `TaggedContextEntry` (含客/主观重要度分析)。
 
+补充设计文档：
+
+- `BASE_IMPORTANCE_REFACTOR.md`
+  记录 `baseImportance` 从“collector 手写最终浮点”重构为“collector 产 signals，统一模型算分”的设计方向。
+
 ## 工作管线 (Data Pipeline)
 
 ### 1. 触发激活 (Trigger -> Sensor)
@@ -28,18 +33,23 @@
 一旦被触发，事件对应的多个 `IContextCollector` 会被一并在主线程运行。
 它们将周围的物体、环境、结构提取成 `TaggedContextEntry`，并将数据塞入 `AgentContext`（本次上下文的一个完整快照）。
 
+当前这份快照会显式区分两类时间：
+
+- `gameTime`：单调递增的绝对游戏 tick，用于 recall 衰退和跨轮 delta
+- `dayIndex + timeOfDayTick`：用于叙事锚点，其中 `timeOfDayTick` 来自当前世界时钟，不再把它误当成绝对时间轴
+
 > **亮点：**海量冗余方块采用了 `associativeOnly = true` 隐式标签。它们默认不会进入 Prompt，只有在 `SubconsciousBooster` 把某条隐藏条目直通提升后，才会进入后续人格与记忆流程，对大模型保持严格限流。
 
 > **补充：**`native_generic:*` 与 `associativeOnly` 是两套不同机制。前者会进入系统检索层，但在 Prompt 合成阶段默认隐藏；后者控制的是整条 `TaggedContextEntry` 是否默认对大模型可见。
 
-> **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力、随想值和忆旧值共同影响联想方向、采样随机性与时间衰退。若 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回未命中任何 `occurredGameTime < 0` 的植入记忆，系统会复用本轮 seed 池，对这类植入记忆做一次轻量保底抽取。
+> **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力与随想值影响联想方向和采样随机性，时间衰退则由 recall 配置中的合成记忆半衰期控制，并且只按游戏内时间推进。植入记忆本身不参与时间衰退。若 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回未命中任何 `occurredGameTime < 0` 的植入记忆，系统会复用本轮 cue 池，对这类植入记忆做一次轻量保底抽取。
 
 > **当前进度说明：**这条“上下文进入 Prompt / Persona / LTM Recall”的链已经按新设计落地；但与之配套的新版 LTM 生成闭环仍未完成，仓库中的 `ReflectionTask` 仍应视作旧版过渡骨架。
 
 ### 3. 注意力过滤 (AttentionFilter)
 
 这是 **Phase 3** 加入的核心机制，它保证大模型不会被纷繁复杂的垃圾数据和信息冲毁思维 (Token Overflow)。
-1. **主观重要度计分**：`Feature Base Importance` * `Subjective Modifier` 计算。不同标签 (`FocusTag`) 有不同的喜好权重（存在 `TalkingWeaponConfig` 中），且受到剑的 `concentration`（专注度属性）扭曲放大或碾平。
+1. **主观重要度计分**：`Feature Base Importance` * `Subjective Modifier` 计算。不同标签 (`FocusTag`) 有不同的喜好权重（存在 `TalkingWeaponConfig` 中），且受到剑的 `concentration`（专注度属性）扭曲放大或碾平。玩家准心直接指向的目标若被标记为 `crosshairTarget`，还会额外叠加一个独立开关控制、可调节的绝对值加分；这部分不再借由 `FocusTag.COMMON` 隐式实现。
 2. **截断过滤 (Top-K)**：对于分数低于 `0.2` 的环境信息直接摒弃噪音（潜意识过滤）。最终取排名前 `Top-K`（K根据触发源 `triggerSource` 在 config 中独立动态配置）的数据条目！
 
 ### 4. 字典转换注入 (LLMInteractionTask / Prompt Generation)

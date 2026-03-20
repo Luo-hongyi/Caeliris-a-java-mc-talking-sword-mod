@@ -15,6 +15,9 @@ import java.util.List;
  */
 public class AttentionFilter {
 
+    private static final float DEFAULT_CROSSHAIR_TARGET_BONUS = 0.18f;
+    private static final float NORMALIZED_SUBCONSCIOUS_SCORE_SPAN = 2.0f;
+
     /**
      * 将 0.0 ~ 10.0 的 FocusTag 权重映射为主观乘数 (默认 5.0 -> 1.0x)。
      * 映射范围大致为 0.2x ~ 2.0x。
@@ -40,9 +43,10 @@ public class AttentionFilter {
      * 取该条信息涵盖的所有 FocusTag 中权重最高的那一个进行计算。
      */
     public static float calculateFinalScore(TaggedContextEntry entry, float concentration) {
+        float baseScore = entry.getBaseImportance();
         if (entry.getFocusTags().isEmpty()) {
             // 如果没有明确 FocusTag，默认为标准关注度 (multiplier = 1.0)
-            return entry.getBaseImportance() * 1.0f;
+            return applyCrosshairBonus(entry, baseScore);
         }
 
         double maxWeight = 0.0;
@@ -54,7 +58,28 @@ public class AttentionFilter {
         }
 
         float multiplier = getSubjectiveMultiplier(maxWeight, concentration);
-        return entry.getBaseImportance() * multiplier;
+        return applyCrosshairBonus(entry, baseScore * multiplier);
+    }
+
+    public static float getCrosshairTargetBonus(TaggedContextEntry entry) {
+        if (entry == null || !entry.isCrosshairTarget()) {
+            return 0.0f;
+        }
+        try {
+            return TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.get()
+                    ? (float) TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_VALUE.get().doubleValue()
+                    : 0.0f;
+        } catch (Exception e) {
+            return DEFAULT_CROSSHAIR_TARGET_BONUS;
+        }
+    }
+
+    public static float applyCrosshairBonus(TaggedContextEntry entry, float score) {
+        return score + getCrosshairTargetBonus(entry);
+    }
+
+    public static float getNormalizedCrosshairTargetBonus(TaggedContextEntry entry) {
+        return Math.max(0.0f, Math.min(1.0f, getCrosshairTargetBonus(entry) / NORMALIZED_SUBCONSCIOUS_SCORE_SPAN));
     }
 
     /**
@@ -137,7 +162,7 @@ public class AttentionFilter {
                 case CONSUMABLE: return TalkingWeaponConfig.WEIGHT_CONSUMABLE.get();
                 case BLOCK: return TalkingWeaponConfig.WEIGHT_BLOCK.get();
                 case TOOL: return TalkingWeaponConfig.WEIGHT_TOOL.get();
-                case COMMON: return 5.0; // COMMON 标签是不参与过滤偏好的固有标签，默认给5.0基准分数
+                case COMMON: return TalkingWeaponConfig.WEIGHT_COMMON.get();
                 default: return 5.0;
             }
         } catch (Exception e) {

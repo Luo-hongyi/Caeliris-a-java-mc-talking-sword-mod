@@ -25,7 +25,8 @@ export type AgentStateWeightKey =
   | "status"
   | "consumable"
   | "block"
-  | "tool";
+  | "tool"
+  | "common";
 
 export type DetailTagKind =
   | "native_specific"
@@ -70,18 +71,17 @@ export interface ImplantedMemoryEntry {
   semantic_time_tag?: string;
   detail_tags?: string[];
   importance?: number;
+  occurred_day_index?: number;
+  occurred_time_of_day_tick?: number;
   occurred_game_time?: number;
   time_label?: string;
   notes?: string;
 }
 
-export interface AgentStateCustomRecall {
-  seed_entry_count: number;
-  tags_per_entry: number;
-  memory_pick_per_seed: number;
-  max_depth: number;
-  branch_per_memory: number;
-  final_memory_cap: number;
+export interface AgentStateRecallTuning {
+  main_candidates_per_cue: number;
+  sandbox_cues_per_memory: number;
+  conscious_memory_cap: number;
 }
 
 export interface AgentStateFile {
@@ -94,8 +94,8 @@ export interface AgentStateFile {
     concentration: number;
     wandering_mind: number;
     nostalgia: number;
-    association_mode: string;
-    custom_recall: AgentStateCustomRecall;
+    recall_preset: string;
+    recall_tuning: AgentStateRecallTuning;
     implanted_memory_safety_net: boolean;
     current_desire_tag?: FocusTag | null;
     desire_description: string;
@@ -195,15 +195,75 @@ export interface RuntimeRecalledMemoryEntry {
   semanticTimeLabel: string;
 }
 
+export interface RuntimeRecallTagPoolEntry {
+  tag: string;
+  score: number;
+  sourceCount: number;
+  focusTags: string[];
+  lastInjectedGameTime: number;
+  lastMatchedGameTime: number;
+  newlyInjectedThisTurn: boolean;
+  injectedScoreThisTurn: number;
+}
+
+export interface RuntimeRecallFermentationEntry {
+  memoryId: string;
+  description: string;
+  score: number;
+  sourceType: string;
+  focusTags: string[];
+  supportTags: string[];
+  associativeTags: string[];
+  lastUpdatedGameTime: number;
+  lastConsciousGameTime: number;
+  enteredConsciousThisTurn: boolean;
+  cueBoostThisTurn: number;
+  reinforcementCount: number;
+}
+
+export interface RuntimeRecallConsciousEntry {
+  memoryId: string;
+  description: string;
+  score: number;
+  sourceType: string;
+  focusTags: string[];
+  supportTags: string[];
+}
+
+export interface RuntimeRecallAssociationSandbox {
+  active: boolean;
+  cueTags: string[];
+  sourceMemoryIds: string[];
+  memoryIds: string[];
+  hopLimit: number;
+  recallBudget: number;
+}
+
+export interface RuntimeRecallRuntimeState {
+  captureMode: string;
+  turnCounter: number;
+  currentGameTime: number;
+  previousGameTime: number;
+  deltaGameTime: number;
+  wallClockTime: number;
+  visibleContextCount: number;
+  recalledMemoryCount: number;
+  tagPool: RuntimeRecallTagPoolEntry[];
+  fermentationBuffer: RuntimeRecallFermentationEntry[];
+  consciousMemories: RuntimeRecallConsciousEntry[];
+  associationSandbox: RuntimeRecallAssociationSandbox;
+}
+
 export interface RuntimeRecallTraceFile {
   schemaVersion: number;
   generatedAt: string;
   triggerSource: string;
   userPrompt: string;
-  associationMode: string;
+  recallPreset: string;
   currentDesireTag: string;
   triggerTags: string[];
   traceLines: string[];
   visibleContexts: RuntimeRecallVisibleContextEntry[];
   recalledMemories: RuntimeRecalledMemoryEntry[];
+  runtimeState: RuntimeRecallRuntimeState;
 }

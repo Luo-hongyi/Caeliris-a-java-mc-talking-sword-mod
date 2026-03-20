@@ -20,7 +20,7 @@
    - `description`：人类/LLM 可读的事件描述
    - `baseImportance`：事件客观重要度 (0.0~1.0)
    - `associativeOnly`：是否为隐式关联标签（若为 true，则在未命中记忆联想时对大模型不可见，用于海量方块扫描）
-   - `timestamp`：精确物理时间戳
+   - `timestamp`：精确物理时间戳（用于日志和短时排序，不参与长期记忆衰退）
 
 ### Prompt 可见性
 

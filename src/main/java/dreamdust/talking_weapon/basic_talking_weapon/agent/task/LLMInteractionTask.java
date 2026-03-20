@@ -35,6 +35,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecallT
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -470,7 +472,7 @@ public class LLMInteractionTask extends AgentTask {
             }
 
             // ── Phase 5: 长期记忆联想召回 ──
-            LTMRecallEngine.RecallResult recallResult = LTMRecallEngine.recall(mergedVisible, memory, state, ctx.getDayTime());
+            LTMRecallEngine.RecallResult recallResult = LTMRecallEngine.recall(mergedVisible, memory, state, ctx.getGameTime());
             if (!recallResult.traceLines.isEmpty()) {
                 StringBuilder recallLog = new StringBuilder("[记忆召回]\n");
                 for (String line : recallResult.traceLines) {
@@ -506,6 +508,24 @@ public class LLMInteractionTask extends AgentTask {
                     List<String> cues = describePromptVisibleDetails(ltm.getDetailTags(), tagDict, locationReg);
                     if (!cues.isEmpty()) {
                         sb.append(" (线索: ").append(String.join("; ", cues)).append(")");
+                    }
+                    sb.append("\n");
+                }
+                sb.append("\n");
+            }
+
+            List<LTMEntry> associationSandboxMemories = resolveAssociationSandboxMemories(memory, recallResult);
+            if (!associationSandboxMemories.isEmpty()) {
+                sb.append("[Associative Echoes]\n");
+                for (LTMEntry ltm : associationSandboxMemories) {
+                    sb.append("- ").append(ltm.getDescription());
+                    String timeSemantic = describePromptMemoryTimeSemantic(ltm, tagDict);
+                    if (!timeSemantic.isBlank()) {
+                        sb.append(" (时间语义: ").append(timeSemantic).append(")");
+                    }
+                    List<String> cues = describePromptVisibleDetails(ltm.getDetailTags(), tagDict, locationReg);
+                    if (!cues.isEmpty()) {
+                        sb.append(" (联想线索: ").append(String.join("; ", cues)).append(")");
                     }
                     sb.append("\n");
                 }
@@ -598,6 +618,43 @@ public class LLMInteractionTask extends AgentTask {
             parts.add("群系:" + ltm.getBiomeId());
         }
         return String.join(" / ", parts);
+    }
+
+    private static List<LTMEntry> resolveAssociationSandboxMemories(AgentMemory memory,
+            LTMRecallEngine.RecallResult recallResult) {
+        if (memory == null || recallResult == null || recallResult.runtimeState == null
+                || recallResult.runtimeState.associationSandbox == null) {
+            return List.of();
+        }
+
+        List<String> sandboxMemoryIds = recallResult.runtimeState.associationSandbox.memoryIds;
+        if (sandboxMemoryIds == null || sandboxMemoryIds.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> sourceMemoryIds = new LinkedHashSet<>();
+        if (recallResult.runtimeState.associationSandbox.sourceMemoryIds != null) {
+            sourceMemoryIds.addAll(recallResult.runtimeState.associationSandbox.sourceMemoryIds);
+        }
+
+        LinkedHashMap<String, LTMEntry> memoryById = new LinkedHashMap<>();
+        for (LTMEntry entry : memory.getLtmRecords()) {
+            if (entry != null && entry.getId() != null) {
+                memoryById.put(entry.getId().toString(), entry);
+            }
+        }
+
+        List<LTMEntry> result = new ArrayList<>();
+        for (String memoryId : sandboxMemoryIds) {
+            if (memoryId == null || memoryId.isBlank() || sourceMemoryIds.contains(memoryId)) {
+                continue;
+            }
+            LTMEntry entry = memoryById.get(memoryId);
+            if (entry != null) {
+                result.add(entry);
+            }
+        }
+        return result;
     }
 
     /**

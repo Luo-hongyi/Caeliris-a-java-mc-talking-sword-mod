@@ -48,7 +48,7 @@
 其中每条记忆都带有自己的运行时分数，这个分数会随着：
 
 - 游戏内时间衰减
-- 当前 `tag_pool` 的 cue 加分
+- 衰减曲线形状
 - 自身属性模型
 
 而持续变化。
@@ -96,11 +96,30 @@
 - 旧 tag 分数只会衰减
 - 不会因为这次间隔变长而额外获得“补偿性抬升”
 
+后续建议：
+
+- `tag_pool` 的衰减不只保留 `half_life`
+- 还应引入 `decay_shape`
+- `tag_pool` 的有效 `half_life` 也可以受 `concentration` 调制
+- `tag_pool` 的有效衰减形状可以受 `concentration` 调制
+
+这样可以把“注意力是否集中”直接反映在 cue 的保留曲线上：
+
+- 专注度高时，旧 cue 更快收束
+- 专注度低时，旧 cue 更长尾保留
+
 ### 第 2 步：衰减主 `fermentation_buffer`
 
 对 `fermentation_buffer` 中已有的候选记忆按 `delta_game_time` 做衰减。
 
 这里的衰减同样只看游戏内时间，而不是触发次数。
+
+后续建议：
+
+- `fermentation_buffer` 也不只保留 `half_life`
+- 还应引入 `decay_shape`
+
+这样“发酵记忆的粘性”可以直接由衰减曲线控制，而不再依赖额外的 cue 回灌规则。
 
 ### 第 3 步：从 `visibleContexts` 注入新 tag
 
@@ -140,12 +159,17 @@
 
 ### 第 6 步：更新 `fermentation_buffer`
 
-`fermentation_buffer` 中已有的记忆会先经历两类变化：
+`fermentation_buffer` 中已有的记忆会先经历：
 
 1. 已在第 2 步完成的时间衰减
-2. 来自主 `tag_pool` 的 cue 加分
 
 然后，旧发酵记忆与新召回出来的记忆候选合并，统一进入发酵层竞争。
+
+这里采用的最新设计判断是：
+
+- 不再让 `tag_pool` 直接给旧 `fermentation_buffer` 做定向加分
+- 发酵层的“留存粘性”应主要由自身的衰减曲线决定
+- 是否继续留在发酵层，交给后续统一竞争与排序处理
 
 ### 第 7 步：第一次 `top-k`，决定谁留在发酵层
 
@@ -229,14 +253,51 @@ tag 的分数由以下内容决定：
 - 间隔增幅只作用于新注入 cue
 - 不作用于旧 tag 残留值
 
+推荐的后续公式方向是：
+
+```text
+decayFactor = exp(- (delta_time / half_life) ^ decay_shape )
+```
+
+其中：
+
+- `decay_shape = 1.0` 时，退化为普通指数衰减
+- `decay_shape < 1.0` 时，长尾更强，表现得更“粘”
+- `decay_shape > 1.0` 时，前期衰减更快，表现得更“利落”
+
+对于 `tag_pool`，还可以进一步设计为：
+
+```text
+effective_tag_decay_shape =
+  lerp(tag_decay_shape_unfocused, tag_decay_shape_focused, concentration)
+```
+
+这样就能直接让“注意力是否集中”反映在 cue 的衰减曲线上。
+
 ### 2. `fermentation_buffer` 的记忆分线
 
 一条候选记忆在发酵层中的分数，建议理解为：
 
 - 旧残留值
 - 减去时间衰减
-- 加上来自主 `tag_pool` 的 cue 加分
 - 再结合自身模型分数
+
+而不再建议理解为：
+
+- 旧残留值
+- 减去时间衰减
+- 再被当前 `tag_pool` 反向加热
+
+原因是：
+
+- 这种“cue 回灌”本质上是在局部改写半衰期
+- 它容易与 persistence 评分重复
+- 模型解释性较差，调参也会更混乱
+
+因此，更新后的方向是：
+
+- 通过 `half_life + decay_shape` 直接决定发酵层粘性
+- 不再额外引入 `tag_pool -> fermentation_buffer` 的定向 cue boost
 
 自身模型分数可以继续由以下因子构成：
 
@@ -367,6 +428,7 @@ tag 的分数由以下内容决定：
 - 定义 `fermentation_buffer` 的精确数据结构
 - 定义 `association_sandbox` 的生命周期与预算
 - 定义 `IMPLANTED` 与 `SYNTHETIC` 的独立评分模型
+- 把 `tag_pool` 与 `fermentation_buffer` 的衰减从“仅 half-life”扩展到“half-life + decay_shape”
 
 ## 一句话总结
 
@@ -374,4 +436,5 @@ tag 的分数由以下内容决定：
 - 主状态由 `tag_pool -> fermentation_buffer -> conscious_memories` 构成
 - 表层意识的联想回灌只发生在隔离的 `association_sandbox` 中
 - 间隔增幅只作用于本轮新注入的 tag，而不作用于旧 buffer 中的残留值
+- 发酵层粘性应主要由衰减曲线控制，而不由 `tag_pool` 直接回灌强化
 - `SEED_FIRST`、`FULL_VISIBILITY`、`HYBRID` 只是这套统一模型上的三种参数预设

@@ -14,7 +14,7 @@ import java.util.*;
  */
 public final class AgentContext {
 
-    /** 快照采集的游戏 tick 时间戳 */
+    /** 快照采集时的物理时间戳（毫秒） */
     private final long timestamp;
 
     /** 玩家当前生命值 */
@@ -34,8 +34,14 @@ public final class AgentContext {
     private final double posY;
     private final double posZ;
 
-    /** 游戏内时间 (tick) */
-    private final long dayTime;
+    /** 单调递增的绝对游戏时间（tick），用于衰减与跨轮 delta。 */
+    private final long gameTime;
+
+    /** 当前是第几天（1-based），用于叙事锚点。 */
+    private final long dayIndex;
+
+    /** 当前当天时段的 tick，范围 [0, 23999]。 */
+    private final long timeOfDayTick;
 
     /** 是否正在下雨 */
     private final boolean raining;
@@ -61,7 +67,9 @@ public final class AgentContext {
         this.posX = builder.posX;
         this.posY = builder.posY;
         this.posZ = builder.posZ;
-        this.dayTime = builder.dayTime;
+        this.gameTime = builder.gameTime;
+        this.dayIndex = builder.dayIndex;
+        this.timeOfDayTick = builder.timeOfDayTick;
         this.raining = builder.raining;
         this.screenshotBase64 = builder.screenshotBase64;
         this.triggerSource = builder.triggerSource;
@@ -103,8 +111,16 @@ public final class AgentContext {
         return posZ;
     }
 
-    public long getDayTime() {
-        return dayTime;
+    public long getGameTime() {
+        return gameTime;
+    }
+
+    public long getDayIndex() {
+        return dayIndex;
+    }
+
+    public long getTimeOfDayTick() {
+        return timeOfDayTick;
     }
 
     public boolean isRaining() {
@@ -143,7 +159,9 @@ public final class AgentContext {
                 .append(", hp=").append(health).append("/").append(maxHealth)
                 .append(", pos=(").append((int) posX).append(",").append((int) posY).append(",").append((int) posZ)
                 .append(")")
-                .append(", dayTime=").append(dayTime)
+                .append(", gameTime=").append(gameTime)
+                .append(", dayIndex=").append(dayIndex)
+                .append(", timeOfDayTick=").append(timeOfDayTick)
                 .append(", raining=").append(raining)
                 .append(", hasScreenshot=").append(screenshotBase64 != null);
 
@@ -175,7 +193,9 @@ public final class AgentContext {
         private int foodLevel;
         private String biome = "unknown";
         private double posX, posY, posZ;
-        private long dayTime;
+        private long gameTime = -1L;
+        private long dayIndex = -1L;
+        private long timeOfDayTick = -1L;
         private boolean raining;
         private String screenshotBase64;
         private String triggerSource = "unknown";
@@ -217,8 +237,18 @@ public final class AgentContext {
             return this;
         }
 
-        public Builder dayTime(long val) {
-            this.dayTime = val;
+        public Builder gameTime(long val) {
+            this.gameTime = val;
+            return this;
+        }
+
+        public Builder dayIndex(long val) {
+            this.dayIndex = val;
+            return this;
+        }
+
+        public Builder timeOfDayTick(long val) {
+            this.timeOfDayTick = val;
             return this;
         }
 

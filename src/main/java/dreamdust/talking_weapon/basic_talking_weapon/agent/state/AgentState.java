@@ -70,31 +70,31 @@ public class AgentState {
     /**
      * 忆旧值（0.0 ~ 2.0）。
      * <p>
-     * 控制旧记忆的时间衰退强度。
-     * 值越高，旧记忆衰退越慢，更容易在长期内维持分数。
+     * 当前为预留状态参数，暂未接入 recall 公式。
      */
     private volatile float nostalgia;
 
     /**
-     * 联想模式：控制记忆和性格词条召回的深度与广度。
+     * 召回预设：统一模型上的一组参数预设。
      *
-     * @see AssociationMode
+     * @see RecallPreset
      */
-    private volatile AssociationMode associationMode;
+    private volatile RecallPreset recallPreset;
 
     /**
-     * CUSTOM 联想模式的自定义参数。
+     * CUSTOM 召回预设的手动调参。
      * <p>
-     * 这组值会持久化到 `agent_state.json.state.custom_recall`，由游戏内 State Screen 与
+     * 这组值会持久化到 `agent_state.json.state.recall_tuning`，由游戏内 State Screen 与
      * Studio 共用；当 authored 文件缺失时，会回退到客户端配置中的默认值。
      */
-    private volatile CustomAssociationConfig customAssociationConfig;
+    private volatile RecallTuning recallTuning;
 
     /**
      * 是否启用“植入记忆保底”。
      * <p>
-     * 打开后，当本轮正常 recall 没有命中任何 `occurredGameTime < 0` 的植入记忆时，
-     * 系统会额外复用本轮 seed 池，对这类植入记忆做一次轻量补捞。
+     * 打开后，当本轮正常 recall 没有命中任何“无绝对时间锚点”的植入记忆
+     * （当前实现上表现为 `occurredGameTime < 0`）时，
+     * 系统会额外复用本轮 cue 池，对这类植入记忆做一次轻量补捞。
      */
     private volatile boolean implantedMemorySafetyNetEnabled;
 
@@ -121,8 +121,8 @@ public class AgentState {
         this.concentration = 0.5f;
         this.wanderingMind = 0.1f;
         this.nostalgia = 0.5f;
-        this.associationMode = AssociationMode.BALANCED;
-        this.customAssociationConfig = CustomAssociationConfig.defaults();
+        this.recallPreset = RecallPreset.HYBRID;
+        this.recallTuning = RecallTuning.defaults();
         this.implantedMemorySafetyNetEnabled = false;
         this.currentDesireTag = null;
         this.desireDescription = "";
@@ -221,31 +221,31 @@ public class AgentState {
         this.nostalgia = Math.max(0f, Math.min(2f, value));
     }
 
-    // ── AssociationMode ───────────────────────────────────────────────
+    // ── RecallPreset ──────────────────────────────────────────────────
 
-    public AssociationMode getAssociationMode() {
-        return associationMode;
+    public RecallPreset getRecallPreset() {
+        return recallPreset;
     }
 
-    public void setAssociationMode(AssociationMode mode) {
-        this.associationMode = mode != null ? mode : AssociationMode.BALANCED;
+    public void setRecallPreset(RecallPreset preset) {
+        this.recallPreset = preset != null ? preset : RecallPreset.HYBRID;
     }
 
-    public void setAssociationModeByName(String name) {
+    public void setRecallPresetByName(String name) {
         if (name == null || name.isBlank())
             return;
         try {
-            this.associationMode = AssociationMode.valueOf(name.toUpperCase().trim());
+            this.recallPreset = RecallPreset.valueOf(name.toUpperCase().trim());
         } catch (IllegalArgumentException ignored) {
         }
     }
 
-    public CustomAssociationConfig getCustomAssociationConfig() {
-        return customAssociationConfig != null ? customAssociationConfig : CustomAssociationConfig.defaults();
+    public RecallTuning getRecallTuning() {
+        return recallTuning != null ? recallTuning : RecallTuning.defaults();
     }
 
-    public void setCustomAssociationConfig(CustomAssociationConfig config) {
-        this.customAssociationConfig = config != null ? config : CustomAssociationConfig.defaults();
+    public void setRecallTuning(RecallTuning tuning) {
+        this.recallTuning = tuning != null ? tuning : RecallTuning.defaults();
     }
 
     public boolean isImplantedMemorySafetyNetEnabled() {
@@ -287,7 +287,7 @@ public class AgentState {
                 .append(", concentration=").append(String.format("%.2f", concentration))
                 .append(", wandering=").append(String.format("%.2f", wanderingMind))
                 .append(", nostalgia=").append(String.format("%.2f", nostalgia))
-                .append(", associationMode=").append(associationMode != null ? associationMode.name() : "BALANCED")
+                .append(", recallPreset=").append(recallPreset != null ? recallPreset.name() : "HYBRID")
                 .append(", 对玩家称呼=").append(getPlayerAddress());
 
         return sb.toString();
@@ -327,105 +327,76 @@ public class AgentState {
     }
 
     /**
-     * 联想模式：决定记忆与性格词条召回的深度和每层宽度。
+     * 召回预设：统一记忆模型上的参数打包。
      *
      * <ul>
-     * <li>{@link #DIVERGENT} — 发散：从更多当前条目起跳，浅层铺开</li>
-     * <li>{@link #BALANCED} — 均衡：少量起点，有限追溯</li>
-     * <li>{@link #DEEP} — 深度：少量起点，沿更深层联想链追溯</li>
-     * <li>{@link #CUSTOM} — 自定义：具体参数读取 `agent_state.json.state.custom_recall`，缺失时回退客户端配置</li>
+     * <li>{@link #SEED_FIRST} — 更稀疏，更像被少数强 cue 点燃</li>
+     * <li>{@link #FULL_VISIBILITY} — 更积极，强调当前场景对记忆的命中反馈</li>
+     * <li>{@link #HYBRID} — 默认模式，强调发酵层稳定与适度联想</li>
+     * <li>{@link #CUSTOM} — 具体参数读取 `agent_state.json.state.recall_tuning`</li>
      * </ul>
      */
-    public enum AssociationMode {
-        /** 发散：从更多当前条目起跳，快速铺开少数回忆 */
-        DIVERGENT(0, 4),
-        /** 均衡：默认模式，做少量层级联想 */
-        BALANCED(1, 2),
-        /** 深度：少量起点，但更愿意沿单条链深入 */
-        DEEP(2, 1),
-        /** 自定义：召回参数完全由 authored state 控制，缺失时回退客户端配置 */
-        CUSTOM(0, 0);
-
-        /** 最大联想深度（层数） */
-        public final int maxDepth;
-        /** 每层最多召回条数 */
-        public final int widthPerLayer;
-
-        AssociationMode(int maxDepth, int widthPerLayer) {
-            this.maxDepth = maxDepth;
-            this.widthPerLayer = widthPerLayer;
-        }
+    public enum RecallPreset {
+        SEED_FIRST,
+        FULL_VISIBILITY,
+        HYBRID,
+        CUSTOM
     }
 
     /**
-     * CUSTOM 联想模式参数。
+     * CUSTOM 召回预设参数。
      * <p>
-     * 其中 `seedEntryCount` 和 `tagsPerEntry` 仅保留作历史兼容字段；当前 recall 算法的首层
-     * 起点已经改为“全量 visible detail-tag seed 池”，因此这两项不会再裁掉首层 seed。
+     * 这些值分别控制：
+     * <ul>
+     * <li>主召回阶段，每个活跃 cue 最多能提升多少条候选记忆</li>
+     * <li>sandbox 联想阶段，每条表层记忆最多贡献多少个联想 cue（0 = 关闭该回灌）</li>
+     * <li>本轮最多允许多少条记忆进入表层意识</li>
+     * </ul>
      */
-    public static final class CustomAssociationConfig {
-        public static final int MIN_SEED_ENTRY_COUNT = 1;
-        public static final int MAX_SEED_ENTRY_COUNT = 12;
-        public static final int MIN_TAGS_PER_ENTRY = 1;
-        public static final int MAX_TAGS_PER_ENTRY = 6;
-        public static final int MIN_MEMORY_PICK_PER_SEED = 1;
-        public static final int MAX_MEMORY_PICK_PER_SEED = 6;
-        public static final int MIN_MAX_DEPTH = 0;
-        public static final int MAX_MAX_DEPTH = 4;
-        public static final int MIN_BRANCH_PER_MEMORY = 0;
-        public static final int MAX_BRANCH_PER_MEMORY = 4;
-        public static final int MIN_FINAL_MEMORY_CAP = 0;
-        public static final int MAX_FINAL_MEMORY_CAP = 8;
+    public static final class RecallTuning {
+        public static final int MIN_MAIN_CANDIDATES_PER_CUE = 1;
+        public static final int MAX_MAIN_CANDIDATES_PER_CUE = 6;
+        public static final int MIN_SANDBOX_CUES_PER_MEMORY = 0;
+        public static final int MAX_SANDBOX_CUES_PER_MEMORY = 4;
+        public static final int MIN_CONSCIOUS_MEMORY_CAP = 0;
+        public static final int MAX_CONSCIOUS_MEMORY_CAP = 8;
 
-        private final int seedEntryCount;
-        private final int tagsPerEntry;
-        private final int memoryPickPerSeed;
-        private final int maxDepth;
-        private final int branchPerMemory;
-        private final int finalMemoryCap;
+        private final int mainCandidatesPerCue;
+        private final int sandboxCuesPerMemory;
+        private final int consciousMemoryCap;
 
-        public CustomAssociationConfig(int seedEntryCount, int tagsPerEntry, int memoryPickPerSeed,
-                int maxDepth, int branchPerMemory, int finalMemoryCap) {
-            this.seedEntryCount = clampInt(seedEntryCount, MIN_SEED_ENTRY_COUNT, MAX_SEED_ENTRY_COUNT);
-            this.tagsPerEntry = clampInt(tagsPerEntry, MIN_TAGS_PER_ENTRY, MAX_TAGS_PER_ENTRY);
-            this.memoryPickPerSeed = clampInt(memoryPickPerSeed, MIN_MEMORY_PICK_PER_SEED, MAX_MEMORY_PICK_PER_SEED);
-            this.maxDepth = clampInt(maxDepth, MIN_MAX_DEPTH, MAX_MAX_DEPTH);
-            this.branchPerMemory = clampInt(branchPerMemory, MIN_BRANCH_PER_MEMORY, MAX_BRANCH_PER_MEMORY);
-            this.finalMemoryCap = clampInt(finalMemoryCap, MIN_FINAL_MEMORY_CAP, MAX_FINAL_MEMORY_CAP);
+        public RecallTuning(int mainCandidatesPerCue, int sandboxCuesPerMemory, int consciousMemoryCap) {
+            this.mainCandidatesPerCue = clampInt(
+                    mainCandidatesPerCue,
+                    MIN_MAIN_CANDIDATES_PER_CUE,
+                    MAX_MAIN_CANDIDATES_PER_CUE);
+            this.sandboxCuesPerMemory = clampInt(
+                    sandboxCuesPerMemory,
+                    MIN_SANDBOX_CUES_PER_MEMORY,
+                    MAX_SANDBOX_CUES_PER_MEMORY);
+            this.consciousMemoryCap = clampInt(
+                    consciousMemoryCap,
+                    MIN_CONSCIOUS_MEMORY_CAP,
+                    MAX_CONSCIOUS_MEMORY_CAP);
         }
 
-        public static CustomAssociationConfig defaults() {
-            return new CustomAssociationConfig(
-                    TalkingWeaponConfig.LTM_RECALL_SEED_ENTRY_COUNT.get(),
-                    TalkingWeaponConfig.LTM_RECALL_TAGS_PER_ENTRY.get(),
-                    TalkingWeaponConfig.LTM_RECALL_MEMORY_PICK_PER_SEED.get(),
-                    TalkingWeaponConfig.LTM_RECALL_MAX_DEPTH.get(),
-                    TalkingWeaponConfig.LTM_RECALL_BRANCH_PER_MEMORY.get(),
-                    TalkingWeaponConfig.LTM_RECALL_FINAL_MEMORY_CAP.get());
+        public static RecallTuning defaults() {
+            return new RecallTuning(
+                    TalkingWeaponConfig.LTM_RECALL_MAIN_CANDIDATES_PER_CUE.get(),
+                    TalkingWeaponConfig.LTM_RECALL_SANDBOX_CUES_PER_MEMORY.get(),
+                    TalkingWeaponConfig.LTM_RECALL_CONSCIOUS_MEMORY_CAP.get());
         }
 
-        public int getSeedEntryCount() {
-            return seedEntryCount;
+        public int getMainCandidatesPerCue() {
+            return mainCandidatesPerCue;
         }
 
-        public int getTagsPerEntry() {
-            return tagsPerEntry;
+        public int getSandboxCuesPerMemory() {
+            return sandboxCuesPerMemory;
         }
 
-        public int getMemoryPickPerSeed() {
-            return memoryPickPerSeed;
-        }
-
-        public int getMaxDepth() {
-            return maxDepth;
-        }
-
-        public int getBranchPerMemory() {
-            return branchPerMemory;
-        }
-
-        public int getFinalMemoryCap() {
-            return finalMemoryCap;
+        public int getConsciousMemoryCap() {
+            return consciousMemoryCap;
         }
 
         private static int clampInt(int value, int min, int max) {

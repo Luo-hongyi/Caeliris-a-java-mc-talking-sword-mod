@@ -38,8 +38,10 @@ public final class LTMEntry {
     // 2. 生命与归属区 (区分行为模式)
     // ═══════════════════════════════════════════════════════════════
     private final SourceType sourceType;    // IMPLANTED vs SYNTHESIZED
-    private final long timestamp;           // 兼容旧字段：创建/发生时间。IMPLANTED 时为 -1
-    private final long occurredGameTime;    // 游戏内绝对时间，用于排序、衰退和叙事锚点
+    private final long timestamp;           // 兼容旧字段：创建/发生时间。IMPLANTED 时为 -1，不参与 recall age decay
+    private final long occurredGameTime;    // 内部使用的单调绝对游戏时间，用于排序与衰退；可由 dayIndex + timeOfDay 重建
+    private final long occurredDayIndex;    // 长期存储的第几天（1-based），用于叙事锚点
+    private final long occurredTimeOfDayTick; // 长期存储的当日时段 tick，用于叙事锚点
     private final String semanticTimeLabel; // 例如：第23天的深夜 (02:30)
     private final String dimensionId;       // 例如：minecraft:overworld
     private final String biomeId;           // 例如：minecraft:plains
@@ -68,10 +70,32 @@ public final class LTMEntry {
         
         this.sourceType = builder.sourceType;
         this.timestamp = builder.sourceType == SourceType.IMPLANTED ? -1L : builder.timestamp;
-        this.occurredGameTime = builder.occurredGameTime;
+        long resolvedOccurredGameTime = builder.occurredGameTime;
+        long resolvedOccurredDayIndex = builder.occurredDayIndex;
+        long resolvedOccurredTimeOfDayTick = builder.occurredTimeOfDayTick;
+
+        if (resolvedOccurredDayIndex < 0L && resolvedOccurredGameTime >= 0L) {
+            resolvedOccurredDayIndex = WorldTimeSemantics.dayIndex(resolvedOccurredGameTime);
+        }
+        if (resolvedOccurredTimeOfDayTick < 0L && resolvedOccurredGameTime >= 0L) {
+            resolvedOccurredTimeOfDayTick = WorldTimeSemantics.timeOfDay(resolvedOccurredGameTime);
+        }
+        if (resolvedOccurredGameTime < 0L
+                && resolvedOccurredDayIndex > 0L
+                && resolvedOccurredTimeOfDayTick >= 0L) {
+            resolvedOccurredGameTime = WorldTimeSemantics.composeAbsoluteGameTime(
+                    resolvedOccurredDayIndex,
+                    resolvedOccurredTimeOfDayTick);
+        }
+
+        this.occurredGameTime = resolvedOccurredGameTime;
+        this.occurredDayIndex = resolvedOccurredDayIndex;
+        this.occurredTimeOfDayTick = resolvedOccurredTimeOfDayTick;
         this.semanticTimeLabel = builder.semanticTimeLabel != null
                 ? builder.semanticTimeLabel
-                : WorldTimeSemantics.describeMemoryTimeAnchor(builder.occurredGameTime);
+                : WorldTimeSemantics.describeMemoryTimeAnchor(
+                        resolvedOccurredDayIndex,
+                        resolvedOccurredTimeOfDayTick);
         this.dimensionId = builder.dimensionId;
         this.biomeId = builder.biomeId;
         this.raining = builder.raining;
@@ -93,6 +117,8 @@ public final class LTMEntry {
     public SourceType getSourceType() { return sourceType; }
     public long getTimestamp() { return timestamp; }
     public long getOccurredGameTime() { return occurredGameTime; }
+    public long getOccurredDayIndex() { return occurredDayIndex; }
+    public long getOccurredTimeOfDayTick() { return occurredTimeOfDayTick; }
     public String getSemanticTimeLabel() { return semanticTimeLabel; }
     public String getDimensionId() { return dimensionId; }
     public String getBiomeId() { return biomeId; }
@@ -128,14 +154,6 @@ public final class LTMEntry {
             if (dt.getPrefix().equals(prefix)) return true;
         }
         return false;
-    }
-
-    public long getOccurredDayIndex() {
-        return WorldTimeSemantics.dayIndex(occurredGameTime);
-    }
-
-    public long getOccurredTimeOfDayTick() {
-        return WorldTimeSemantics.timeOfDay(occurredGameTime);
     }
 
     /**
@@ -185,6 +203,8 @@ public final class LTMEntry {
         private SourceType sourceType = SourceType.SYNTHESIZED;
         private long timestamp = System.currentTimeMillis();
         private long occurredGameTime = -1L;
+        private long occurredDayIndex = -1L;
+        private long occurredTimeOfDayTick = -1L;
         private String semanticTimeLabel;
         private String dimensionId;
         private String biomeId;
@@ -200,6 +220,8 @@ public final class LTMEntry {
         public Builder sourceType(SourceType t) { this.sourceType = t; return this; }
         public Builder timestamp(long ts) { this.timestamp = ts; return this; }
         public Builder occurredGameTime(long gameTime) { this.occurredGameTime = gameTime; return this; }
+        public Builder occurredDayIndex(long dayIndex) { this.occurredDayIndex = dayIndex; return this; }
+        public Builder occurredTimeOfDayTick(long tick) { this.occurredTimeOfDayTick = tick; return this; }
         public Builder semanticTimeLabel(String label) { this.semanticTimeLabel = label; return this; }
         public Builder semanticTimeTag(DetailTag tag) { this.semanticTimeTag = tag; return this; }
         public Builder dimensionId(String dimensionId) { this.dimensionId = dimensionId; return this; }

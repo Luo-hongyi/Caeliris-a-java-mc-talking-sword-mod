@@ -5,8 +5,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.AssociationMode;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.PrimaryEmotion;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.RecallPreset;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
@@ -44,7 +44,7 @@ public class AgentStateScreen extends Screen {
     private final Screen parent;
 
     private static final PrimaryEmotion[] EMOTIONS = PrimaryEmotion.values();
-    private static final AssociationMode[] ASSOC_MODES = AssociationMode.values();
+    private static final RecallPreset[] RECALL_PRESETS = RecallPreset.values();
     private static final FocusTag[] DESIRE_TAGS = FocusTag.values();
     private int emotionIndex;
 
@@ -56,24 +56,21 @@ public class AgentStateScreen extends Screen {
 
     // 注意力权重编辑框
     private EditBox wCombat, wMovement, wLabor, wCreation, wCreature, wSocial;
-    private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool;
+    private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool, wCommon;
 
     // 思维特性编辑引用
     private EditBox wanderingMindBox;
     private EditBox nostalgiaBox;
-    private EditBox customSeedEntryCountBox;
-    private EditBox customTagsPerEntryBox;
-    private EditBox customMemoryPickPerSeedBox;
-    private EditBox customMaxDepthBox;
-    private EditBox customBranchPerMemoryBox;
-    private EditBox customFinalMemoryCapBox;
+    private EditBox customMainCandidatesPerCueBox;
+    private EditBox customSandboxCuesPerMemoryBox;
+    private EditBox customConsciousMemoryCapBox;
     private EditBox desireDescBox;
-    private int associationModeIndex;
+    private int recallPresetIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
     private boolean implantedMemorySafetyNetEnabled;
 
     private Button emotionLabel;
-    private Button assocModeLabel;
+    private Button recallPresetLabel;
     private Button desireTagLabel;
     private Button implantedMemorySafetyNetButton;
     private StateScrollList scrollList;
@@ -84,7 +81,7 @@ public class AgentStateScreen extends Screen {
 
         AgentState state = AgentRuntime.getInstance().getState();
         this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
-        this.associationModeIndex = assocIndexOf(state.getAssociationMode());
+        this.recallPresetIndex = recallPresetIndexOf(state.getRecallPreset());
         this.implantedMemorySafetyNetEnabled = state.isImplantedMemorySafetyNetEnabled();
         // desireTagIndex: 0=无渴望, 1..n=FocusTag
         FocusTag desire = state.getCurrentDesireTag();
@@ -98,11 +95,11 @@ public class AgentStateScreen extends Screen {
         return 0;
     }
 
-    private static int assocIndexOf(AssociationMode m) {
-        for (int i = 0; i < ASSOC_MODES.length; i++)
-            if (ASSOC_MODES[i] == m)
+    private static int recallPresetIndexOf(RecallPreset preset) {
+        for (int i = 0; i < RECALL_PRESETS.length; i++)
+            if (RECALL_PRESETS[i] == preset)
                 return i;
-        return 1; // BALANCED
+        return RecallPreset.HYBRID.ordinal();
     }
 
     private static int desireTagIndexOf(FocusTag tag) {
@@ -186,6 +183,8 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new BoxRow("BLOCK 方块", left, rowWidth, wBlock));
         wTool = weightBox(TalkingWeaponConfig.WEIGHT_TOOL.get());
         scrollList.addEntry(new BoxRow("TOOL 工具", left, rowWidth, wTool));
+        wCommon = weightBox(TalkingWeaponConfig.WEIGHT_COMMON.get());
+        scrollList.addEntry(new BoxRow("COMMON 通用", left, rowWidth, wCommon));
 
         // ── 思维特性 ──
         scrollList.addEntry(new LabelRow("§b▸ 思维特性"));
@@ -194,44 +193,43 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new BoxRow("随想值 (0.00~1.00)", left, rowWidth, wanderingMindBox));
 
         nostalgiaBox = editBox("忆旧值", String.format("%.2f", state.getNostalgia()), 4);
-        scrollList.addEntry(new BoxRow("忆旧值 (0.00~2.00)", left, rowWidth, nostalgiaBox));
+        scrollList.addEntry(new BoxRow("忆旧值（预留） (0.00~2.00)", left, rowWidth, nostalgiaBox));
 
-        // 联想模式选择器
-        Button prevAssoc = Button.builder(Component.literal("<"), btn -> {
-            associationModeIndex = (associationModeIndex - 1 + ASSOC_MODES.length) % ASSOC_MODES.length;
-            assocModeLabel.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        // 召回预设选择器
+        Button prevRecallPreset = Button.builder(Component.literal("<"), btn -> {
+            recallPresetIndex = (recallPresetIndex - 1 + RECALL_PRESETS.length) % RECALL_PRESETS.length;
+            recallPresetLabel.setMessage(Component.literal(RECALL_PRESETS[recallPresetIndex].name()));
         }).bounds(0, 0, 20, 20).build();
-        assocModeLabel = Button.builder(Component.literal(ASSOC_MODES[associationModeIndex].name()), btn -> {
-            associationModeIndex = (associationModeIndex + 1) % ASSOC_MODES.length;
-            btn.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        recallPresetLabel = Button.builder(Component.literal(RECALL_PRESETS[recallPresetIndex].name()), btn -> {
+            recallPresetIndex = (recallPresetIndex + 1) % RECALL_PRESETS.length;
+            btn.setMessage(Component.literal(RECALL_PRESETS[recallPresetIndex].name()));
         }).bounds(0, 0, 120, 20).build();
-        Button nextAssoc = Button.builder(Component.literal(">"), btn -> {
-            associationModeIndex = (associationModeIndex + 1) % ASSOC_MODES.length;
-            assocModeLabel.setMessage(Component.literal(ASSOC_MODES[associationModeIndex].name()));
+        Button nextRecallPreset = Button.builder(Component.literal(">"), btn -> {
+            recallPresetIndex = (recallPresetIndex + 1) % RECALL_PRESETS.length;
+            recallPresetLabel.setMessage(Component.literal(RECALL_PRESETS[recallPresetIndex].name()));
         }).bounds(0, 0, 20, 20).build();
-        scrollList.addEntry(new ThreeWidgetRow("联想模式", left, rowWidth, prevAssoc, assocModeLabel, nextAssoc));
+        scrollList.addEntry(new ThreeWidgetRow("召回预设", left, rowWidth, prevRecallPreset, recallPresetLabel, nextRecallPreset));
 
-        AgentState.CustomAssociationConfig customRecall = state.getCustomAssociationConfig();
-        scrollList.addEntry(new LabelRow("§8  CUSTOM 参数（仅在自定义模式生效）"));
-        scrollList.addEntry(new LabelRow("§8  其中前两项为兼容字段，当前不会改变首层 seed 起点数量"));
+        AgentState.RecallTuning recallTuning = state.getRecallTuning();
+        scrollList.addEntry(new LabelRow("§8  CUSTOM 调参（仅在自定义预设生效）"));
 
-        customSeedEntryCountBox = editBox("seedEntryCount", String.valueOf(customRecall.getSeedEntryCount()), 2);
-        scrollList.addEntry(new BoxRow("Seed Entry Count", left, rowWidth, customSeedEntryCountBox));
+        customMainCandidatesPerCueBox = editBox(
+                "mainCandidatesPerCue",
+                String.valueOf(recallTuning.getMainCandidatesPerCue()),
+                2);
+        scrollList.addEntry(new BoxRow("Main Candidates Per Cue", left, rowWidth, customMainCandidatesPerCueBox));
 
-        customTagsPerEntryBox = editBox("tagsPerEntry", String.valueOf(customRecall.getTagsPerEntry()), 2);
-        scrollList.addEntry(new BoxRow("Tags Per Entry", left, rowWidth, customTagsPerEntryBox));
+        customSandboxCuesPerMemoryBox = editBox(
+                "sandboxCuesPerMemory",
+                String.valueOf(recallTuning.getSandboxCuesPerMemory()),
+                2);
+        scrollList.addEntry(new BoxRow("Sandbox Cues Per Memory", left, rowWidth, customSandboxCuesPerMemoryBox));
 
-        customMemoryPickPerSeedBox = editBox("memoryPickPerSeed", String.valueOf(customRecall.getMemoryPickPerSeed()), 2);
-        scrollList.addEntry(new BoxRow("Memory Pick Per Seed", left, rowWidth, customMemoryPickPerSeedBox));
-
-        customMaxDepthBox = editBox("maxDepth", String.valueOf(customRecall.getMaxDepth()), 2);
-        scrollList.addEntry(new BoxRow("Max Depth", left, rowWidth, customMaxDepthBox));
-
-        customBranchPerMemoryBox = editBox("branchPerMemory", String.valueOf(customRecall.getBranchPerMemory()), 2);
-        scrollList.addEntry(new BoxRow("Branch Per Memory", left, rowWidth, customBranchPerMemoryBox));
-
-        customFinalMemoryCapBox = editBox("finalMemoryCap", String.valueOf(customRecall.getFinalMemoryCap()), 2);
-        scrollList.addEntry(new BoxRow("Final Memory Cap", left, rowWidth, customFinalMemoryCapBox));
+        customConsciousMemoryCapBox = editBox(
+                "consciousMemoryCap",
+                String.valueOf(recallTuning.getConsciousMemoryCap()),
+                2);
+        scrollList.addEntry(new BoxRow("Conscious Memory Cap", left, rowWidth, customConsciousMemoryCapBox));
 
         implantedMemorySafetyNetButton = Button.builder(
                 Component.literal(implantedMemorySafetyNetEnabled ? "开启" : "关闭"),
@@ -375,15 +373,12 @@ public class AgentStateScreen extends Screen {
             state.setNostalgia(Float.parseFloat(nostalgiaBox.getValue().trim()));
         } catch (NumberFormatException ignored) {
         }
-        state.setAssociationMode(ASSOC_MODES[associationModeIndex]);
-        AgentState.CustomAssociationConfig currentCustomRecall = state.getCustomAssociationConfig();
-        state.setCustomAssociationConfig(new AgentState.CustomAssociationConfig(
-                parseIntOrDefault(customSeedEntryCountBox, currentCustomRecall.getSeedEntryCount()),
-                parseIntOrDefault(customTagsPerEntryBox, currentCustomRecall.getTagsPerEntry()),
-                parseIntOrDefault(customMemoryPickPerSeedBox, currentCustomRecall.getMemoryPickPerSeed()),
-                parseIntOrDefault(customMaxDepthBox, currentCustomRecall.getMaxDepth()),
-                parseIntOrDefault(customBranchPerMemoryBox, currentCustomRecall.getBranchPerMemory()),
-                parseIntOrDefault(customFinalMemoryCapBox, currentCustomRecall.getFinalMemoryCap())));
+        state.setRecallPreset(RECALL_PRESETS[recallPresetIndex]);
+        AgentState.RecallTuning currentRecallTuning = state.getRecallTuning();
+        state.setRecallTuning(new AgentState.RecallTuning(
+                parseIntOrDefault(customMainCandidatesPerCueBox, currentRecallTuning.getMainCandidatesPerCue()),
+                parseIntOrDefault(customSandboxCuesPerMemoryBox, currentRecallTuning.getSandboxCuesPerMemory()),
+                parseIntOrDefault(customConsciousMemoryCapBox, currentRecallTuning.getConsciousMemoryCap())));
         state.setImplantedMemorySafetyNetEnabled(implantedMemorySafetyNetEnabled);
         state.setCurrentDesireTag(desireTagIndex == 0 ? null : DESIRE_TAGS[desireTagIndex - 1]);
         state.setDesireDescription(desireDescBox.getValue().trim());
@@ -401,6 +396,7 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_CONSUMABLE, wConsumable);
         setWeight(TalkingWeaponConfig.WEIGHT_BLOCK, wBlock);
         setWeight(TalkingWeaponConfig.WEIGHT_TOOL, wTool);
+        setWeight(TalkingWeaponConfig.WEIGHT_COMMON, wCommon);
         TalkingWeaponConfig.SPEC.save();
         AgentStateStorage.flushSaveRuntimeState(state, persona);
 

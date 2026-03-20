@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "state": {
     "primary_emotion": "NEUTRAL",
     "emotion_intensity": 12,
@@ -8,14 +8,11 @@
     "concentration": 0.5,
     "wandering_mind": 0.18,
     "nostalgia": 0.62,
-    "association_mode": "BALANCED",
-    "custom_recall": {
-      "seed_entry_count": 3,
-      "tags_per_entry": 2,
-      "memory_pick_per_seed": 1,
-      "max_depth": 1,
-      "branch_per_memory": 1,
-      "final_memory_cap": 3
+    "recall_preset": "HYBRID",
+    "recall_tuning": {
+      "main_candidates_per_cue": 1,
+      "sandbox_cues_per_memory": 2,
+      "conscious_memory_cap": 3
     },
     "implanted_memory_safety_net": false,
     "current_desire_tag": "CREATION",
@@ -37,6 +34,7 @@
     "status": 1.0,
     "consumable": 0.85,
     "block": 1.0,
-    "tool": 1.15
+    "tool": 1.15,
+    "common": 1.0
   }
 }

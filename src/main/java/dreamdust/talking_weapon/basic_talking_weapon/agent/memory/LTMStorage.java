@@ -70,8 +70,14 @@ public final class LTMStorage {
                         } catch (IllegalArgumentException ignored) {
                         }
                     }
-                    if (raw.occurred_game_time >= 0L) {
+                    if (raw.occurred_game_time != null && raw.occurred_game_time >= 0L) {
                         builder.occurredGameTime(raw.occurred_game_time);
+                    }
+                    if (raw.occurred_day_index != null && raw.occurred_day_index > 0L) {
+                        builder.occurredDayIndex(raw.occurred_day_index);
+                    }
+                    if (raw.occurred_time_of_day_tick != null && raw.occurred_time_of_day_tick >= 0L) {
+                        builder.occurredTimeOfDayTick(raw.occurred_time_of_day_tick);
                     }
                     if (raw.dimension_id != null && !raw.dimension_id.isBlank()) {
                         builder.dimensionId(raw.dimension_id);
@@ -159,7 +165,17 @@ public final class LTMStorage {
         newJson.id = entry.getId().toString();
         newJson.description = entry.getDescription();
         newJson.importance = entry.getImportance();
-        newJson.occurred_game_time = entry.getOccurredGameTime();
+        if (entry.getOccurredDayIndex() > 0L) {
+            newJson.occurred_day_index = entry.getOccurredDayIndex();
+        }
+        if (entry.getOccurredTimeOfDayTick() >= 0L) {
+            newJson.occurred_time_of_day_tick = entry.getOccurredTimeOfDayTick();
+        }
+        if (newJson.occurred_day_index == null
+                && newJson.occurred_time_of_day_tick == null
+                && entry.getOccurredGameTime() >= 0L) {
+            newJson.occurred_game_time = entry.getOccurredGameTime();
+        }
         newJson.time_label = entry.getSemanticTimeLabel();
         if (entry.getSemanticTimeTag() != null) {
             TagPolicy.requireRegisteredCustomTag(entry.getSemanticTimeTag());
@@ -310,7 +326,9 @@ public final class LTMStorage {
         public String semantic_time_tag;
         public List<String> detail_tags;
         public float importance = 1.0f;
-        public long occurred_game_time = -1L;
+        public Long occurred_game_time;
+        public Long occurred_day_index;
+        public Long occurred_time_of_day_tick;
         public String time_label;
         public String dimension_id;
         public String biome_id;

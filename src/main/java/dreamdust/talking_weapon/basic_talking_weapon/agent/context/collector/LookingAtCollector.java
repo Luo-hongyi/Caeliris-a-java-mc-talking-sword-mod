@@ -22,7 +22,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 /**
  * 注视目标采集器：获取玩家准心（crosshair）当前对准的方块或实体。
  * <p>
- * 使用 {@link FocusTag#COMMON} 赋予最高权重，强行打断注意力偏好。
+ * 该采集器会产出带 {@link FocusTag#COMMON} 的普通上下文条目，
+ * 并额外标记为 `crosshairTarget`，供注意力层按独立开关施加温和的准心加分。
  * 若准心方块、普通实体则输出详细信息。
  * 若准心为展示框，则解析其内含的物品并判定为 ITEM 还是 BLOCK。
  */
@@ -82,6 +83,7 @@ public class LookingAtCollector implements IContextCollector {
                     .detail(detailPrefix, detailValue)
                     .description(sb.toString())
                     .importance(ImportanceRegistry.getInstance().get("look:entity", 1.0f))
+                    .crosshairTarget(true)
                     .build());
             return;
         }
@@ -108,6 +110,7 @@ public class LookingAtCollector implements IContextCollector {
                     .detail(DetailTag.NATIVE_SPECIFIC, blockId)
                     .description(sb.toString())
                     .importance(ImportanceRegistry.getInstance().get("look:block", 1.0f))
+                    .crosshairTarget(true)
                     .build());
             return;
         }

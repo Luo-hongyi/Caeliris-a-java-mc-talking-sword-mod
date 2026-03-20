@@ -106,7 +106,9 @@ public final class AgentLogger {
         w.println("  坐标:     (" + (int) context.getPosX() + ", " + (int) context.getPosY() + ", "
                 + (int) context.getPosZ() + ")");
         w.println("  群系:     " + context.getBiome());
-        w.println("  时间:     " + context.getDayTime() + " tick");
+        w.println("  游戏时钟: " + context.getGameTime() + " tick");
+        w.println("  第几天:   " + context.getDayIndex());
+        w.println("  当日时段: " + context.getTimeOfDayTick() + " tick");
         w.println("  雨天:     " + (context.isRaining() ? "是" : "否"));
         w.println("  截图:     " + (context.getScreenshotBase64() != null ? "已采集 (base64 省略)" : "未采集"));
         w.println();
@@ -149,7 +151,9 @@ public final class AgentLogger {
                 + ", food=" + context.getFoodLevel()
                 + ", pos=(" + (int) context.getPosX() + "," + (int) context.getPosY() + "," + (int) context.getPosZ() + ")"
                 + ", biome=" + context.getBiome()
-                + ", dayTime=" + context.getDayTime()
+                + ", gameTime=" + context.getGameTime()
+                + ", dayIndex=" + context.getDayIndex()
+                + ", timeOfDayTick=" + context.getTimeOfDayTick()
                 + ", raining=" + context.isRaining());
         w.println("  [Extra Context] (extras 键值对 — 以下字段是否已被 Tagged Context 覆盖？)");
         for (Map.Entry<String, String> e : extras.entrySet()) {
@@ -212,7 +216,7 @@ public final class AgentLogger {
         w.println("  专注度:   " + String.format("%.2f", state.getConcentration()));
         w.println("  随想值:   " + String.format("%.2f", state.getWanderingMind()));
         w.println("  忆旧值:   " + String.format("%.2f", state.getNostalgia()));
-        w.println("  联想模式: " + state.getAssociationMode().name());
+        w.println("  召回预设: " + state.getRecallPreset().name());
         w.println("  植入保底: " + (state.isImplantedMemorySafetyNetEnabled() ? "开启" : "关闭"));
         w.println();
 

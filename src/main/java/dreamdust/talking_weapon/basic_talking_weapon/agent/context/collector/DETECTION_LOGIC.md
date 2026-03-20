@@ -29,7 +29,7 @@
 | [NearbyEntitiesCollector.java](NearbyEntitiesCollector.java) | 周围实体扫描与分组 | `native_specific:<entity>`, `native_generic:<entity_tag>`, `monster`, `undead`, `combat_intense` |
 | [NearbyPoiCollector.java](NearbyPoiCollector.java) | 附近 POI 检测 | `custom_specific:<poi>` |
 | [NearbyStructureCollector.java](NearbyStructureCollector.java) | 已加载结构检测 | `native_specific:<structure>` |
-| [LookingAtCollector.java](LookingAtCollector.java) | 准心目标检测 | `native_specific:<entity/block/item>` with `COMMON` focus |
+| [LookingAtCollector.java](LookingAtCollector.java) | 准心目标检测 | `native_specific:<entity/block/item>` with `COMMON` focus + `crosshairTarget=true` |
 | [RecentActionCollector.java](RecentActionCollector.java) | 近期动作归纳 | 动作记录中自带的 `DetailTag` 汇总 |
 | [ScreenshotCollector.java](ScreenshotCollector.java) | 截图采集 | 仅写入 `screenshotBase64`，无标签 |
 
@@ -42,6 +42,7 @@
 - `Player.getHealth() / getMaxHealth()`
 - `Player.getFoodData().getFoodLevel()`
 - 玩家坐标
+- `Level.getGameTime()`
 - `Level.getDayTime()`
 - `Level.isRaining() / isThundering()`
 - `Level.getBiome(...)`
@@ -57,7 +58,8 @@
   - `< 6` -> `custom_specific:hungry_critical`
   - `< 15` -> `custom_specific:hungry_low`
 - 时间：
-  - 使用 `WorldTimeSemantics` 将世界时间映射成语义时段
+  - 使用 `Level.getGameTime()` 作为单调绝对时钟，生成 `dayIndex`
+  - 使用 `Level.getDayTime()` 读取当前世界时段，再交给 `WorldTimeSemantics` 映射成语义时段
   - 时间标签目前是 `associativeOnly = true`
 - 天气：
   - 雷暴 -> `weather_thunder`
@@ -346,7 +348,10 @@
   - 优先取展示框内物品 ID
 - 若没有实体，则处理准心方块
 - 统一使用 `FocusTag.COMMON`
-  - 这意味着它会强行提升优先级，不受普通注意力偏好约束
+- 同时写入 `crosshairTarget = true`
+  - 是否施加额外加分，改由 `LOOKING_AT_ATTENTION_BONUS_ENABLED` 控制
+  - 加分大小由 `LOOKING_AT_ATTENTION_BONUS_VALUE` 控制，且现在是绝对值加分，不再是倍率
+  - 这部分已经和 `COMMON` 的普通权重配置解耦
 
 ### 已知限制
 

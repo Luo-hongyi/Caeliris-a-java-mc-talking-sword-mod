@@ -83,8 +83,12 @@ public class ReflectionTask extends AgentTask {
                         .sourceType(LTMEntry.SourceType.SYNTHESIZED)
                         .description(synth.description)
                         .importance(synth.importance)
-                        .occurredGameTime(ctx.getDayTime())
-                        .semanticTimeLabel(WorldTimeSemantics.describeMemoryTimeAnchor(ctx.getDayTime()))
+                        .occurredGameTime(ctx.getGameTime())
+                        .occurredDayIndex(ctx.getDayIndex())
+                        .occurredTimeOfDayTick(ctx.getTimeOfDayTick())
+                        .semanticTimeLabel(WorldTimeSemantics.describeMemoryTimeAnchor(
+                                ctx.getDayIndex(),
+                                ctx.getTimeOfDayTick()))
                         .dimensionId(ctx.getExtra("dimension"))
                         .biomeId(ctx.getBiome())
                         .raining(ctx.isRaining());

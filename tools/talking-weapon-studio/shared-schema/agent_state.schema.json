@@ -13,7 +13,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 2
     },
     "state": {
       "type": "object",
@@ -26,7 +26,9 @@
         "concentration",
         "wandering_mind",
         "nostalgia",
-        "association_mode",
+        "recall_preset",
+        "recall_tuning",
+        "implanted_memory_safety_net",
         "desire_description"
       ],
       "properties": {
@@ -58,10 +60,39 @@
         "nostalgia": {
           "type": "number",
           "minimum": 0,
-          "maximum": 1
+          "maximum": 2
         },
-        "association_mode": {
+        "recall_preset": {
           "type": "string"
+        },
+        "recall_tuning": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "main_candidates_per_cue",
+            "sandbox_cues_per_memory",
+            "conscious_memory_cap"
+          ],
+          "properties": {
+            "main_candidates_per_cue": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "sandbox_cues_per_memory": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            },
+            "conscious_memory_cap": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            }
+          }
+        },
+        "implanted_memory_safety_net": {
+          "type": "boolean"
         },
         "current_desire_tag": {
           "type": [
@@ -107,7 +138,8 @@
         "status",
         "consumable",
         "block",
-        "tool"
+        "tool",
+        "common"
       ],
       "properties": {
         "combat": { "type": "number", "minimum": 0, "maximum": 10 },
@@ -121,7 +153,8 @@
         "status": { "type": "number", "minimum": 0, "maximum": 10 },
         "consumable": { "type": "number", "minimum": 0, "maximum": 10 },
         "block": { "type": "number", "minimum": 0, "maximum": 10 },
-        "tool": { "type": "number", "minimum": 0, "maximum": 10 }
+        "tool": { "type": "number", "minimum": 0, "maximum": 10 },
+        "common": { "type": "number", "minimum": 0, "maximum": 10 }
       }
     }
   }

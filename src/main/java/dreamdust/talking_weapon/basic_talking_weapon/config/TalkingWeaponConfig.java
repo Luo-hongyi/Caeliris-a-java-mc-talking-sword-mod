@@ -95,13 +95,17 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.BooleanValue ENABLE_BIOME_DETECTION;
 
         // —— LTM 召回 ——
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_SEED_ENTRY_COUNT;
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_TAGS_PER_ENTRY;
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_MEMORY_PICK_PER_SEED;
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_MAX_DEPTH;
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_BRANCH_PER_MEMORY;
-        public static final ForgeConfigSpec.IntValue LTM_RECALL_FINAL_MEMORY_CAP;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_MAIN_CANDIDATES_PER_CUE;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_SANDBOX_CUES_PER_MEMORY;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_CONSCIOUS_MEMORY_CAP;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_SCALE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_STEEPNESS;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE;
 
         // —— 注意力偏好（测试版） ——
         public static final ForgeConfigSpec.DoubleValue WEIGHT_COMBAT;
@@ -116,12 +120,15 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue WEIGHT_CONSUMABLE;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_BLOCK;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_TOOL;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_COMMON;
 
         // —— 注意力过滤 (Top-K & 噪声阈值) ——
         public static final ForgeConfigSpec.IntValue TOP_K_RIGHT_CLICK;
         public static final ForgeConfigSpec.IntValue TOP_K_BIOME_CHANGE;
         public static final ForgeConfigSpec.IntValue TOP_K_CHAT;
         public static final ForgeConfigSpec.DoubleValue NOISE_THRESHOLD;
+        public static final ForgeConfigSpec.BooleanValue LOOKING_AT_ATTENTION_BONUS_ENABLED;
+        public static final ForgeConfigSpec.DoubleValue LOOKING_AT_ATTENTION_BONUS_VALUE;
 
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -275,6 +282,7 @@ public final class TalkingWeaponConfig {
                 WEIGHT_CONSUMABLE = builder.defineInRange("consumable", 1.0, 0.0, 10.0);
                 WEIGHT_BLOCK = builder.defineInRange("block", 1.0, 0.0, 10.0);
                 WEIGHT_TOOL = builder.defineInRange("tool", 1.0, 0.0, 10.0);
+                WEIGHT_COMMON = builder.defineInRange("common", 1.0, 0.0, 10.0);
                 builder.pop();
 
                 // ── 注意力过滤 (Top-K & 噪声阈值) ──────────────────────────────────
@@ -284,6 +292,12 @@ public final class TalkingWeaponConfig {
                 TOP_K_BIOME_CHANGE = builder.comment("群系变化时，喂给大模型的环境信息条数上限").defineInRange("biomeChange", 5, 1, 20);
                 TOP_K_CHAT = builder.comment("对话触发时，喂给大模型的环境信息条数上限").defineInRange("chat", 7, 1, 20);
                 NOISE_THRESHOLD = builder.comment("低于此得分的上下文条目将被直接丢弃 (0.0–1.0)").defineInRange("noiseThreshold", 0.1, 0.0, 1.0);
+                LOOKING_AT_ATTENTION_BONUS_ENABLED = builder
+                                .comment("是否对玩家准心直接指向的目标额外施加注意力加分")
+                                .define("lookingAtBonusEnabled", true);
+                LOOKING_AT_ATTENTION_BONUS_VALUE = builder
+                                .comment("当启用准心目标加分时，额外添加到最终注意力分数上的绝对值加分")
+                                .defineInRange("lookingAtBonusValue", 0.18, 0.0, 2.0);
                 builder.pop();
 
                 // ── Agent 行为 ─────────────────────────────────────────
@@ -296,27 +310,39 @@ public final class TalkingWeaponConfig {
                                 .define("enableBiomeDetection", true);
 
                 builder.push("memory_recall");
-                LTM_RECALL_SEED_ENTRY_COUNT = builder
-                                .comment("CUSTOM 联想模式默认/回退值：历史兼容字段，首层 recall 已改为全量 visible tag seed 池；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("seedEntryCount", 3, 1, 12);
-                LTM_RECALL_TAGS_PER_ENTRY = builder
-                                .comment("CUSTOM 联想模式默认/回退值：历史兼容字段，首层 recall 已改为全量 visible tag seed 池；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("tagsPerEntry", 2, 1, 6);
-                LTM_RECALL_MEMORY_PICK_PER_SEED = builder
-                                .comment("CUSTOM 联想模式默认/回退值：每个 seed tag 在单层候选收集阶段最多保留多少条长期记忆；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("memoryPickPerSeed", 1, 1, 6);
-                LTM_RECALL_MAX_DEPTH = builder
-                                .comment("CUSTOM 联想模式默认/回退值：联想链最大深度；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("maxDepth", 1, 0, 4);
-                LTM_RECALL_BRANCH_PER_MEMORY = builder
-                                .comment("CUSTOM 联想模式默认/回退值：每条被召回记忆最多继续派生多少个下一层 seed；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("branchPerMemory", 1, 0, 4);
-                LTM_RECALL_FINAL_MEMORY_CAP = builder
-                                .comment("CUSTOM 联想模式默认/回退值：最终最多注入到 prompt 的长期记忆条数；仅在 agent_state.json 未提供 custom_recall 时使用")
-                                .defineInRange("finalMemoryCap", 3, 0, 8);
+                LTM_RECALL_MAIN_CANDIDATES_PER_CUE = builder
+                                .comment("CUSTOM 召回预设默认值：主召回阶段中，每个 cue 最多可提起多少条候选记忆；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("mainCandidatesPerCue", 1, 1, 6);
+                LTM_RECALL_SANDBOX_CUES_PER_MEMORY = builder
+                                .comment("CUSTOM 召回预设默认值：sandbox 联想阶段中，每条表层记忆最多回灌多少个联想 cue；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("sandboxCuesPerMemory", 2, 0, 4);
+                LTM_RECALL_CONSCIOUS_MEMORY_CAP = builder
+                                .comment("CUSTOM 召回预设默认值：最终最多允许多少条记忆进入表层意识；仅在 agent_state.json 未提供 recall_tuning 时使用")
+                                .defineInRange("consciousMemoryCap", 3, 0, 8);
                 LTM_RECALL_RECENT_WINDOW = builder
                                 .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆")
                                 .defineInRange("recentRecallWindow", 6, 1, 20);
+                LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS = builder
+                                .comment("tag_pool 半衰期，单位为游戏内天数；越大代表 cue 保留越久")
+                                .defineInRange("tagPoolHalfLifeDays", 0.40, 0.05, 30.0);
+                LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS = builder
+                                .comment("fermentation_buffer 半衰期，单位为游戏内天数；越大代表潜意识候选记忆保留越久")
+                                .defineInRange("fermentationHalfLifeDays", 2.50, 0.10, 120.0);
+                LTM_RECALL_INTERVAL_BONUS_SCALE = builder
+                                .comment("长间隔补偿的整体缩放系数；越大代表隔一段时间后新注入 cue 的额外加成越高")
+                                .defineInRange("intervalBonusScale", 0.95, 0.0, 10.0);
+                LTM_RECALL_INTERVAL_BONUS_STEEPNESS = builder
+                                .comment("长间隔补偿曲线的陡峭程度；越大代表少量游戏内时间也能更快接近补偿上限")
+                                .defineInRange("intervalBonusSteepness", 4.0, 0.1, 20.0);
+                LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE = builder
+                                .comment("合成记忆时间衰减的半衰期，单位为游戏内天数；当前 recall 不再回退到现实时间衰减")
+                                .defineInRange("synthesizedMemoryHalfLife", 63.0, 1.0, 240.0);
+                LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE = builder
+                                .comment("当前渴望标签在 focus profile 构造阶段的额外加权系数；越大代表渴望更容易主导本轮焦点分布")
+                                .defineInRange("desireProfileBonusScale", 0.25, 0.0, 2.0);
+                LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE = builder
+                                .comment("当前渴望标签在记忆评分阶段的额外加分系数；越大代表带有渴望 focus 的记忆更容易入选")
+                                .defineInRange("desiredFocusBonusScale", 0.18, 0.0, 2.0);
                 builder.pop();
                 builder.pop();
 

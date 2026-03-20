@@ -113,10 +113,21 @@
           "maximum": 1,
           "description": "Initial recall weight."
         },
+        "occurred_day_index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Optional long-lived day anchor (1-based). Preferred over raw occurred_game_time for newly authored memories."
+        },
+        "occurred_time_of_day_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23999,
+          "description": "Optional within-day tick anchor. Fill together with occurred_day_index when a memory needs a concrete in-world time anchor."
+        },
         "occurred_game_time": {
           "type": "integer",
           "minimum": -1,
-          "description": "Optional absolute in-game tick anchor. For implanted memories, prefer semantic time labels over raw ticks."
+          "description": "Legacy compatibility field for absolute in-game ticks. New authored data should prefer occurred_day_index + occurred_time_of_day_tick."
         },
         "time_label": {
           "type": "string",

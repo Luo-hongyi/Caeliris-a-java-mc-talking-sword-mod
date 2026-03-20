@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.state;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
@@ -150,14 +151,28 @@ public final class AgentStateStorage {
         if (!root.isJsonObject()) {
             throw new IllegalArgumentException("agent_state.json root must be an object");
         }
+        validateRecallSchema(root.getAsJsonObject());
         AgentStateFile file = GSON.fromJson(root, AgentStateFile.class);
         return file != null ? normalized(file) : new AgentStateFile();
     }
 
+    private static void validateRecallSchema(JsonObject root) {
+        JsonElement stateElement = root.get("state");
+        if (stateElement == null || !stateElement.isJsonObject()) {
+            return;
+        }
+
+        JsonObject state = stateElement.getAsJsonObject();
+        if (state.has("association_mode") || state.has("custom_recall")) {
+            throw new IllegalArgumentException(
+                    "agent_state.json still uses legacy recall fields; expected state.recall_preset and state.recall_tuning");
+        }
+    }
+
     private static AgentStateFile normalized(AgentStateFile raw) {
         AgentStateFile file = raw != null ? raw : new AgentStateFile();
-        if (file.schemaVersion <= 0) {
-            file.schemaVersion = 1;
+        if (file.schemaVersion < 2) {
+            file.schemaVersion = 2;
         }
         if (file.state == null) {
             file.state = new AgentRuntimeStateSection();
@@ -168,13 +183,13 @@ public final class AgentStateStorage {
         if (file.attention_weights == null) {
             file.attention_weights = new AttentionWeightsSection();
         }
-        if (file.state.custom_recall == null) {
-            file.state.custom_recall = CustomRecallSection.fromConfig(AgentState.CustomAssociationConfig.defaults());
+        if (file.state.recall_tuning == null) {
+            file.state.recall_tuning = RecallTuningSection.fromConfig(AgentState.RecallTuning.defaults());
         } else {
-            file.state.custom_recall = file.state.custom_recall.normalized();
+            file.state.recall_tuning = file.state.recall_tuning.normalized();
         }
         if (file.state.implanted_memory_safety_net == null) {
-            file.state.implanted_memory_safety_net = file.state.nostalgia > 1.0f;
+            file.state.implanted_memory_safety_net = false;
         }
         return file;
     }
@@ -188,8 +203,8 @@ public final class AgentStateStorage {
         file.state.concentration = state.getConcentration();
         file.state.wandering_mind = state.getWanderingMind();
         file.state.nostalgia = state.getNostalgia();
-        file.state.association_mode = state.getAssociationMode().name();
-        file.state.custom_recall = CustomRecallSection.fromConfig(state.getCustomAssociationConfig());
+        file.state.recall_preset = state.getRecallPreset().name();
+        file.state.recall_tuning = RecallTuningSection.fromConfig(state.getRecallTuning());
         file.state.implanted_memory_safety_net = state.isImplantedMemorySafetyNetEnabled();
         file.state.current_desire_tag = state.getCurrentDesireTag() != null ? state.getCurrentDesireTag().name() : null;
         file.state.desire_description = state.getDesireDescription();
@@ -209,6 +224,7 @@ public final class AgentStateStorage {
         file.attention_weights.consumable = TalkingWeaponConfig.WEIGHT_CONSUMABLE.get();
         file.attention_weights.block = TalkingWeaponConfig.WEIGHT_BLOCK.get();
         file.attention_weights.tool = TalkingWeaponConfig.WEIGHT_TOOL.get();
+        file.attention_weights.common = TalkingWeaponConfig.WEIGHT_COMMON.get();
         return file;
     }
 
@@ -222,8 +238,8 @@ public final class AgentStateStorage {
         state.setConcentration(file.state.concentration);
         state.setWanderingMind(file.state.wandering_mind);
         state.setNostalgia(file.state.nostalgia);
-        state.setAssociationModeByName(file.state.association_mode);
-        state.setCustomAssociationConfig(file.state.custom_recall.toConfig());
+        state.setRecallPresetByName(file.state.recall_preset);
+        state.setRecallTuning(file.state.recall_tuning.toConfig());
         state.setImplantedMemorySafetyNetEnabled(Boolean.TRUE.equals(file.state.implanted_memory_safety_net));
         state.setCurrentDesireTag(parseFocusTag(file.state.current_desire_tag));
         state.setDesireDescription(file.state.desire_description);
@@ -243,6 +259,7 @@ public final class AgentStateStorage {
         applyWeight(TalkingWeaponConfig.WEIGHT_CONSUMABLE, file.attention_weights.consumable);
         applyWeight(TalkingWeaponConfig.WEIGHT_BLOCK, file.attention_weights.block);
         applyWeight(TalkingWeaponConfig.WEIGHT_TOOL, file.attention_weights.tool);
+        applyWeight(TalkingWeaponConfig.WEIGHT_COMMON, file.attention_weights.common);
         TalkingWeaponConfig.SPEC.save();
     }
 
@@ -262,7 +279,7 @@ public final class AgentStateStorage {
     }
 
     public static final class AgentStateFile {
-        public int schemaVersion = 1;
+        public int schemaVersion = 2;
         public AgentRuntimeStateSection state = new AgentRuntimeStateSection();
         public AgentPersonaStateSection persona_state = new AgentPersonaStateSection();
         public AttentionWeightsSection attention_weights = new AttentionWeightsSection();
@@ -276,47 +293,48 @@ public final class AgentStateStorage {
         public float concentration = 0.5f;
         public float wandering_mind = 0.1f;
         public float nostalgia = 0.5f;
-        public String association_mode = AgentState.AssociationMode.BALANCED.name();
-        public CustomRecallSection custom_recall = CustomRecallSection.fromConfig(AgentState.CustomAssociationConfig.defaults());
+        public String recall_preset = AgentState.RecallPreset.HYBRID.name();
+        public RecallTuningSection recall_tuning = RecallTuningSection.fromConfig(AgentState.RecallTuning.defaults());
         public Boolean implanted_memory_safety_net = null;
         public String current_desire_tag = null;
         public String desire_description = "";
     }
 
-    public static final class CustomRecallSection {
-        public int seed_entry_count = TalkingWeaponConfig.LTM_RECALL_SEED_ENTRY_COUNT.get();
-        public int tags_per_entry = TalkingWeaponConfig.LTM_RECALL_TAGS_PER_ENTRY.get();
-        public int memory_pick_per_seed = TalkingWeaponConfig.LTM_RECALL_MEMORY_PICK_PER_SEED.get();
-        public int max_depth = TalkingWeaponConfig.LTM_RECALL_MAX_DEPTH.get();
-        public int branch_per_memory = TalkingWeaponConfig.LTM_RECALL_BRANCH_PER_MEMORY.get();
-        public int final_memory_cap = TalkingWeaponConfig.LTM_RECALL_FINAL_MEMORY_CAP.get();
+    /**
+     * CUSTOM 召回预设的 authored 参数。
+     * <p>
+     * 三个值分别控制：
+     * <ul>
+     * <li>主召回阶段：每个 cue 最多能提起多少条候选记忆</li>
+     * <li>sandbox 联想阶段：每条表层记忆最多回灌多少个联想 cue</li>
+     * <li>最终阶段：最多允许多少条记忆进入表层意识</li>
+     * </ul>
+     */
+    public static final class RecallTuningSection {
+        public int main_candidates_per_cue = TalkingWeaponConfig.LTM_RECALL_MAIN_CANDIDATES_PER_CUE.get();
+        public int sandbox_cues_per_memory = TalkingWeaponConfig.LTM_RECALL_SANDBOX_CUES_PER_MEMORY.get();
+        public int conscious_memory_cap = TalkingWeaponConfig.LTM_RECALL_CONSCIOUS_MEMORY_CAP.get();
 
-        public static CustomRecallSection fromConfig(AgentState.CustomAssociationConfig config) {
-            AgentState.CustomAssociationConfig normalized = config != null
+        public static RecallTuningSection fromConfig(AgentState.RecallTuning config) {
+            AgentState.RecallTuning normalized = config != null
                     ? config
-                    : AgentState.CustomAssociationConfig.defaults();
-            CustomRecallSection section = new CustomRecallSection();
-            section.seed_entry_count = normalized.getSeedEntryCount();
-            section.tags_per_entry = normalized.getTagsPerEntry();
-            section.memory_pick_per_seed = normalized.getMemoryPickPerSeed();
-            section.max_depth = normalized.getMaxDepth();
-            section.branch_per_memory = normalized.getBranchPerMemory();
-            section.final_memory_cap = normalized.getFinalMemoryCap();
+                    : AgentState.RecallTuning.defaults();
+            RecallTuningSection section = new RecallTuningSection();
+            section.main_candidates_per_cue = normalized.getMainCandidatesPerCue();
+            section.sandbox_cues_per_memory = normalized.getSandboxCuesPerMemory();
+            section.conscious_memory_cap = normalized.getConsciousMemoryCap();
             return section;
         }
 
-        public CustomRecallSection normalized() {
+        public RecallTuningSection normalized() {
             return fromConfig(toConfig());
         }
 
-        public AgentState.CustomAssociationConfig toConfig() {
-            return new AgentState.CustomAssociationConfig(
-                    seed_entry_count,
-                    tags_per_entry,
-                    memory_pick_per_seed,
-                    max_depth,
-                    branch_per_memory,
-                    final_memory_cap);
+        public AgentState.RecallTuning toConfig() {
+            return new AgentState.RecallTuning(
+                    main_candidates_per_cue,
+                    sandbox_cues_per_memory,
+                    conscious_memory_cap);
         }
     }
 
@@ -338,5 +356,6 @@ public final class AgentStateStorage {
         public double consumable = 1.0d;
         public double block = 1.0d;
         public double tool = 1.0d;
+        public double common = 1.0d;
     }
 }

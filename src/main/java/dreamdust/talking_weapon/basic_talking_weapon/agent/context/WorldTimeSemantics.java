@@ -34,7 +34,22 @@ public final class WorldTimeSemantics {
     }
 
     /**
-     * 将 Minecraft gameTime/dayTime 转为可读的时段描述。
+     * 将“第 N 天 + 当日 tick”重新合成为单调的绝对游戏时间。
+     * <p>
+     * dayIndex 为 1-based；timeOfDayTick 会自动归一化到 [0, 23999]。
+     */
+    public static long composeAbsoluteGameTime(long dayIndex, long timeOfDayTick) {
+        if (dayIndex <= 0L || timeOfDayTick < 0L) {
+            return -1L;
+        }
+        return (dayIndex - 1L) * TICKS_PER_DAY + timeOfDay(timeOfDayTick);
+    }
+
+    /**
+     * 将 Minecraft 世界时间转为可读的时段描述。
+     * <p>
+     * 参数既可以是单调递增的 {@code gameTime}，也可以是当前世界时钟 {@code dayTime}；
+     * 本函数只读取“一天内的位置”，因此会统一先做 24000 tick 取模。
      * 示例：{@code 深夜 (02:30)}
      */
     public static String describeTimeOfDay(long gameTime) {
@@ -72,6 +87,8 @@ public final class WorldTimeSemantics {
 
     /**
      * 用于 DetailTag 的时间状态标签。
+     * <p>
+     * 与 {@link #describeTimeOfDay(long)} 一样，参数只按“一天内 tick”解释。
      */
     public static String categorizeTime(long gameTime) {
         if (gameTime < 0L) {
@@ -112,8 +129,20 @@ public final class WorldTimeSemantics {
             return "";
         }
 
-        long day = dayIndex(gameTime);
-        String timeDesc = describeTimeOfDay(gameTime);
+        return describeMemoryTimeAnchor(dayIndex(gameTime), timeOfDay(gameTime));
+    }
+
+    /**
+     * 基于“第几天 + 当日时段 tick”构造叙事时间锚点。
+     * 示例：{@code 第23天的深夜 (02:30)}
+     */
+    public static String describeMemoryTimeAnchor(long dayIndex, long timeOfDayTick) {
+        if (dayIndex <= 0L || timeOfDayTick < 0L) {
+            return "";
+        }
+
+        String timeDesc = describeTimeOfDay(timeOfDayTick);
+        long day = dayIndex;
         if (day <= 0L || timeDesc.isBlank()) {
             return "";
         }

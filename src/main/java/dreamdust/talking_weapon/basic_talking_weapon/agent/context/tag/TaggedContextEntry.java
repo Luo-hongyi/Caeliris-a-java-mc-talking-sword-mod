@@ -11,9 +11,10 @@ import java.util.*;
  * <li><b>detailTags</b> — 细节标签集合，用于记忆检索和偏好匹配</li>
  * <li><b>description</b> — 人类/LLM 可读的事件描述</li>
  * <li><b>baseImportance</b> — 事件的客观重要度 (0.0 ~ 1.0)</li>
- * <li><b>timestamp</b> — 精确的物理时间戳 (毫秒)，用于记忆衰减排序和时序判定</li>
+ * <li><b>timestamp</b> — 精确的物理时间戳 (毫秒)，用于调试、日志和短时事件排序；不参与 LTM age decay</li>
  * <li><b>associativeOnly</b> — 是否为仅用于联想的隐式标签（默认 false，若为 true 则不在 Prompt
  * 显示，除非匹配性格/记忆）</li>
+ * <li><b>crosshairTarget</b> — 是否为玩家当前准心直接指向的目标，用于独立的注意力加分开关</li>
  * </ul>
  * <p>
  * 不可变对象，通过 {@link Builder} 构建。
@@ -26,6 +27,7 @@ public final class TaggedContextEntry {
     private final float baseImportance;
     private final long timestamp;
     private final boolean associativeOnly;
+    private final boolean crosshairTarget;
 
     private TaggedContextEntry(Builder builder) {
         this.focusTags = builder.focusTags.isEmpty()
@@ -36,6 +38,7 @@ public final class TaggedContextEntry {
         this.baseImportance = builder.baseImportance;
         this.timestamp = builder.timestamp;
         this.associativeOnly = builder.associativeOnly;
+        this.crosshairTarget = builder.crosshairTarget;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -62,7 +65,7 @@ public final class TaggedContextEntry {
         return baseImportance;
     }
 
-    /** 获取精确的物理时间戳 (毫秒)，用于记忆衰减和时序判定 */
+    /** 获取精确的物理时间戳 (毫秒)，用于调试、日志和短时事件排序 */
     public long getTimestamp() {
         return timestamp;
     }
@@ -70,6 +73,11 @@ public final class TaggedContextEntry {
     /** 检查是否属于仅用于联想召回的隐式标签 */
     public boolean isAssociativeOnly() {
         return associativeOnly;
+    }
+
+    /** 检查是否为玩家当前准心直接指向的目标 */
+    public boolean isCrosshairTarget() {
+        return crosshairTarget;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -109,6 +117,7 @@ public final class TaggedContextEntry {
         return "TaggedContextEntry{focus=" + focusTags
                 + ", details=" + detailTags
                 + ", importance=" + baseImportance
+                + ", crosshairTarget=" + crosshairTarget
                 + ", desc=\"" + (description.length() > 50
                         ? description.substring(0, 50) + "..."
                         : description)
@@ -130,6 +139,7 @@ public final class TaggedContextEntry {
         private float baseImportance = 0.5f;
         private long timestamp = System.currentTimeMillis();
         private boolean associativeOnly = false;
+        private boolean crosshairTarget = false;
 
         private Builder() {
         }
@@ -176,6 +186,12 @@ public final class TaggedContextEntry {
             return this;
         }
 
+        /** 设置是否为准心直指目标 */
+        public Builder crosshairTarget(boolean crosshairTarget) {
+            this.crosshairTarget = crosshairTarget;
+            return this;
+        }
+
         public TaggedContextEntry build() {
             return new TaggedContextEntry(this);
         }
@@ -189,6 +205,7 @@ public final class TaggedContextEntry {
         b.importance(this.baseImportance);
         b.timestamp(this.timestamp);
         b.associativeOnly(this.associativeOnly);
+        b.crosshairTarget(this.crosshairTarget);
         return b;
     }
 }

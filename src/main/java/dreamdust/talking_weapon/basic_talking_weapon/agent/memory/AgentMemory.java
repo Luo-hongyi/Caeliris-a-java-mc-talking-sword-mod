@@ -50,6 +50,7 @@ public class AgentMemory {
     private int ltmRecordsCapacity;
     private final Deque<UUID> recentRecalledMemoryIds;
     private int recentRecallWindow;
+    private final RecallRuntimeState recallRuntimeState;
 
     public AgentMemory() {
         this.identity = "";
@@ -59,6 +60,7 @@ public class AgentMemory {
         this.ltmRecordsCapacity = 100;
         this.recentRecalledMemoryIds = new ArrayDeque<>();
         this.recentRecallWindow = 6;
+        this.recallRuntimeState = new RecallRuntimeState();
 
         // 加载外部的静态植入记忆
         try {
@@ -167,6 +169,10 @@ public class AgentMemory {
         return Collections.unmodifiableList(new ArrayList<>(recentRecalledMemoryIds));
     }
 
+    public RecallRuntimeState getRecallRuntimeState() {
+        return recallRuntimeState;
+    }
+
     private void trimRecentRecallQueue() {
         while (recentRecalledMemoryIds.size() > recentRecallWindow) {
             recentRecalledMemoryIds.removeLast();
@@ -179,6 +185,8 @@ public class AgentMemory {
                 + ", actionBuffer=" + actionBuffer.size()
                 + ", stmPool=" + stmPool
                 + ", ltmRecords=" + ltmRecords.size()
-                + ", recentRecall=" + recentRecalledMemoryIds.size() + "}";
+                + ", recentRecall=" + recentRecalledMemoryIds.size()
+                + ", recallRuntimeState=true"
+                + "}";
     }
 }

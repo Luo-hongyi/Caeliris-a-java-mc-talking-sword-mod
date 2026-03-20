@@ -278,7 +278,7 @@ export function RuntimeRecallGraphPage({ recallTrace }: { recallTrace: RuntimeRe
         </div>
         <div className="stacked-badges">
           <span className="badge">{`${recallTrace.recalledMemories.length} 条记忆`}</span>
-          <span className="badge muted">{recallTrace.associationMode || "未记录 association mode"}</span>
+          <span className="badge muted">{recallTrace.recallPreset || "未记录 recall preset"}</span>
           <span className="badge muted">
             {recallTrace.generatedAt
               ? `最近同步 ${formatRuntimeTimestamp(Date.parse(recallTrace.generatedAt))}`
