@@ -84,6 +84,25 @@ export interface AgentStateRecallTuning {
   conscious_memory_cap: number;
 }
 
+export interface MemoryRecallTuningFile {
+  schemaVersion: number;
+  generatedAt: string;
+  mainCandidatesPerCue: number;
+  sandboxCuesPerMemory: number;
+  consciousMemoryCap: number;
+  recentRecallWindow: number;
+  recentRecallWindowCap: number;
+  implantedFallbackEntryScore: number;
+  promptFillProbabilityScale: number;
+  tagPoolHalfLifeDays: number;
+  fermentationHalfLifeDays: number;
+  intervalBonusScale: number;
+  intervalBonusSteepness: number;
+  synthesizedMemoryHalfLife: number;
+  desireProfileBonusScale: number;
+  desiredFocusBonusScale: number;
+}
+
 export interface AgentStateFile {
   schemaVersion: number;
   state: {
@@ -218,7 +237,6 @@ export interface RuntimeRecallFermentationEntry {
   lastConsciousGameTime: number;
   enteredConsciousThisTurn: boolean;
   cueBoostThisTurn: number;
-  reinforcementCount: number;
 }
 
 export interface RuntimeRecallConsciousEntry {
@@ -228,6 +246,7 @@ export interface RuntimeRecallConsciousEntry {
   sourceType: string;
   focusTags: string[];
   supportTags: string[];
+  associativeTags: string[];
 }
 
 export interface RuntimeRecallAssociationSandbox {
@@ -264,6 +283,8 @@ export interface RuntimeRecallTraceFile {
   triggerTags: string[];
   traceLines: string[];
   visibleContexts: RuntimeRecallVisibleContextEntry[];
+  consciousMemories: RuntimeRecalledMemoryEntry[];
+  promptMemories: RuntimeRecalledMemoryEntry[];
   recalledMemories: RuntimeRecalledMemoryEntry[];
   runtimeState: RuntimeRecallRuntimeState;
 }

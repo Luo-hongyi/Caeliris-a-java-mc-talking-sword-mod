@@ -32,6 +32,7 @@ import java.util.function.ToDoubleFunction;
  * <li>`tag_pool -> 主召回候选`</li>
  * <li>`旧 fermentation + 新候选 -> retained fermentation`</li>
  * <li>`retained fermentation -> conscious memories`</li>
+ * <li>`conscious memories -> prompt fill`</li>
  * <li>`conscious memories -> association sandbox (1-hop)`</li>
  * </ol>
  * <p>
@@ -41,9 +42,13 @@ public final class LTMRecallEngine {
 
     private static final double DEFAULT_DESIRE_PROFILE_BONUS_SCALE = 0.25;
     private static final double DEFAULT_DESIRED_FOCUS_BONUS_SCALE = 0.18;
-    private static final double RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD = 0.88;
+    private static final double RECENT_RECALL_PENALTY_FLOOR = 0.02;
+    private static final double RECENT_RECALL_PENALTY_CEIL = 0.86;
+    private static final double RECENT_RECALL_RELEASE_START = 0.15;
+    private static final double RECENT_RECALL_RELEASE_END = 0.85;
+    private static final double RECENT_RECALL_CURVE_EXPONENT = 1.8;
     private static final int INITIAL_SEED_TRACE_PREVIEW_LIMIT = 12;
-    private static final double FERMENTATION_PERSISTENCE_SCORE_THRESHOLD = 0.16;
+    private static final double FERMENTATION_RETENTION_SCORE_THRESHOLD = 0.16;
     private static final int RETENTION_BUFFER_MIN = 8;
     private static final int RETENTION_BUFFER_MAX = 32;
 
@@ -51,25 +56,35 @@ public final class LTMRecallEngine {
     }
 
     public static final class RecallResult {
+        public final List<LTMEntry> consciousMemories;
+        public final List<LTMEntry> promptMemories;
         public final List<LTMEntry> recalledMemories;
         public final Set<String> triggerTags;
         public final List<String> traceLines;
         public final RecallRuntimeState.Snapshot runtimeState;
 
-        public RecallResult(List<LTMEntry> recalledMemories, Set<String> triggerTags, List<String> traceLines) {
-            this(recalledMemories, triggerTags, traceLines, null);
+        public RecallResult(List<LTMEntry> promptMemories, Set<String> triggerTags, List<String> traceLines) {
+            this(promptMemories, promptMemories, triggerTags, traceLines, null);
         }
 
-        public RecallResult(List<LTMEntry> recalledMemories, Set<String> triggerTags, List<String> traceLines,
+        public RecallResult(List<LTMEntry> promptMemories, Set<String> triggerTags, List<String> traceLines,
                 RecallRuntimeState.Snapshot runtimeState) {
-            this.recalledMemories = Collections.unmodifiableList(new ArrayList<>(recalledMemories));
+            this(promptMemories, promptMemories, triggerTags, traceLines, runtimeState);
+        }
+
+        public RecallResult(List<LTMEntry> consciousMemories, List<LTMEntry> promptMemories,
+                Set<String> triggerTags, List<String> traceLines,
+                RecallRuntimeState.Snapshot runtimeState) {
+            this.consciousMemories = Collections.unmodifiableList(new ArrayList<>(consciousMemories));
+            this.promptMemories = Collections.unmodifiableList(new ArrayList<>(promptMemories));
+            this.recalledMemories = this.promptMemories;
             this.triggerTags = Collections.unmodifiableSet(new LinkedHashSet<>(triggerTags));
             this.traceLines = Collections.unmodifiableList(new ArrayList<>(traceLines));
             this.runtimeState = runtimeState != null ? runtimeState : new RecallRuntimeState.Snapshot();
         }
 
         public boolean isEmpty() {
-            return recalledMemories.isEmpty();
+            return promptMemories.isEmpty();
         }
     }
 
@@ -161,7 +176,6 @@ public final class LTMRecallEngine {
         double bestSemanticScore;
         double bestFocusAlignment;
         double bestAgeFactor;
-        double bestRecentPenalty;
         DetailTag bestMatchedTag;
         final Set<String> supportTags = new LinkedHashSet<>();
         int supportCount;
@@ -171,7 +185,7 @@ public final class LTMRecallEngine {
         }
 
         void addEvidence(Seed seed, double score, double semanticScore, double focusAlignment,
-                double ageFactor, double recentPenalty, DetailTag matchedTag) {
+                double ageFactor, DetailTag matchedTag) {
             supportCount++;
             supportTags.add(seed.tag.toString());
             combinedScore += supportCount == 1 ? score : score * 0.55;
@@ -180,13 +194,12 @@ public final class LTMRecallEngine {
                 bestSemanticScore = semanticScore;
                 bestFocusAlignment = focusAlignment;
                 bestAgeFactor = ageFactor;
-                bestRecentPenalty = recentPenalty;
                 bestMatchedTag = matchedTag;
             }
         }
 
         void addFermentationEvidence(String memoryId, double score, double fermentationScore, double focusAlignment,
-                double ageFactor, double recentPenalty, Collection<String> supportTags) {
+                Collection<String> supportTags) {
             supportCount++;
             if (supportTags != null && !supportTags.isEmpty()) {
                 this.supportTags.addAll(supportTags);
@@ -196,8 +209,7 @@ public final class LTMRecallEngine {
                 bestSingleScore = score;
                 bestSemanticScore = fermentationScore;
                 bestFocusAlignment = focusAlignment;
-                bestAgeFactor = ageFactor;
-                bestRecentPenalty = recentPenalty;
+                bestAgeFactor = 1.0;
                 bestMatchedTag = null;
             }
         }
@@ -208,8 +220,6 @@ public final class LTMRecallEngine {
         double rawWeight;
         double weight;
         int hitCount;
-        int recentRank = -1;
-        double maxSemanticScore;
         double recentPenalty = 1.0;
         final Set<String> matchedSeedTags = new LinkedHashSet<>();
         final Set<String> matchedMemoryTags = new LinkedHashSet<>();
@@ -222,8 +232,9 @@ public final class LTMRecallEngine {
     private static final class SelectionCandidate {
         final LTMEntry entry;
         double score;
+        double consciousScore;
+        double consciousPenalty = 1.0;
         double cueBoostThisTurn;
-        int reinforcementCount;
         long lastUpdatedGameTime = -1L;
         long lastConsciousGameTime = -1L;
         final Set<String> focusTags = new LinkedHashSet<>();
@@ -246,13 +257,12 @@ public final class LTMRecallEngine {
             }
         }
 
-        void absorbFermentation(RecallRuntimeState.FermentationMemoryEntry fermentationEntry, double recentPenalty) {
+        void absorbFermentation(RecallRuntimeState.FermentationMemoryEntry fermentationEntry) {
             if (fermentationEntry == null) {
                 return;
             }
-            score = clamp(0.0, 3.0, Math.max(score, fermentationEntry.score * recentPenalty));
+            score = clamp(0.0, 3.0, Math.max(score, fermentationEntry.score));
             cueBoostThisTurn = Math.max(cueBoostThisTurn, fermentationEntry.cueBoostThisTurn);
-            reinforcementCount = Math.max(reinforcementCount, fermentationEntry.reinforcementCount);
             lastUpdatedGameTime = Math.max(lastUpdatedGameTime, fermentationEntry.lastUpdatedGameTime);
             lastConsciousGameTime = Math.max(lastConsciousGameTime, fermentationEntry.lastConsciousGameTime);
             focusTags.addAll(fermentationEntry.focusTags);
@@ -266,7 +276,6 @@ public final class LTMRecallEngine {
             }
             double incomingScore = clamp(0.0, 3.0, candidate.combinedScore);
             score = clamp(0.0, 3.0, Math.max(score, score > 0.0 ? score * 0.55 + incomingScore : incomingScore));
-            reinforcementCount = Math.max(reinforcementCount + 1, candidate.supportCount);
             lastUpdatedGameTime = currentGameTime;
             supportTags.addAll(candidate.supportTags);
             if (candidate.bestMatchedTag != null) {
@@ -289,7 +298,18 @@ public final class LTMRecallEngine {
                     : Math.max(this.lastConsciousGameTime, -1L);
             entry.enteredConsciousThisTurn = enteredConscious;
             entry.cueBoostThisTurn = this.cueBoostThisTurn;
-            entry.reinforcementCount = Math.max(1, this.reinforcementCount);
+            return entry;
+        }
+
+        RecallRuntimeState.ConsciousMemoryEntry toConsciousEntry() {
+            RecallRuntimeState.ConsciousMemoryEntry entry = new RecallRuntimeState.ConsciousMemoryEntry();
+            entry.memoryId = this.entry.getId().toString();
+            entry.description = this.entry.getDescription() != null ? this.entry.getDescription() : "";
+            entry.score = clamp(0.0, 3.0, this.consciousScore);
+            entry.sourceType = this.entry.getSourceType().name();
+            entry.focusTags.addAll(this.focusTags);
+            entry.supportTags.addAll(this.supportTags);
+            entry.associativeTags.addAll(this.associativeTags);
             return entry;
         }
     }
@@ -324,7 +344,8 @@ public final class LTMRecallEngine {
                     runtimeState != null ? runtimeState.snapshot() : null);
         }
 
-        memory.setRecentRecallWindow(TalkingWeaponConfig.LTM_RECALL_RECENT_WINDOW.get());
+        memory.setRecentRecallWindow(TalkingWeaponConfig.getEffectiveRecentRecallWindow());
+        memory.beginRecentRecallTurn();
 
         float concentration = state != null ? state.getConcentration() : 0.5f;
         float wanderingMind = state != null ? state.getWanderingMind() : 0.1f;
@@ -406,13 +427,12 @@ public final class LTMRecallEngine {
                     }
 
                     traceLines.add(String.format(
-                            "[候选提升] score=%.2f supports=%d matched=%s semantic=%.2f focus=%.2f recentPenalty=%.2f ageFactor=%.2f memory=%s",
+                            "[候选提升] score=%.2f supports=%d matched=%s semantic=%.2f focus=%.2f ageFactor=%.2f memory=%s",
                             candidate.combinedScore,
                             candidate.supportCount,
                             candidate.bestMatchedTag != null ? candidate.bestMatchedTag : "(focus-only)",
                             candidate.bestSemanticScore,
                             candidate.bestFocusAlignment,
-                            candidate.bestRecentPenalty,
                             candidate.bestAgeFactor,
                             candidate.entry.getDescription()));
                     if (!candidate.supportTags.isEmpty()) {
@@ -428,42 +448,42 @@ public final class LTMRecallEngine {
                 memory,
                 currentGameTime);
         List<SelectionCandidate> retainedSelection = selectTopCandidates(retainedCandidates, retentionCap);
-        List<SelectionCandidate> consciousSelection = selectTopCandidates(retainedSelection, profile.consciousMemoryCap);
-
-        List<LTMEntry> recalled = materializeSelection(consciousSelection, now);
-        Set<UUID> recalledIds = new LinkedHashSet<>();
-        for (LTMEntry recalledEntry : recalled) {
-            if (recalledEntry != null && recalledEntry.getId() != null) {
-                recalledIds.add(recalledEntry.getId());
-            }
-        }
+        List<SelectionCandidate> consciousSelection = selectConsciousCandidates(
+                retainedSelection,
+                memory,
+                profile.consciousMemoryCap);
+        Set<UUID> forcedPromptIds = new LinkedHashSet<>();
 
         if (state != null
                 && state.isImplantedMemorySafetyNetEnabled()
-                && !containsImplantedRecall(recalled)
+                && !containsImplantedSelection(consciousSelection)
                 && !allCueInputsThisTurn.isEmpty()) {
+            Set<UUID> consciousIds = toMemoryIdSet(consciousSelection);
             LTMEntry implantedFallback = pickWeightedImplantedFallback(
-                    allCueInputsThisTurn, memory, recalledIds, relationDict, wanderingMind, traceLines);
-            if (implantedFallback != null && recalledIds.add(implantedFallback.getId())) {
+                    allCueInputsThisTurn, memory, consciousIds, relationDict, wanderingMind, traceLines);
+            if (implantedFallback != null && consciousIds.add(implantedFallback.getId())) {
                 SelectionCandidate fallbackSelection = new SelectionCandidate(implantedFallback);
-                fallbackSelection.score = 3.0;
-                fallbackSelection.reinforcementCount = 1;
+                fallbackSelection.score = clamp(0.0, 3.0, TalkingWeaponConfig.getImplantedFallbackEntryScoreValue());
+                fallbackSelection.consciousScore = fallbackSelection.score;
+                fallbackSelection.consciousPenalty = 1.0;
                 fallbackSelection.lastUpdatedGameTime = currentGameTime;
-                if (consciousSelection.size() >= profile.consciousMemoryCap && !consciousSelection.isEmpty()) {
-                    consciousSelection.remove(consciousSelection.size() - 1);
-                }
-                consciousSelection.add(fallbackSelection);
-                consciousSelection = selectTopCandidates(consciousSelection, profile.consciousMemoryCap);
-                recalled = materializeSelection(consciousSelection, now);
-                recalledIds.clear();
-                for (LTMEntry recalledEntry : recalled) {
-                    if (recalledEntry != null && recalledEntry.getId() != null) {
-                        recalledIds.add(recalledEntry.getId());
-                    }
-                }
+                traceLines.add(String.format("[植入记忆保底注入] entry_score=%.2f memory=%s",
+                        fallbackSelection.score,
+                        implantedFallback.getDescription()));
+                consciousSelection = mergeFallbackIntoConscious(
+                        consciousSelection,
+                        fallbackSelection,
+                        profile.consciousMemoryCap);
                 retainedSelection = mergeFallbackIntoRetained(retainedSelection, fallbackSelection, retentionCap);
+                forcedPromptIds.add(implantedFallback.getId());
             }
         }
+
+        List<SelectionCandidate> promptSelection = fillPromptMemories(consciousSelection, forcedPromptIds, traceLines);
+        List<LTMEntry> consciousMemories = materializeSelection(consciousSelection, now, false);
+        List<LTMEntry> promptMemories = materializeSelection(promptSelection, now, true);
+        Set<UUID> consciousIds = toMemoryIdSet(consciousSelection);
+        Set<UUID> promptIds = toMemoryIdSet(promptSelection);
 
         List<SelectionCandidate> associationSelection = recallAssociationSandbox(
                 consciousSelection,
@@ -476,11 +496,13 @@ public final class LTMRecallEngine {
                 profile,
                 traceLines);
 
-        traceLines.add(String.format("[双层筛选] promoted=%d retained=%d conscious=%d",
-                promotedCandidates.size(), retainedSelection.size(), consciousSelection.size()));
+        traceLines.add(String.format("[三层筛选] promoted=%d retained=%d conscious=%d prompt=%d",
+                promotedCandidates.size(), retainedSelection.size(), consciousSelection.size(), promptSelection.size()));
         for (SelectionCandidate candidate : consciousSelection) {
-            traceLines.add(String.format("[表层意识] score=%.2f supports=%d memory=%s",
+            traceLines.add(String.format("[表层意识] consciousScore=%.2f retainedScore=%.2f recentPenalty=%.2f supports=%d memory=%s",
+                    candidate.consciousScore,
                     candidate.score,
+                    candidate.consciousPenalty,
                     candidate.supportTags.size(),
                     candidate.entry.getDescription()));
             if (!candidate.supportTags.isEmpty()) {
@@ -488,15 +510,17 @@ public final class LTMRecallEngine {
             }
         }
 
-        memory.noteRecalledMemories(recalled);
+        memory.noteRecalledMemories(promptMemories);
         if (runtimeState != null) {
             runtimeState.applySelectionOutcome(
-                    toFermentationEntries(retainedSelection, currentGameTime, recalledIds),
-                    toMemoryIds(consciousSelection));
+                    toFermentationEntries(retainedSelection, currentGameTime, consciousIds, promptIds),
+                    toConsciousEntries(consciousSelection),
+                    promptMemories.size());
             runtimeState.applyAssociationSandboxOutcome(toMemoryIds(associationSelection));
         }
         return new RecallResult(
-                recalled,
+                consciousMemories,
+                promptMemories,
                 triggerTags,
                 traceLines,
                 runtimeState != null ? runtimeState.snapshot() : null);
@@ -543,9 +567,7 @@ public final class LTMRecallEngine {
                 }
                 SelectionCandidate selectionCandidate = selectionMap.computeIfAbsent(
                         memoryId, ignored -> new SelectionCandidate(memoryEntry));
-                selectionCandidate.absorbFermentation(
-                        fermentationEntry,
-                        computeRecentRecallPenalty(memory, memoryId));
+                selectionCandidate.absorbFermentation(fermentationEntry);
             }
         }
 
@@ -576,9 +598,47 @@ public final class LTMRecallEngine {
             if (byScore != 0) {
                 return byScore;
             }
-            int byReinforcement = Integer.compare(right.reinforcementCount, left.reinforcementCount);
-            if (byReinforcement != 0) {
-                return byReinforcement;
+            int bySupport = Integer.compare(right.supportTags.size(), left.supportTags.size());
+            if (bySupport != 0) {
+                return bySupport;
+            }
+            return left.entry.getId().toString().compareTo(right.entry.getId().toString());
+        });
+        if (ordered.size() <= limit) {
+            return ordered;
+        }
+        return new ArrayList<>(ordered.subList(0, limit));
+    }
+
+    private static List<SelectionCandidate> selectConsciousCandidates(List<SelectionCandidate> retainedSelection,
+            AgentMemory memory, int limit) {
+        if (retainedSelection == null || retainedSelection.isEmpty() || limit <= 0) {
+            return Collections.emptyList();
+        }
+        List<SelectionCandidate> ranked = new ArrayList<>(retainedSelection);
+        for (SelectionCandidate candidate : ranked) {
+            if (candidate == null || candidate.entry == null || candidate.entry.getId() == null) {
+                continue;
+            }
+            candidate.consciousPenalty = computeRecentRecallPenalty(memory, candidate.entry.getId());
+            candidate.consciousScore = clamp(0.0, 3.0, candidate.score * candidate.consciousPenalty);
+        }
+        return selectTopConsciousCandidates(ranked, limit);
+    }
+
+    private static List<SelectionCandidate> selectTopConsciousCandidates(List<SelectionCandidate> candidates, int limit) {
+        if (candidates == null || candidates.isEmpty() || limit <= 0) {
+            return Collections.emptyList();
+        }
+        List<SelectionCandidate> ordered = new ArrayList<>(candidates);
+        ordered.sort((left, right) -> {
+            int byConscious = Double.compare(right.consciousScore, left.consciousScore);
+            if (byConscious != 0) {
+                return byConscious;
+            }
+            int byRetained = Double.compare(right.score, left.score);
+            if (byRetained != 0) {
+                return byRetained;
             }
             int bySupport = Integer.compare(right.supportTags.size(), left.supportTags.size());
             if (bySupport != 0) {
@@ -592,7 +652,48 @@ public final class LTMRecallEngine {
         return new ArrayList<>(ordered.subList(0, limit));
     }
 
-    private static List<LTMEntry> materializeSelection(List<SelectionCandidate> selection, long now) {
+    private static List<SelectionCandidate> fillPromptMemories(List<SelectionCandidate> consciousSelection,
+            Set<UUID> forcedPromptIds, List<String> traceLines) {
+        if (consciousSelection == null || consciousSelection.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<SelectionCandidate> promptSelection = new ArrayList<>();
+        for (SelectionCandidate candidate : consciousSelection) {
+            if (candidate == null || candidate.entry == null || candidate.entry.getId() == null) {
+                continue;
+            }
+
+            boolean forced = forcedPromptIds != null && forcedPromptIds.contains(candidate.entry.getId());
+            double probability = forced ? 1.0 : computePromptFillProbability(candidate.consciousScore);
+            double roll = forced ? 0.0 : ThreadLocalRandom.current().nextDouble();
+            boolean accepted = forced || roll < probability;
+
+            traceLines.add(String.format(
+                    "[Prompt填充阀门] consciousScore=%.2f speakProbability=%.2f roll=%.2f accepted=%s memory=%s%s",
+                    candidate.consciousScore,
+                    probability,
+                    roll,
+                    accepted ? "true" : "false",
+                    candidate.entry.getDescription(),
+                    forced ? " [forced]" : ""));
+
+            if (accepted) {
+                promptSelection.add(candidate);
+            }
+        }
+        traceLines.add(String.format("[Prompt填充] conscious=%d filled=%d",
+                consciousSelection.size(), promptSelection.size()));
+        return promptSelection;
+    }
+
+    private static double computePromptFillProbability(double consciousScore) {
+        double normalized = clamp01(consciousScore / 2.40);
+        double rawProbability = 0.08 + normalized * 0.84;
+        double scale = TalkingWeaponConfig.getPromptFillProbabilityScaleValue();
+        return clamp(0.0, 1.0, rawProbability * scale);
+    }
+
+    private static List<LTMEntry> materializeSelection(List<SelectionCandidate> selection, long now, boolean markAccessed) {
         if (selection == null || selection.isEmpty()) {
             return Collections.emptyList();
         }
@@ -601,7 +702,9 @@ public final class LTMRecallEngine {
             if (candidate == null || candidate.entry == null) {
                 continue;
             }
-            candidate.entry.markAccessed(now);
+            if (markAccessed) {
+                candidate.entry.markAccessed(now);
+            }
             recalled.add(candidate.entry);
         }
         return recalled;
@@ -620,14 +723,33 @@ public final class LTMRecallEngine {
         return memoryIds;
     }
 
+    private static List<RecallRuntimeState.ConsciousMemoryEntry> toConsciousEntries(
+            List<SelectionCandidate> consciousSelection) {
+        if (consciousSelection == null || consciousSelection.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<RecallRuntimeState.ConsciousMemoryEntry> entries = new ArrayList<>(consciousSelection.size());
+        for (SelectionCandidate candidate : consciousSelection) {
+            if (candidate == null || candidate.entry == null || candidate.entry.getId() == null) {
+                continue;
+            }
+            entries.add(candidate.toConsciousEntry());
+        }
+        return entries;
+    }
+
     private static List<RecallRuntimeState.FermentationMemoryEntry> toFermentationEntries(
-            List<SelectionCandidate> retainedSelection, long currentGameTime, Set<UUID> consciousIds) {
+            List<SelectionCandidate> retainedSelection, long currentGameTime,
+            Set<UUID> consciousIds, Set<UUID> excludedIds) {
         if (retainedSelection == null || retainedSelection.isEmpty()) {
             return Collections.emptyList();
         }
         List<RecallRuntimeState.FermentationMemoryEntry> entries = new ArrayList<>(retainedSelection.size());
         for (SelectionCandidate candidate : retainedSelection) {
             if (candidate == null || candidate.entry == null || candidate.entry.getId() == null) {
+                continue;
+            }
+            if (excludedIds != null && excludedIds.contains(candidate.entry.getId())) {
                 continue;
             }
             entries.add(candidate.toFermentationEntry(
@@ -647,7 +769,6 @@ public final class LTMRecallEngine {
         for (SelectionCandidate candidate : merged) {
             if (candidate.entry.getId().equals(fallbackSelection.entry.getId())) {
                 candidate.score = Math.max(candidate.score, fallbackSelection.score);
-                candidate.reinforcementCount = Math.max(candidate.reinforcementCount, fallbackSelection.reinforcementCount);
                 exists = true;
                 break;
             }
@@ -655,7 +776,93 @@ public final class LTMRecallEngine {
         if (!exists) {
             merged.add(fallbackSelection);
         }
-        return selectTopCandidates(merged, retentionCap);
+        List<SelectionCandidate> ordered = selectTopCandidates(merged, merged.size());
+        if (ordered.size() <= retentionCap) {
+            return ordered;
+        }
+        if (containsCandidate(ordered.subList(0, retentionCap), fallbackSelection.entry.getId())) {
+            return new ArrayList<>(ordered.subList(0, retentionCap));
+        }
+        List<SelectionCandidate> kept = new ArrayList<>();
+        kept.add(findCandidate(ordered, fallbackSelection.entry.getId(), fallbackSelection));
+        for (SelectionCandidate candidate : ordered) {
+            if (kept.size() >= retentionCap) {
+                break;
+            }
+            if (candidate.entry.getId().equals(fallbackSelection.entry.getId())) {
+                continue;
+            }
+            kept.add(candidate);
+        }
+        return selectTopCandidates(kept, retentionCap);
+    }
+
+    private static List<SelectionCandidate> mergeFallbackIntoConscious(List<SelectionCandidate> consciousSelection,
+            SelectionCandidate fallbackSelection, int consciousCap) {
+        List<SelectionCandidate> merged = new ArrayList<>();
+        if (consciousSelection != null) {
+            merged.addAll(consciousSelection);
+        }
+        boolean exists = false;
+        for (SelectionCandidate candidate : merged) {
+            if (candidate.entry.getId().equals(fallbackSelection.entry.getId())) {
+                candidate.score = Math.max(candidate.score, fallbackSelection.score);
+                candidate.consciousPenalty = Math.max(candidate.consciousPenalty, fallbackSelection.consciousPenalty);
+                candidate.consciousScore = Math.max(candidate.consciousScore, fallbackSelection.consciousScore);
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            merged.add(fallbackSelection);
+        }
+        List<SelectionCandidate> ordered = selectTopConsciousCandidates(merged, merged.size());
+        if (ordered.size() <= consciousCap) {
+            return ordered;
+        }
+        if (containsCandidate(ordered.subList(0, consciousCap), fallbackSelection.entry.getId())) {
+            return new ArrayList<>(ordered.subList(0, consciousCap));
+        }
+        List<SelectionCandidate> kept = new ArrayList<>();
+        kept.add(findCandidate(ordered, fallbackSelection.entry.getId(), fallbackSelection));
+        for (SelectionCandidate candidate : ordered) {
+            if (kept.size() >= consciousCap) {
+                break;
+            }
+            if (candidate.entry.getId().equals(fallbackSelection.entry.getId())) {
+                continue;
+            }
+            kept.add(candidate);
+        }
+        return selectTopConsciousCandidates(kept, consciousCap);
+    }
+
+    private static boolean containsCandidate(List<SelectionCandidate> candidates, UUID memoryId) {
+        if (candidates == null || candidates.isEmpty() || memoryId == null) {
+            return false;
+        }
+        for (SelectionCandidate candidate : candidates) {
+            if (candidate != null
+                    && candidate.entry != null
+                    && memoryId.equals(candidate.entry.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static SelectionCandidate findCandidate(List<SelectionCandidate> candidates, UUID memoryId,
+            SelectionCandidate fallbackSelection) {
+        if (candidates != null && memoryId != null) {
+            for (SelectionCandidate candidate : candidates) {
+                if (candidate != null
+                        && candidate.entry != null
+                        && memoryId.equals(candidate.entry.getId())) {
+                    return candidate;
+                }
+            }
+        }
+        return fallbackSelection;
     }
 
     private static List<SelectionCandidate> recallAssociationSandbox(List<SelectionCandidate> consciousSelection,
@@ -731,6 +938,9 @@ public final class LTMRecallEngine {
             if (consciousCandidate == null || consciousCandidate.entry == null) {
                 continue;
             }
+            double consciousBaseScore = consciousCandidate.consciousScore > 0.0
+                    ? consciousCandidate.consciousScore
+                    : consciousCandidate.score;
             List<DetailTag> selectedTags = pickCueTags(
                     consciousCandidate.entry.getAssociativeDetailTags(),
                     tagsPerMemory,
@@ -739,7 +949,7 @@ public final class LTMRecallEngine {
                 cueInputs.add(new Seed(
                         detailTag,
                         consciousCandidate.entry.getFocusTags(),
-                        clamp(0.90, 2.40, 1.05 + consciousCandidate.score * 0.50)));
+                        clamp(0.90, 2.40, 1.05 + consciousBaseScore * 0.50)));
             }
         }
         return cueInputs;
@@ -860,17 +1070,10 @@ public final class LTMRecallEngine {
                 }
 
                 SemanticMatch semanticMatch = findBestSemanticMatch(seed.tag, entry.getAssociativeDetailTags(), relationDict);
-                int recentRank = memory.getRecentRecallRank(entry.getId());
-                if (recentRank >= 0
-                        && recentRank <= 1
-                        && semanticMatch.score < RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD) {
-                    continue;
-                }
                 double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
                 double cueFocusAlignment = computeCueFocusAlignment(seed.focusTags, entry.getFocusTags());
                 double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
                 double ageFactor = computeAgeFactor(entry, currentGameTime);
-                double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
 
                 boolean hasSemanticSignal = semanticMatch.score > 0.0;
                 boolean hasStrongFocusSignal = memoryFocusAlignment >= 0.38 && cueFocusAlignment >= 0.20;
@@ -884,13 +1087,11 @@ public final class LTMRecallEngine {
                         + cueFocusAlignment * 0.25
                         + desiredFocusBonus;
                 double strengthFactor = 0.65
-                        + entry.getImportance() * 0.20
-                        + entry.getClarity() * 0.15;
+                        + entry.getImportance() * 0.35;
                 double sourceFactor = 0.60 + clamp01(seed.sourceScore / 2.0) * 0.40;
                 double totalScore = semanticFactor
                         * focusFactor
                         * (0.55 + ageFactor * 0.45)
-                        * recentPenalty
                         * strengthFactor
                         * sourceFactor;
 
@@ -900,7 +1101,7 @@ public final class LTMRecallEngine {
 
                 MemoryCandidate candidate = candidateMap.computeIfAbsent(entry.getId(), id -> new MemoryCandidate(entry));
                 candidate.addEvidence(seed, totalScore, semanticMatch.score, memoryFocusAlignment, ageFactor,
-                        recentPenalty, semanticMatch.tag);
+                        semanticMatch.tag);
             }
         }
 
@@ -915,26 +1116,9 @@ public final class LTMRecallEngine {
                 continue;
             }
 
-            int recentRank = memory.getRecentRecallRank(entry.getId());
-            if (recentRank >= 0 && recentRank <= 1 && fermentationEntry.score < 0.70) {
-                continue;
-            }
+            double totalScore = fermentationEntry.score;
 
-            double memoryFocusAlignment = focusProfile.alignment(entry.getFocusTags());
-            double desiredFocusBonus = computeDesiredFocusBonus(state, entry.getFocusTags());
-            double ageFactor = computeAgeFactor(entry, currentGameTime);
-            double recentPenalty = computeRecentRecallPenalty(memory, entry.getId());
-            double persistenceFactor = 0.58
-                    + clamp(0.0, 1.60, fermentationEntry.score) * 0.38
-                    + Math.min(0.18, fermentationEntry.reinforcementCount * 0.03)
-                    + Math.min(0.10, fermentationEntry.cueBoostThisTurn * 0.08);
-            double focusFactor = 0.70 + memoryFocusAlignment * 0.22 + desiredFocusBonus;
-            double totalScore = persistenceFactor
-                    * focusFactor
-                    * (0.60 + ageFactor * 0.40)
-                    * recentPenalty;
-
-            if (totalScore < FERMENTATION_PERSISTENCE_SCORE_THRESHOLD) {
+            if (totalScore < FERMENTATION_RETENTION_SCORE_THRESHOLD) {
                 continue;
             }
 
@@ -943,9 +1127,7 @@ public final class LTMRecallEngine {
                     fermentationEntry.memoryId,
                     totalScore,
                     fermentationEntry.score,
-                    memoryFocusAlignment,
-                    ageFactor,
-                    recentPenalty,
+                    0.0,
                     fermentationEntry.supportTags);
         }
 
@@ -1007,11 +1189,25 @@ public final class LTMRecallEngine {
                 : 0.0;
     }
 
-    private static boolean containsImplantedRecall(List<LTMEntry> recalled) {
-        for (LTMEntry entry : recalled) {
-            if (entry != null
-                    && entry.getSourceType() == LTMEntry.SourceType.IMPLANTED
-                    && entry.getOccurredGameTime() < 0L) {
+    private static Set<UUID> toMemoryIdSet(List<SelectionCandidate> selection) {
+        if (selection == null || selection.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (SelectionCandidate candidate : selection) {
+            if (candidate != null && candidate.entry != null && candidate.entry.getId() != null) {
+                ids.add(candidate.entry.getId());
+            }
+        }
+        return ids;
+    }
+
+    private static boolean containsImplantedSelection(List<SelectionCandidate> selection) {
+        for (SelectionCandidate candidate : selection) {
+            if (candidate != null
+                    && candidate.entry != null
+                    && candidate.entry.getSourceType() == LTMEntry.SourceType.IMPLANTED
+                    && candidate.entry.getOccurredGameTime() < 0L) {
                 return true;
             }
         }
@@ -1026,7 +1222,6 @@ public final class LTMRecallEngine {
 
         Map<UUID, ImplantedFallbackCandidate> candidateMap = new LinkedHashMap<>();
         for (LTMEntry entry : memory.getLtmRecords()) {
-            int recentRank = memory.getRecentRecallRank(entry.getId());
             if (entry == null
                     || entry.getId() == null
                     || recalledIds.contains(entry.getId())
@@ -1045,11 +1240,9 @@ public final class LTMRecallEngine {
                 if (candidate == null) {
                     candidate = candidateMap.computeIfAbsent(entry.getId(), ignored -> new ImplantedFallbackCandidate(entry));
                     candidate.recentPenalty = recentPenalty;
-                    candidate.recentRank = recentRank;
                 }
                 candidate.rawWeight += match.score;
                 candidate.hitCount++;
-                candidate.maxSemanticScore = Math.max(candidate.maxSemanticScore, match.score);
                 candidate.matchedSeedTags.add(cueInput.tag.toString());
                 candidate.matchedMemoryTags.add(match.tag.toString());
             }
@@ -1057,11 +1250,6 @@ public final class LTMRecallEngine {
 
         List<ImplantedFallbackCandidate> candidates = new ArrayList<>();
         for (ImplantedFallbackCandidate candidate : candidateMap.values()) {
-            if (candidate.recentRank >= 0
-                    && candidate.recentRank <= 1
-                    && candidate.maxSemanticScore < RECENT_RECALL_HARD_SKIP_SEMANTIC_THRESHOLD) {
-                continue;
-            }
             candidate.weight = candidate.rawWeight * candidate.recentPenalty;
             if (candidate.weight > 0.0 && candidate.hitCount > 0) {
                 candidates.add(candidate);
@@ -1115,28 +1303,22 @@ public final class LTMRecallEngine {
     }
 
     private static double computeRecentRecallPenalty(AgentMemory memory, UUID memoryId) {
-        int rank = memory.getRecentRecallRank(memoryId);
-        if (rank < 0) {
+        int remainingCooldown = memory.getRecentRecallCooldown(memoryId);
+        if (remainingCooldown <= 0) {
             return 1.0;
         }
-        if (rank == 0) {
-            return 0.01;
-        }
-        if (rank == 1) {
-            return 0.03;
-        }
-        if (rank == 2) {
-            return 0.07;
-        }
-        if (rank == 3) {
-            return 0.14;
-        }
-        if (rank == 4) {
-            return 0.24;
-        }
         int window = Math.max(1, memory.getRecentRecallWindow());
-        double ratio = rank / (double) window;
-        return clamp(0.24, 0.86, 0.24 + Math.pow(clamp01(ratio), 1.8) * 0.62);
+        int releaseStep = window <= 1
+                ? 0
+                : Math.max(0, Math.min(window - 1, window - remainingCooldown));
+        double ratio = window <= 1
+                ? 0.0
+                : clamp01(releaseStep / (double) Math.max(1, window - 1));
+        double t = clamp01((ratio - RECENT_RECALL_RELEASE_START)
+                / Math.max(0.0001, RECENT_RECALL_RELEASE_END - RECENT_RECALL_RELEASE_START));
+        return RECENT_RECALL_PENALTY_FLOOR
+                + (RECENT_RECALL_PENALTY_CEIL - RECENT_RECALL_PENALTY_FLOOR)
+                * Math.pow(t, RECENT_RECALL_CURVE_EXPONENT);
     }
 
     private static SemanticMatch findBestSemanticMatch(DetailTag seedTag, Collection<DetailTag> memoryTags,

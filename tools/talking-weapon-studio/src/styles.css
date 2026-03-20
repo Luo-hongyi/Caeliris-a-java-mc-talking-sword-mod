@@ -1433,6 +1433,175 @@ button {
   align-items: stretch;
 }
 
+.recall-workbench {
+  display: grid;
+  gap: 18px;
+}
+
+.recall-stat-grid,
+.recall-controls-grid,
+.recall-formula-grid,
+.recall-ledger-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.recall-stat-grid,
+.recall-controls-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recall-ledger-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.recall-ledger-card,
+.recall-formula-card,
+.recall-memory-pill {
+  border: 1px solid rgba(105, 79, 48, 0.12);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.recall-ledger-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.recall-ledger-card strong {
+  font-size: 1.18rem;
+  letter-spacing: -0.04em;
+}
+
+.recall-ledger-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.recall-formula-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.recall-formula-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.recall-formula-copy {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(31, 27, 22, 0.05);
+  color: var(--ink);
+  font: 0.84rem/1.6 "SFMono-Regular", "SF Mono", "Menlo", monospace;
+  white-space: pre-wrap;
+}
+
+.recall-formula-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recall-form-grid {
+  margin-bottom: 0;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.recall-checkbox {
+  margin-top: 14px;
+}
+
+.formula-chart-shell {
+  border: 1px solid rgba(105, 79, 48, 0.12);
+  border-radius: 18px;
+  padding: 8px;
+  background: linear-gradient(135deg, rgba(255, 250, 244, 0.94), rgba(250, 246, 240, 0.94));
+}
+
+.formula-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.formula-chart-axis {
+  stroke: rgba(105, 79, 48, 0.24);
+  stroke-width: 1.2;
+}
+
+.formula-chart-grid {
+  stroke: rgba(105, 79, 48, 0.1);
+  stroke-dasharray: 4 6;
+  stroke-width: 1;
+}
+
+.formula-chart-line {
+  fill: none;
+  stroke: rgba(189, 90, 45, 0.92);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.formula-chart-point {
+  fill: rgba(189, 90, 45, 1);
+}
+
+.formula-chart-point.muted {
+  fill: rgba(126, 160, 183, 0.9);
+}
+
+.formula-chart-label,
+.formula-chart-caption {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.formula-chart-caption.vertical {
+  writing-mode: vertical-rl;
+}
+
+.recall-memory-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.recall-memory-pill {
+  padding: 14px;
+}
+
+.recall-memory-pill strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.recall-memory-pill p {
+  margin: 0;
+}
+
+.recall-scalar-meter {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(31, 27, 22, 0.08);
+}
+
+.recall-scalar-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(189, 90, 45, 0.95), rgba(124, 54, 30, 0.92));
+}
+
 .runtime-graph-panel {
   overflow: hidden;
 }
@@ -1582,6 +1751,8 @@ button {
   .relation-batch-grid,
   .state-weight-grid,
   .tag-browser-toolbar,
+  .recall-stat-grid,
+  .recall-controls-grid,
   .two-col,
   .form-grid {
     grid-template-columns: 1fr;

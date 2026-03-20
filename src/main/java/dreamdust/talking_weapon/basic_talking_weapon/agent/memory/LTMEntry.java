@@ -51,8 +51,7 @@ public final class LTMEntry {
     // 3. 权重与遗忘区 (决定 Top-K 选拔和衰退速度)
     // ═══════════════════════════════════════════════════════════════
     private final float importance;         // 初始核心权重 (0.0 - 1.0)
-    private float clarity;                  // 动态清晰度指标
-    private long lastAccessedAt;            // 最后一次被回忆时间 (用于重置 clarity 或衰减算法)
+    private long lastAccessedAt;            // 最后一次被回忆时间（当前仅记录，预留给未来的记忆维护逻辑）
 
     private LTMEntry(Builder builder) {
         this.id = builder.id != null ? builder.id : UUID.randomUUID();
@@ -101,8 +100,6 @@ public final class LTMEntry {
         this.raining = builder.raining;
         
         this.importance = Math.max(0f, Math.min(1f, builder.importance));
-        // 新建时，默认 clarity 与 importance 一致，或者明确赋值
-        this.clarity = builder.clarity >= 0 ? builder.clarity : this.importance;
         this.lastAccessedAt = builder.lastAccessedAt > 0 ? builder.lastAccessedAt : this.timestamp;
     }
 
@@ -124,23 +121,15 @@ public final class LTMEntry {
     public String getBiomeId() { return biomeId; }
     public Boolean getRaining() { return raining; }
     public float getImportance() { return importance; }
-    public float getClarity() { return clarity; }
     public long getLastAccessedAt() { return lastAccessedAt; }
 
     // --- Actions ---
 
     /**
-     * 更新最后一次访问时间，有助于减缓遗忘
+     * 记录最后一次被回忆的时间戳，当前主要用于保留运行时轨迹。
      */
     public void markAccessed(long currentTime) {
         this.lastAccessedAt = currentTime;
-    }
-
-    /**
-     * 更新清晰度
-     */
-    public void setClarity(float newClarity) {
-        this.clarity = Math.max(0f, Math.min(1f, newClarity));
     }
     
     // --- 便捷查询 ---
@@ -210,7 +199,6 @@ public final class LTMEntry {
         private String biomeId;
         private Boolean raining;
         private float importance = 0.5f;
-        private float clarity = -1f;
         private long lastAccessedAt = -1L;
 
         private Builder() {}
@@ -237,7 +225,6 @@ public final class LTMEntry {
         public Builder detailTags(Set<DetailTag> tags) { detailTags.addAll(tags); return this; }
         
         public Builder importance(float imp) { this.importance = imp; return this; }
-        public Builder clarity(float c) { this.clarity = c; return this; }
 
         public LTMEntry build() {
             return new LTMEntry(this);

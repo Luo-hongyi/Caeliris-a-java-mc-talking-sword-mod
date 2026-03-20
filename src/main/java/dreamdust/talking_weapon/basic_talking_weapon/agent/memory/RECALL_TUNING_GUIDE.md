@@ -21,8 +21,9 @@
 4. `新候选记忆 + 旧 fermentation_buffer -> 最终候选记忆`
 5. `最终候选记忆 -> retained fermentation`
 6. `retained fermentation -> conscious memories`
-7. `conscious memories -> association sandbox`
-8. 若启用且本轮未命中植入记忆：`cue_pool -> implanted fallback`
+7. `conscious memories -> prompt memories`
+8. `conscious memories -> association sandbox`
+9. 若启用且本轮未命中植入记忆：`cue_pool -> implanted fallback`
 
 这里第 3 步和第 4 步要刻意分开理解：
 
@@ -40,7 +41,7 @@
    - 这里得到的是 `Seed` 列表，不是记忆层
 2. `collectLayerCandidates(mainCueBatch, fermentationSnapshot, ...)`
    - 一部分逻辑是 `主召回 cue -> 新候选记忆`
-   - 另一部分逻辑是让 `旧 fermentation_buffer` 里的记忆按 persistence 公式再次参赛
+   - 另一部分逻辑是让 `旧 fermentation_buffer` 里的记忆直接按当前 `fermentationScore` 再次参赛
    - 所以这个函数返回的已经是一个“混合候选集”，不是纯粹的新召回结果
 3. `selectPromotionCandidates(...)`
    - 从上一步的混合候选集中抽出本轮被提升的一批 `promotedCandidates`
@@ -48,14 +49,19 @@
    - 再把 `promotedCandidates` 和旧 `fermentationSnapshot` 合并成 `SelectionCandidate`
    - 这一层更接近“最终候选记忆 -> retained selection”的准备阶段
 5. `selectTopCandidates(...)`
-   - 先截出 `retained fermentation`
-   - 再从 retained 中截出 `conscious memories`
+   - 从候选里先截出 `retained fermentation`
+6. `selectConsciousCandidates(retainedSelection, ...)`
+   - 再从 retained 中单独计算显性浮现分，截出 `conscious memories`
+7. `fillPromptMemories(consciousSelection, ...)`
+   - 对 `conscious memories` 再过一层“愿不愿意说出口”的随机阀门
+   - 这一层允许欠填，甚至允许本轮 `0` 条记忆进入 prompt
 
 其中：
 
 - `tag_pool` 是跨轮维护的 `detail tag -> score` 缓冲层
 - `fermentation_buffer` 是跨轮维护的候选记忆层
-- `conscious memories` 是本轮真正进入 prompt 的记忆
+- `conscious memories` 是本轮真正浮到表层、被 agent 意识到的记忆
+- `prompt memories` 是本轮最终真的被填入 prompt 的记忆
 - `association sandbox` 只服务本轮，不会回写主发酵层
 
 结论：
@@ -73,10 +79,12 @@
   - 只是它不是持久层，而是本轮由 `tag_pool` 临时投影出来的输入视图
   - 当前代码里对应的是 `Seed`
 - `fermentation_buffer` 里装的是 **记忆**
-  - 具体是 `memoryId + score + supportTags + associativeTags + reinforcementCount + 时间戳`
+  - 具体是 `memoryId + score + supportTags + associativeTags + 时间戳`
   - 它表示“哪些记忆最近被激活过，但还不一定进入表层意识”
 - `conscious_memories` 里装的也是 **记忆**
-  - 只是这里是本轮真正入选、会进入 prompt 的那几条
+  - 只是这里是本轮真正浮到表层、已经“想到”的那几条
+- `prompt_memories` 里装的也是 **记忆**
+  - 它是 `conscious_memories` 里最终愿意说出口、会进入 prompt 的子集
 - `association_sandbox` 里同时会记录
   - sandbox 用到的 `cueTags`
   - sandbox 命中的 `memoryIds`
@@ -87,6 +95,7 @@
 - `主召回 cue` 是“这一轮被拿去检索的线索切片”
 - `fermentation_buffer` 是“哪些记忆正在被这些线索慢慢煮热”
 - `conscious_memories` 是“这一轮真正浮到表面的记忆”
+- `prompt_memories` 是“这一轮最终真的说出口的记忆”
 
 所以我们之前流程里：
 
@@ -348,20 +357,43 @@ ageFactor = clamp(0.15, 1.0, decay)
 ### 5.4 最近召回惩罚
 
 ```text
-rank 0 -> 0.01
-rank 1 -> 0.03
-rank 2 -> 0.07
-rank 3 -> 0.14
-rank 4 -> 0.24
-else   -> clamp(0.24, 0.86, 0.24 + pow(clamp01(rank / window), 1.8) * 0.62)
+remainingCooldown = suppressionTable[memoryId]    // default 0
+
+if remainingCooldown <= 0:
+    recentPenalty = 1.0
+else:
+    releaseStep =
+      0                                                    if window <= 1
+      clamp(0, window - 1, window - remainingCooldown)     otherwise
+
+    ratio =
+      0.0                                        if window <= 1
+      clamp01(releaseStep / max(1, window - 1))  otherwise
+
+    t = clamp01((ratio - 0.15) / (0.85 - 0.15))
+
+    recentPenalty =
+      0.02
+      + (0.86 - 0.02) * pow(t, 1.8)
 ```
 
-此外有硬跳过：
+含义：
 
-- 若最近 rank 为 `0` 或 `1`
-- 且当前语义匹配 `< 0.88`
-
-则这条记忆直接跳过，不只是降权
+- 当前不再维护“最近召回 queue”，而是维护 `memoryId -> remainingCooldown` 的 suppression table
+- 每轮 recall 开始时，表里所有 `remainingCooldown` 先 `-1`
+- 本轮真正进入 `prompt memories` 的记忆，会在 recall 结束后写回表中，并设置为 `window + 1`
+- 因此下一轮 recall 再计算时，刚被显性提起的记忆会看到 `remainingCooldown = window`
+- 不在最近召回窗口里的记忆：`recentPenalty = 1.0`
+- 在窗口里的记忆：统一按一条平滑释放曲线降权
+- 越接近最近一次被提起的位置，惩罚越强
+- 越靠近窗口尾部，惩罚越接近释放完成，但在窗口内仍保留少量抑制
+- 同一条记忆不会因为后来又有别的记忆被显性提起，就被从队列尾部挤掉而提前解除抑制
+- `LTM_RECALL_RECENT_WINDOW` 现在表示“抑制持续轮数”，而不是“队列容量”
+- 当前 `recentPenalty` 会用于：
+  - `retained fermentation -> conscious memories` 的显性浮现排序
+  - `implanted fallback` 的候选权重
+- 不用于旧 `fermentation_buffer` 的保留 / 续存竞争
+- suppression table 的**登记时机**已经后移到 `prompt fill` 之后，而不是 `conscious` 阶段
 
 ### 5.5 主召回总分
 
@@ -384,8 +416,7 @@ focusFactor =
 
 strengthFactor =
   0.65
-  + importance * 0.20
-  + clarity * 0.15
+  + importance * 0.35
 
 sourceFactor =
   0.60 + clamp01(sourceScore / 2.0) * 0.40
@@ -394,7 +425,6 @@ totalScore =
   semanticFactor
   * focusFactor
   * (0.55 + ageFactor * 0.45)
-  * recentPenalty
   * strengthFactor
   * sourceFactor
 ```
@@ -407,25 +437,11 @@ totalScore >= 0.22
 
 ## 6. 发酵层保留评分公式
 
-已有发酵记忆再次参与竞争时，使用 persistence 模型：
+已有发酵记忆再次参与竞争时，不再做第二次 focus 重编码，而是直接使用当前发酵分数：
 
 ```text
-persistenceFactor =
-  0.58
-  + clamp(0.0, 1.60, fermentationScore) * 0.38
-  + min(0.18, reinforcementCount * 0.03)
-  + min(0.10, cueBoostThisTurn * 0.08)
-
-focusFactor =
-  0.70
-  + memoryFocusAlignment * 0.22
-  + desiredFocusBonus
-
 totalScore =
-  persistenceFactor
-  * focusFactor
-  * (0.60 + ageFactor * 0.40)
-  * recentPenalty
+  fermentationScore
 ```
 
 阈值：
@@ -434,16 +450,20 @@ totalScore =
 totalScore >= 0.16
 ```
 
-额外硬跳过：
+说明：
 
-- 若最近 rank 为 `0` 或 `1`
-- 且当前 `fermentationEntry.score < 0.70`
+- 发酵层不再额外乘 `ageFactor`，记忆年龄只在主召回阶段参与评分
+- 发酵层不再使用 `recentPenalty`
+- 发酵层不再额外乘 focusFactor；focus 只在主召回阶段编码一次
+- `cueBoostThisTurn` 只负责把分数加回 `fermentationScore`，不再在 persistence 公式里重复加一次
+- 发酵记忆的黏性 / 惯性主要由 `fermentation_buffer` 自身的半衰期曲线决定
+- `fermentationScore` 已经包含了跨轮衰减后的剩余热度，以及本轮 cue 回灌后的再加热结果
 
-则直接跳过
+## 7. 抽样与阀门模型
 
-## 7. 抽样温度模型
+### 7.1 温度抽样
 
-所有“带随机性”的抽样都使用同一套温度模型：
+以下这些“候选之间的抽样竞争”使用同一套温度模型：
 
 ```text
 exponent = 2.6 - clamp01(wanderingMind) * 2.0
@@ -455,7 +475,60 @@ sampleWeight = max(0.0001, score) ^ exponent
 - `wanderingMind` 越低，指数越高，分布越尖锐，越偏高分
 - `wanderingMind` 越高，指数越低，分布越平坦，越容易抽到次高分
 
+当前温度模型接入的位置：
+
+1. `selectPromotionCandidates(...)`
+   - 用于从主召回 / 发酵层混合候选里抽出 `promotedCandidates`
+   - 权重使用 `candidate.combinedScore`
+2. `pickCueTags(...)`
+   - 用于从每条表层记忆的 associative tags 中抽出 sandbox cue tags
+   - 权重使用 tag priority
+3. `recallAssociationSandbox(...)`
+   - 用于从 sandbox 候选记忆里抽出最终联想结果
+   - 权重使用 `candidate.combinedScore`
+4. `pickWeightedImplantedFallback(...)`
+   - 用于从植入记忆保底候选里补 1 条
+   - 权重使用 `rawWeight * recentPenalty`
+
+当前 **不使用温度抽样** 的位置：
+
+- `tag_pool -> 主召回 cue` 的构造本身
+- 主召回总评分公式
+- 发酵层保留评分公式
+- `retained fermentation` 的最终截断排序
+- `conscious memories` 的最终截断排序
+
+因此目前 `wanderingMind` 控制的是“高分候选之间有多随机”，而不是“候选本身怎么打分”。
+
+### 7.2 Prompt Fill 阀门
+
+`conscious memories -> prompt memories` 不使用上面的温度模型，而是单独走一层 Bernoulli 阀门：
+
+```text
+normalized = clamp01(consciousScore / 2.40)
+
+speakProbability =
+  clamp(
+    0.0,
+    1.0,
+    (0.08 + normalized * 0.84)
+    * LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE
+  )
+
+filledIntoPrompt = random(0, 1) < speakProbability
+```
+
+含义：
+
+- `consciousScore` 越高，越可能真的被说出口
+- 但即使已经进入 `conscious memories`，本轮仍然可能选择不说
+- 允许欠填，也允许本轮 `0` 条记忆进入 prompt
+- `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE` 越低，整体越不愿意说；越高，整体越愿意说
+- 若某条记忆是“植入记忆保底”强制补入的那一条，则会直接跳过这个阀门，保证它真的进入 prompt
+
 ## 8. 候选保留与表层意识
+
+### 8.1 Retained Fermentation
 
 发酵层保留上限：
 
@@ -466,14 +539,54 @@ retentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))
 排序规则：
 
 1. `score` 降序
-2. `reinforcementCount` 降序
-3. `supportTags.size()` 降序
-4. `memoryId` 字典序
+2. `supportTags.size()` 降序
+3. `memoryId` 字典序
 
 随后：
 
-- 先截出 `retained fermentation`
-- 再从其中截出 `conscious memories`
+- 这里只截出 `retained fermentation`
+
+### 8.2 Conscious Memories
+
+`conscious memories` 不再直接等于 retained 的前 `N` 名，而是单独走一层显性浮现排序：
+
+```text
+consciousScore = retainedScore * recentPenalty
+```
+
+其中：
+
+- `retainedScore` 是上一层 retained fermentation 的分数
+- `recentPenalty` 来自第 5.4 节的 suppression table 曲线
+
+表层意识上限：
+
+```text
+consciousCap = conscious_memory_cap
+```
+
+排序规则：
+
+1. `consciousScore` 降序
+2. `retainedScore` 降序
+3. `supportTags.size()` 降序
+4. `memoryId` 字典序
+
+含义：
+
+- retained 表示“这条记忆当前还在脑中发热”
+- conscious 表示“这条记忆这一轮是否真的浮到表层”
+- 因此最近显性提起过的记忆，仍可以先进入 conscious
+- 但它会在 conscious 层被 `recentPenalty` 压住，降低后续真的说出来的概率
+
+### 8.3 Prompt Memories
+
+`prompt memories` 是 `conscious memories` 的一个子集：
+
+- 它们经过第 7.2 节的 `prompt fill` 阀门后，才真正进入 prompt
+- 只有这一层会登记 suppression table
+- 只有这一层会被从 `retained fermentation / fermentation_buffer` 中抛出
+- 因此“想到但没说”的记忆，会继续留在 retained 里发酵
 
 ## 9. Sandbox 联想
 
@@ -514,7 +627,7 @@ sandboxBudget = max(1, min(4, consciousMemoryCount))
 触发条件：
 
 - `implanted_memory_safety_net = true`
-- 正常召回结果里没有 `SourceType.IMPLANTED && occurredGameTime < 0`
+- 正常 `conscious memories` 里没有 `SourceType.IMPLANTED && occurredGameTime < 0`
 - 本轮 `cue_pool` 非空
 
 候选范围：
@@ -530,12 +643,26 @@ rawWeight = sum(all semantic cue hits)
 weight = rawWeight * recentPenalty
 ```
 
-额外硬跳过：
+说明：
 
-- 若最近 rank 为 `0` 或 `1`
-- 且最大语义匹配 `< 0.88`
+- 植入记忆保底不再额外使用独立的 recent hard skip
+- 是否还能被补捞到，统一由 `recentPenalty * rawWeight` 决定
 
-则直接跳过
+抽到之后，不会继承候选权重本身，而是以固定注入分写入本轮 selection：
+
+```text
+fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
+```
+
+当前默认值：
+
+- `1.25`
+
+注意：
+
+- `weight` 决定“从哪些 implanted 里抽中哪一条”
+- `fallbackEntryScore` 决定“抽中之后，它在 conscious / retained 竞争里有多强”
+- 被这条 safety net 补进来的记忆会强制通过 `prompt fill` 阀门
 
 最后用同一套 `wanderingMind` 温度抽样，只补 1 条
 
@@ -558,6 +685,9 @@ weight = rawWeight * recentPenalty
 - `LTM_RECALL_SANDBOX_CUES_PER_MEMORY`
 - `LTM_RECALL_CONSCIOUS_MEMORY_CAP`
 - `LTM_RECALL_RECENT_WINDOW`
+- `LTM_RECALL_RECENT_WINDOW_CAP`
+- `LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE`
+- `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE`
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
@@ -573,7 +703,13 @@ weight = rawWeight * recentPenalty
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
 - `LTM_RECALL_INTERVAL_BONUS_STEEPNESS`
 
-目前已经接入 Forge config、游戏内 config screen，并在运行时生效
+目前已经接入运行时，并通过 `studio_workspace/memory_recall_tuning.json` 作为 authored 真源生效
+
+现在额外补充：
+
+- `memory_recall_tuning.json` 是 recall 公式参数的 workspace 真源
+- Studio 的 `Recall Workbench` 页面直接编辑这份文件
+- 游戏启动和 Studio 发布时，都会先读取这份文件，再同步回 `TalkingWeaponConfig` 与 `talking_weapon-client.toml`
 
 ### Attention Layer
 
@@ -581,6 +717,48 @@ weight = rawWeight * recentPenalty
 - `attention_weights.common`
 - `LOOKING_AT_ATTENTION_BONUS_ENABLED`
 - `LOOKING_AT_ATTENTION_BONUS_VALUE`
+
+### 11.1 参数 -> 公式 -> 输入/输出
+
+下面只列 recall 页里当前重点暴露的参数。Studio 页面会按这个映射做卡片和函数图像。
+
+#### Agent State / Runtime
+
+| 参数 | 主公式 | 输入 | 输出 |
+|---|---|---|---|
+| `wandering_mind` | `exponent = 2.6 - clamp01(wanderingMind) * 2.0` | `candidate score` | `sampleWeight` |
+| `recall_tuning.main_candidates_per_cue` | `layerBudget = max(1, mainCueCount * mainCandidatesPerCue)` | `mainCueCount` | `promotion budget` |
+| `recall_tuning.sandbox_cues_per_memory` | `cueCountPerMemory = sandboxCuesPerMemory` | `consciousMemoryCount` | `sandbox cue count` |
+| `recall_tuning.conscious_memory_cap` | `consciousCap = consciousMemoryCap` | `retained candidates` | `max conscious count` |
+| `implanted_memory_safety_net` | fallback trigger gate | `cue_pool` + implanted hit presence | `是否运行 implanted fallback` |
+| `current_desire_tag` | desire branch selector | memory / focus 是否含该 tag | `是否激活 desire bonus 分支` |
+
+补充：
+
+- `conscious_memory_cap` 还会派生 `retentionCap = clamp(8, 32, max(consciousMemoryCap * 4, 8))`
+- 这个派生关系当前仍然保留，所以它是 recall 页里唯一一个“同一卡片里同时展示主输出和派生输出”的参数
+
+#### Config / Formula Mirror
+
+| 参数 | 主公式 | 输入 | 输出 |
+|---|---|---|---|
+| `LTM_RECALL_RECENT_WINDOW` | `effectiveWindow = min(window, windowCap)` + release curve | `turnsSincePrompt` | `recentPenalty` |
+| `LTM_RECALL_RECENT_WINDOW_CAP` | `effectiveWindow = min(window, windowCap)` | `configured window` | `effective window` |
+| `LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE` | `fallbackEntryScore = config` | selected fallback memory | injected selection score |
+| `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE` | `speakProbability = clamp(0, 1, rawProbability * scale)` | `consciousScore` | `speakProbability` |
+| `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS` | `decayFactor = exp(-deltaDays / halfLifeDays)` | `deltaDays` | `tagPool decayFactor` |
+| `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS` | `decayFactor = exp(-deltaDays / halfLifeDays)` | `deltaDays` | `fermentation decayFactor` |
+| `LTM_RECALL_INTERVAL_BONUS_SCALE` | `intervalBonus = clamp(1, 2.6, 1 + min(1.6, log1p(days * steepness) * scale))` | `deltaDays` | `intervalBonus` |
+| `LTM_RECALL_INTERVAL_BONUS_STEEPNESS` | 同上 | `deltaDays` | `intervalBonus` |
+| `LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` | `ageFactor = clamp(0.15, 1.0, exp(-ageDays / halfLifeDays))` | `ageDays` | `ageFactor` |
+| `LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE` | `desireBonus = scale * focusWeight(tag)` | `focusWeight(tag)` | `desireBonus` |
+| `LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE` | `desiredFocusBonus = scale * focusWeight(desireTag)` | `focusWeight(desireTag)` | `desiredFocusBonus` |
+
+`LTM_RECALL_MAIN_CANDIDATES_PER_CUE`、`LTM_RECALL_SANDBOX_CUES_PER_MEMORY`、`LTM_RECALL_CONSCIOUS_MEMORY_CAP` 的定位补充：
+
+- 它们是 `TalkingWeaponConfig` 中给 `RecallPreset.CUSTOM` 兜底的默认值
+- 真正运行时若 `agent_state.json.state.recall_tuning` 存在，则优先吃 Agent State
+- Studio recall 页会把这三项和 runtime 的 `recall_tuning.*` 分开显示，避免把“默认值”和“当前生效值”混在一起
 
 ## 12. 调参建议
 
@@ -605,12 +783,15 @@ weight = rawWeight * recentPenalty
 ### 想减少重复提及
 
 - 提高 `LTM_RECALL_RECENT_WINDOW`
+- 若当前窗口值已经顶到上限，再提高 `LTM_RECALL_RECENT_WINDOW_CAP`
+- 降低 `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE`
 
 ### 想让手工植入记忆更容易显性出现
 
 - 打开 `implanted_memory_safety_net`
 - 选择 `FULL_VISIBILITY`
 - 提高 `main_candidates_per_cue`
+- 提高 `LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE`
 
 ### 想关闭一跳回灌联想
 

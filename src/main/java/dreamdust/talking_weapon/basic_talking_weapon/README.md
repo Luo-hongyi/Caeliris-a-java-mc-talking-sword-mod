@@ -183,7 +183,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - 多个不同 seed 可以共同指向同一条记忆；系统会在记忆层聚合这些证据，而不是在 seed 层过早去重。
 - 系统会维护一个最近召回窗口，抑制同一段记忆在连续几轮中反复出现；合成记忆的时间衰退半衰期则由 `TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` 控制，并且只按游戏内时间推进。
 - 植入记忆的 `ageFactor` 固定为 `1.0`，不参与时间衰退。
-- 对最近 1~2 次刚回忆过的记忆，若这轮的语义命中强度不足，系统会直接跳过它们，而不是仅仅降权，避免弱相关记忆连续占据高位。
+- 最近召回抑制现在统一通过一条平滑曲线生效，不再额外维护主召回 / 发酵层 / 植入保底三套 hard skip 规则。
 - `nostalgia` 目前保留在 `AgentState` 中，但暂未接入 recall 公式；植入记忆保底仍然是独立开关。
 - 植入记忆保底现在是独立开关：当 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆时，系统会复用本轮总 cue 池，对符合条件的植入记忆做一次轻量加权保底，最多额外补入 1 条。
 - `LTMEntry` 现在会长期存储拆分后的时间锚点（`occurredDayIndex + occurredTimeOfDayTick`），并在运行时重建内部 `occurredGameTime`；召回老化只按游戏内时间推进，不再依赖现实时钟。
@@ -232,7 +232,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
    - 用当前实例的 native 显示名补全缺失的 `tag_descriptions.json`
    - 导出全量 `native_catalog_icons/` 图标包
    - 刷新 `studio_workspace/` 中的 snapshot / runtime view / icon 参考文件，供 Talking Weapon Studio 直接按文件夹导入
-   - `studio_workspace/` 现在同时承载 authored data 真源：`custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json` 由游戏与 Studio 直接共用
+   - `studio_workspace/` 现在同时承载 authored data 真源：`custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json`、`memory_recall_tuning.json` 由游戏与 Studio 直接共用
    - `studio_workspace/` 也承载只读 runtime 参考：最近交互回合、最近一次记忆召回轨迹等，供游戏内调试页与未来 Studio 详细页共读
    - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时热重载这批 authored 文件
    - 直接打开这些运行时导出文件 / 图标目录进行检查

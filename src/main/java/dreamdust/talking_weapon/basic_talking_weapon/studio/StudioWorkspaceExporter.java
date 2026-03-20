@@ -78,6 +78,8 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(StudioRuntimeRecentInteractionsFile.getPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecallTraceFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecallTraceFile.getPath().getFileName()), exportedFiles);
+            StudioMemoryRecallTuningFile.writeCurrent();
+            exportedFiles.add(StudioMemoryRecallTuningFile.FILENAME);
 
             writeManifest(StudioWorkspaceManifestFile.getPath(), snapshot, runtimeTagView, icons, exportedFiles);
             return new ExportResult(workspaceRoot, exportedFiles.size(), snapshot.entryCount,
@@ -184,6 +186,7 @@ public final class StudioWorkspaceExporter {
         versions.put("runtimeTagView", lastModifiedToken(getWorkspaceRoot().resolve("studio_runtime_tag_view.json")));
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
+        versions.put("memoryRecallTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioMemoryRecallTuningFile.FILENAME)));
         versions.put("customTags", lastModifiedToken(getWorkspaceRoot().resolve("custom_tags.json")));
         versions.put("descriptions", lastModifiedToken(getWorkspaceRoot().resolve("tag_descriptions.json")));
         versions.put("relations", lastModifiedToken(getWorkspaceRoot().resolve("tag_relations.json")));

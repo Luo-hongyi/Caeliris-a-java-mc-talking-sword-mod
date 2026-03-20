@@ -83,9 +83,6 @@ public class TalkingWeaponConfigScreen extends Screen {
     private EditBox chatTopKBox;
     private EditBox noiseThresholdBox;
     private EditBox lookingAtAttentionBonusValueBox;
-    private EditBox desireProfileBonusScaleBox;
-    private EditBox desiredFocusBonusScaleBox;
-    private EditBox synthesizedMemoryHalfLifeBox;
 
     // ── LLM 思考模式 ──
     private EditBox thinkingMaxLenBox;
@@ -300,25 +297,6 @@ public class TalkingWeaponConfigScreen extends Screen {
         lookingAtAttentionBonusValueBox.setMaxLength(5);
         lookingAtAttentionBonusValueBox.setCanLoseFocus(true);
         configList.addEntry(new InputEntry("准心目标绝对加分", left, rowWidth, lookingAtAttentionBonusValueBox, "默认 0.18"));
-
-        configList.addEntry(new LabelEntry("§e▸ Recall 公式调参"));
-        desireProfileBonusScaleBox = new EditBox(font, 0, 0, 80, 20, Component.literal("渴望焦点偏置"));
-        desireProfileBonusScaleBox.setValue(String.format(Locale.ROOT, "%.2f", TalkingWeaponConfig.LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE.get()));
-        desireProfileBonusScaleBox.setMaxLength(5);
-        desireProfileBonusScaleBox.setCanLoseFocus(true);
-        configList.addEntry(new InputEntry("渴望 Focus Profile 加权", left, rowWidth, desireProfileBonusScaleBox, "默认 0.25"));
-
-        desiredFocusBonusScaleBox = new EditBox(font, 0, 0, 80, 20, Component.literal("渴望记忆加分"));
-        desiredFocusBonusScaleBox.setValue(String.format(Locale.ROOT, "%.2f", TalkingWeaponConfig.LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE.get()));
-        desiredFocusBonusScaleBox.setMaxLength(5);
-        desiredFocusBonusScaleBox.setCanLoseFocus(true);
-        configList.addEntry(new InputEntry("渴望记忆评分加成", left, rowWidth, desiredFocusBonusScaleBox, "默认 0.18"));
-
-        synthesizedMemoryHalfLifeBox = new EditBox(font, 0, 0, 80, 20, Component.literal("记忆半衰期"));
-        synthesizedMemoryHalfLifeBox.setValue(String.format(Locale.ROOT, "%.2f", TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE.get()));
-        synthesizedMemoryHalfLifeBox.setMaxLength(6);
-        synthesizedMemoryHalfLifeBox.setCanLoseFocus(true);
-        configList.addEntry(new InputEntry("合成记忆时间半衰期", left, rowWidth, synthesizedMemoryHalfLifeBox, "默认 63.00 天"));
 
         // ── 右键触发 · 采集器 ──
         configList.addEntry(new LabelEntry("§e▸ 右键触发 · 采集器"));
@@ -548,15 +526,6 @@ public class TalkingWeaponConfigScreen extends Screen {
         trySetDouble(TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_VALUE,
                 lookingAtAttentionBonusValueBox.getValue(), 0.0, 2.0,
                 TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_VALUE.get());
-        trySetDouble(TalkingWeaponConfig.LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE,
-                desireProfileBonusScaleBox.getValue(), 0.0, 2.0,
-                TalkingWeaponConfig.LTM_RECALL_DESIRE_PROFILE_BONUS_SCALE.get());
-        trySetDouble(TalkingWeaponConfig.LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE,
-                desiredFocusBonusScaleBox.getValue(), 0.0, 2.0,
-                TalkingWeaponConfig.LTM_RECALL_DESIRED_FOCUS_BONUS_SCALE.get());
-        trySetDouble(TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE,
-                synthesizedMemoryHalfLifeBox.getValue(), 1.0, 240.0,
-                TalkingWeaponConfig.LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE.get());
 
         TalkingWeaponConfig.ENABLE_PROACTIVE_TRIGGERS.set(enableProactiveTriggers);
         TalkingWeaponConfig.ENABLE_BIOME_DETECTION.set(enableBiomeDetection);

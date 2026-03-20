@@ -48,6 +48,7 @@ public final class StudioWorkspacePublisher {
         Path workspaceMemories = requireWorkspaceFile(workspaceRoot, "implanted_memories.json");
         Path workspaceAgentState = requireWorkspaceFile(workspaceRoot, "agent_state.json");
         Path workspaceLocations = requireWorkspaceFile(workspaceRoot, "location_registry.json");
+        Path workspaceRecallTuning = workspaceRoot.resolve(StudioMemoryRecallTuningFile.FILENAME);
 
         try {
             List<CustomTagRegistry.CustomTagEntry> customTags = CustomTagRegistry.readEntries(workspaceCustomTags);
@@ -60,6 +61,9 @@ public final class StudioWorkspacePublisher {
             int memoryCount = LTMStorage.validateConfig(workspaceMemories, customTagLookup);
             AgentStateStorage.validateConfig(workspaceAgentState);
             int locationCount = LocationRegistry.readEntries(workspaceLocations).size();
+            if (Files.isRegularFile(workspaceRecallTuning)) {
+                StudioMemoryRecallTuningFile.applyToRuntime(StudioMemoryRecallTuningFile.readOrEmpty());
+            }
 
             List<String> publishedFiles = new ArrayList<>();
             publishedFiles.add(workspaceCustomTags.getFileName().toString());
@@ -69,6 +73,9 @@ public final class StudioWorkspacePublisher {
             publishedFiles.add(workspaceMemories.getFileName().toString());
             publishedFiles.add(workspaceAgentState.getFileName().toString());
             publishedFiles.add(workspaceLocations.getFileName().toString());
+            if (Files.isRegularFile(workspaceRecallTuning)) {
+                publishedFiles.add(workspaceRecallTuning.getFileName().toString());
+            }
 
             acknowledgeWorkspaceManifest();
 

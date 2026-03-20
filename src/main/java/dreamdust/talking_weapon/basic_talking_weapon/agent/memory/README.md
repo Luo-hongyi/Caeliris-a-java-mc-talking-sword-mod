@@ -46,7 +46,7 @@
 - 起点是当前 `visibleContexts`。
 - 首层召回不再先抽少量 seed entries / seed tags，而是直接将当前 `visibleContexts` 中全部 detail tags 聚合为一个去重后的初始 cue 池，再由这些 cue 对长期记忆做统一评分。
 - recall 内部当前维护的是“活跃 cue 输入批次”：第 0 层来自 `tag_pool` 中当前活跃的 detail tags，sandbox 阶段则来自表层记忆回灌出的 associative tags。
-- 每层联想都会对候选记忆做 semantic match、focus 对齐、recent recall 抑制和时间衰退加权；真正的过滤与筛选发生在记忆层，而不是 cue 层。
+- 主召回候选会做 semantic match、focus 对齐和时间衰退加权；旧发酵记忆的续存则主要依赖发酵分数自身的半衰期衰减与本轮 cue 回灌。
 - 时间衰退现在只根据游戏内时间推进，不再回退到现实时钟。
 - 当前实现会把“衰退时钟”和“叙事时钟”分开：前者依赖单调的 `gameTime`，后者依赖长期保存的 `dayIndex + timeOfDayTick`。
 - 不同 seed 可以共同支持同一条记忆，证据会在 memory layer 聚合。
@@ -58,8 +58,11 @@
 - 当前 recall 要求 `SYNTHESIZED` 记忆和本轮运行时都带有有效的游戏内时间；若缺失会直接报错，不再回退到现实小时衰退。
 - `nostalgia` 目前保留在 `AgentState` 中，但暂未接入 recall 公式。
 - “植入记忆保底”现在由 `agent_state.json.state.implanted_memory_safety_net` 单独控制，不再和 `nostalgia` 绑定。
-- 这个“植入记忆保底”不会重跑整套 recall；它只复用本轮已经产生的总 cue 池，遍历所有 `SourceType.IMPLANTED && occurredGameTime < 0` 的记忆，并仅按 cue 与记忆 associative tags 的语义命中强度做一次加权抽取，最终最多补入 1 条记忆。
-- 对最近刚回忆过的记忆，系统不仅会乘上更强的 `recent recall penalty`，还会在最近 1~2 次回忆窗口内对“语义命中不足”的候选直接跳过，避免低相关但高排名的记忆连续喋喋不休。
+- 这个“植入记忆保底”不会重跑整套 recall；它只复用本轮已经产生的总 cue 池，遍历所有 `SourceType.IMPLANTED && occurredGameTime < 0` 的记忆，并仅按 cue 与记忆 associative tags 的语义命中强度做一次加权抽取，最终最多补入 1 条记忆；补入后的 selection 分数由 `TalkingWeaponConfig.LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE` 单独控制。
+- 对最近刚显性回忆过的记忆，系统现在维护的是一张 `memoryId -> remainingCooldown` 的显性回忆抑制表，而不是固定长度 queue；同一条记忆不会因为后来又想起了别的记忆就提前失去抑制。
+- `LTM_RECALL_RECENT_WINDOW` 现在表示“显性回忆抑制持续多少轮 recall”，不是“队列最多记多少条”。
+- retained fermentation 和 conscious memories 现在是两个独立层：前者表示“还在发热”，后者表示“这一轮真的浮到表层”。
+- `recent recall penalty` 现在落在独立的 conscious 选择层；越靠近最近一次召回，显性浮现抑制越强，冷却结束后恢复为 `1.0`；该抑制不直接作用于旧发酵层的续存。
 
 ## 当前缺口：LTM 生成
 

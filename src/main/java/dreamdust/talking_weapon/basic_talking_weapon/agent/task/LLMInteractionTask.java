@@ -493,9 +493,9 @@ public class LLMInteractionTask extends AgentTask {
 
             TagDescriptionDictionary tagDict = TagDescriptionDictionary.getInstance();
 
-            if (!recallResult.recalledMemories.isEmpty()) {
+            if (!recallResult.promptMemories.isEmpty()) {
                 sb.append("[Recalled Long-Term Memories]\n");
-                for (LTMEntry ltm : recallResult.recalledMemories) {
+                for (LTMEntry ltm : recallResult.promptMemories) {
                     sb.append("- ").append(ltm.getDescription());
                     String timeSemantic = describePromptMemoryTimeSemantic(ltm, tagDict);
                     if (!timeSemantic.isBlank()) {

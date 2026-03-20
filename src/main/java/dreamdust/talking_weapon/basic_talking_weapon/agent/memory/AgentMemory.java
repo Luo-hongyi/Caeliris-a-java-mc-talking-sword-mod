@@ -1,10 +1,11 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -48,7 +49,7 @@ public class AgentMemory {
 
     private final List<LTMEntry> ltmRecords;
     private int ltmRecordsCapacity;
-    private final Deque<UUID> recentRecalledMemoryIds;
+    private final LinkedHashMap<UUID, Integer> recentRecallSuppressionTable;
     private int recentRecallWindow;
     private final RecallRuntimeState recallRuntimeState;
 
@@ -58,7 +59,7 @@ public class AgentMemory {
         this.stmPool = new STMPool();
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
-        this.recentRecalledMemoryIds = new ArrayDeque<>();
+        this.recentRecallSuppressionTable = new LinkedHashMap<>();
         this.recentRecallWindow = 6;
         this.recallRuntimeState = new RecallRuntimeState();
 
@@ -130,11 +131,27 @@ public class AgentMemory {
 
     public synchronized void setRecentRecallWindow(int window) {
         this.recentRecallWindow = Math.max(1, window);
-        trimRecentRecallQueue();
+        trimRecentRecallSuppressionTable();
     }
 
     public synchronized int getRecentRecallWindow() {
         return recentRecallWindow;
+    }
+
+    public synchronized void beginRecentRecallTurn() {
+        if (recentRecallSuppressionTable.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<UUID, Integer>> iterator = recentRecallSuppressionTable.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Integer> entry = iterator.next();
+            int remaining = Math.max(0, entry.getValue() - 1);
+            if (remaining <= 0) {
+                iterator.remove();
+            } else {
+                entry.setValue(remaining);
+            }
+        }
     }
 
     public synchronized void noteRecalledMemories(List<LTMEntry> recalledEntries) {
@@ -145,37 +162,41 @@ public class AgentMemory {
             if (entry == null || entry.getId() == null) {
                 continue;
             }
-            recentRecalledMemoryIds.remove(entry.getId());
-            recentRecalledMemoryIds.addFirst(entry.getId());
+            recentRecallSuppressionTable.remove(entry.getId());
+            recentRecallSuppressionTable.put(entry.getId(), recentRecallWindow + 1);
         }
-        trimRecentRecallQueue();
+        trimRecentRecallSuppressionTable();
     }
 
-    public synchronized int getRecentRecallRank(UUID memoryId) {
+    public synchronized int getRecentRecallCooldown(UUID memoryId) {
         if (memoryId == null) {
-            return -1;
+            return 0;
         }
-        int rank = 0;
-        for (UUID id : recentRecalledMemoryIds) {
-            if (memoryId.equals(id)) {
-                return rank;
-            }
-            rank++;
-        }
-        return -1;
+        return recentRecallSuppressionTable.getOrDefault(memoryId, 0);
     }
 
-    public synchronized List<UUID> getRecentRecalledMemoryIds() {
-        return Collections.unmodifiableList(new ArrayList<>(recentRecalledMemoryIds));
+    public synchronized Map<UUID, Integer> getRecentRecallSuppressionTable() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(recentRecallSuppressionTable));
     }
 
     public RecallRuntimeState getRecallRuntimeState() {
         return recallRuntimeState;
     }
 
-    private void trimRecentRecallQueue() {
-        while (recentRecalledMemoryIds.size() > recentRecallWindow) {
-            recentRecalledMemoryIds.removeLast();
+    private void trimRecentRecallSuppressionTable() {
+        if (recentRecallSuppressionTable.isEmpty()) {
+            return;
+        }
+        int maxCooldown = recentRecallWindow + 1;
+        Iterator<Map.Entry<UUID, Integer>> iterator = recentRecallSuppressionTable.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Integer> entry = iterator.next();
+            int clamped = Math.min(maxCooldown, Math.max(0, entry.getValue()));
+            if (clamped <= 0) {
+                iterator.remove();
+            } else {
+                entry.setValue(clamped);
+            }
         }
     }
 
@@ -185,7 +206,7 @@ public class AgentMemory {
                 + ", actionBuffer=" + actionBuffer.size()
                 + ", stmPool=" + stmPool
                 + ", ltmRecords=" + ltmRecords.size()
-                + ", recentRecall=" + recentRecalledMemoryIds.size()
+                + ", recentRecall=" + recentRecallSuppressionTable.size()
                 + ", recallRuntimeState=true"
                 + "}";
     }

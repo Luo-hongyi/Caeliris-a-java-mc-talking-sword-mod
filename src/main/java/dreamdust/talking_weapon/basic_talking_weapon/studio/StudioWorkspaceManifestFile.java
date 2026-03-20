@@ -42,6 +42,7 @@ public final class StudioWorkspaceManifestFile {
             "runtimeTagView",
             "runtimeInteractions",
             "runtimeRecallTrace",
+            "memoryRecallTuning",
             "customTags",
             "descriptions",
             "relations",
@@ -52,6 +53,7 @@ public final class StudioWorkspaceManifestFile {
             "iconsDirectory");
 
     public static final List<String> EDITABLE_VERSION_KEYS = List.of(
+            "memoryRecallTuning",
             "customTags",
             "descriptions",
             "relations",

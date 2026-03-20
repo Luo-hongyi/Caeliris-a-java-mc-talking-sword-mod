@@ -35,7 +35,7 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final String FILENAME = "studio_runtime_recall_trace.json";
     public static final String VERSION_KEY = "runtimeRecallTrace";
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     private StudioRuntimeRecallTraceFile() {
     }
@@ -98,26 +98,42 @@ public final class StudioRuntimeRecallTraceFile {
             file.runtimeState = recallResult.runtimeState != null
                     ? recallResult.runtimeState
                     : new RecallRuntimeState.Snapshot();
-            for (LTMEntry memory : recallResult.recalledMemories) {
-                if (memory == null) {
+            for (LTMEntry memory : recallResult.consciousMemories) {
+                RecalledMemoryEntry entry = toRecalledMemoryEntry(memory);
+                if (entry == null) {
                     continue;
                 }
-                RecalledMemoryEntry entry = new RecalledMemoryEntry();
-                entry.id = memory.getId() != null ? memory.getId().toString() : "";
-                entry.description = memory.getDescription();
-                for (var focusTag : memory.getFocusTags()) {
-                    entry.focusTags.add(focusTag.name());
+                file.consciousMemories.add(entry);
+            }
+            for (LTMEntry memory : recallResult.promptMemories) {
+                RecalledMemoryEntry entry = toRecalledMemoryEntry(memory);
+                if (entry == null) {
+                    continue;
                 }
-                for (DetailTag detailTag : memory.getDetailTags()) {
-                    entry.detailTags.add(detailTag.toString());
-                }
-                entry.semanticTimeTag = memory.getSemanticTimeTag() != null ? memory.getSemanticTimeTag().toString() : "";
-                entry.semanticTimeLabel = memory.getSemanticTimeLabel() != null ? memory.getSemanticTimeLabel() : "";
-                file.recalledMemories.add(entry);
+                file.promptMemories.add(entry);
+                file.recalledMemories.add(toRecalledMemoryEntry(memory));
             }
         }
 
         write(file);
+    }
+
+    private static RecalledMemoryEntry toRecalledMemoryEntry(LTMEntry memory) {
+        if (memory == null) {
+            return null;
+        }
+        RecalledMemoryEntry entry = new RecalledMemoryEntry();
+        entry.id = memory.getId() != null ? memory.getId().toString() : "";
+        entry.description = memory.getDescription();
+        for (var focusTag : memory.getFocusTags()) {
+            entry.focusTags.add(focusTag.name());
+        }
+        for (DetailTag detailTag : memory.getDetailTags()) {
+            entry.detailTags.add(detailTag.toString());
+        }
+        entry.semanticTimeTag = memory.getSemanticTimeTag() != null ? memory.getSemanticTimeTag().toString() : "";
+        entry.semanticTimeLabel = memory.getSemanticTimeLabel() != null ? memory.getSemanticTimeLabel() : "";
+        return entry;
     }
 
     private static void write(RuntimeRecallTraceFileModel file) {
@@ -144,6 +160,8 @@ public final class StudioRuntimeRecallTraceFile {
         public List<String> triggerTags = new ArrayList<>();
         public List<String> traceLines = new ArrayList<>();
         public List<VisibleContextEntry> visibleContexts = new ArrayList<>();
+        public List<RecalledMemoryEntry> consciousMemories = new ArrayList<>();
+        public List<RecalledMemoryEntry> promptMemories = new ArrayList<>();
         public List<RecalledMemoryEntry> recalledMemories = new ArrayList<>();
         public RecallRuntimeState.Snapshot runtimeState = new RecallRuntimeState.Snapshot();
 
@@ -174,6 +192,12 @@ public final class StudioRuntimeRecallTraceFile {
             }
             if (visibleContexts == null) {
                 visibleContexts = new ArrayList<>();
+            }
+            if (consciousMemories == null) {
+                consciousMemories = new ArrayList<>();
+            }
+            if (promptMemories == null) {
+                promptMemories = new ArrayList<>();
             }
             if (recalledMemories == null) {
                 recalledMemories = new ArrayList<>();

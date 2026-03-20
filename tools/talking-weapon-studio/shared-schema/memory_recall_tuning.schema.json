@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamdust.local/talking-weapon-studio/memory_recall_tuning.schema.json",
+  "title": "Talking Weapon Memory Recall Tuning",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "mainCandidatesPerCue",
+    "sandboxCuesPerMemory",
+    "consciousMemoryCap",
+    "recentRecallWindow",
+    "recentRecallWindowCap",
+    "implantedFallbackEntryScore",
+    "promptFillProbabilityScale",
+    "tagPoolHalfLifeDays",
+    "fermentationHalfLifeDays",
+    "intervalBonusScale",
+    "intervalBonusSteepness",
+    "synthesizedMemoryHalfLife",
+    "desireProfileBonusScale",
+    "desiredFocusBonusScale"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "mainCandidatesPerCue": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    },
+    "sandboxCuesPerMemory": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "consciousMemoryCap": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 8
+    },
+    "recentRecallWindow": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "recentRecallWindowCap": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "implantedFallbackEntryScore": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "promptFillProbabilityScale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "tagPoolHalfLifeDays": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 30
+    },
+    "fermentationHalfLifeDays": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 120
+    },
+    "intervalBonusScale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "intervalBonusSteepness": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 20
+    },
+    "synthesizedMemoryHalfLife": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 240
+    },
+    "desireProfileBonusScale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "desiredFocusBonusScale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    }
+  }
+}

@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * 统一记忆召回模型的跨轮运行时状态。
@@ -140,10 +139,16 @@ public final class RecallRuntimeState {
     /**
      * 写回主 recall 的结果：
      * retained fermentation 会替换主发酵层，
-     * conscious memory ids 会重建表层意识与 sandbox 输入层。
+     * conscious memories 会重建表层意识与 sandbox 输入层。
      */
     public synchronized void applySelectionOutcome(List<FermentationMemoryEntry> retainedFermentationEntries,
-            Collection<String> consciousMemoryIds) {
+            Collection<ConsciousMemoryEntry> consciousEntries) {
+        applySelectionOutcome(retainedFermentationEntries, consciousEntries,
+                consciousEntries != null ? consciousEntries.size() : 0);
+    }
+
+    public synchronized void applySelectionOutcome(List<FermentationMemoryEntry> retainedFermentationEntries,
+            Collection<ConsciousMemoryEntry> consciousEntries, int promptMemoryCount) {
         fermentationBuffer.clear();
         if (retainedFermentationEntries != null) {
             for (FermentationMemoryEntry entry : retainedFermentationEntries) {
@@ -157,9 +162,9 @@ public final class RecallRuntimeState {
             }
         }
 
-        rebuildConsciousMemoriesFromRetained(consciousMemoryIds);
+        rebuildConsciousMemories(consciousEntries);
         rebuildAssociationSandboxFromConscious();
-        recalledMemoryCount = consciousMemories.size();
+        recalledMemoryCount = Math.max(0, promptMemoryCount);
     }
 
     /**
@@ -318,33 +323,25 @@ public final class RecallRuntimeState {
         }
     }
 
-    private void rebuildConsciousMemoriesFromRetained(Collection<String> consciousMemoryIds) {
+    private void rebuildConsciousMemories(Collection<ConsciousMemoryEntry> consciousEntries) {
         consciousMemories.clear();
-        if (consciousMemoryIds == null || consciousMemoryIds.isEmpty() || fermentationBuffer.isEmpty()) {
+        if (consciousEntries == null || consciousEntries.isEmpty()) {
             return;
         }
 
-        for (String memoryId : consciousMemoryIds) {
-            if (memoryId == null || memoryId.isBlank()) {
-                continue;
-            }
-            FermentationMemoryEntry retainedEntry;
-            try {
-                retainedEntry = fermentationBuffer.get(UUID.fromString(memoryId));
-            } catch (IllegalArgumentException ignored) {
-                retainedEntry = null;
-            }
-            if (retainedEntry == null) {
+        for (ConsciousMemoryEntry source : consciousEntries) {
+            if (source == null || source.memoryId == null || source.memoryId.isBlank()) {
                 continue;
             }
 
             ConsciousMemoryEntry consciousEntry = new ConsciousMemoryEntry();
-            consciousEntry.memoryId = retainedEntry.memoryId;
-            consciousEntry.description = retainedEntry.description;
-            consciousEntry.score = retainedEntry.score;
-            consciousEntry.sourceType = retainedEntry.sourceType;
-            consciousEntry.focusTags.addAll(retainedEntry.focusTags);
-            consciousEntry.supportTags.addAll(retainedEntry.supportTags);
+            consciousEntry.memoryId = source.memoryId;
+            consciousEntry.description = source.description;
+            consciousEntry.score = source.score;
+            consciousEntry.sourceType = source.sourceType;
+            consciousEntry.focusTags.addAll(source.focusTags);
+            consciousEntry.supportTags.addAll(source.supportTags);
+            consciousEntry.associativeTags.addAll(source.associativeTags);
             consciousMemories.add(consciousEntry);
         }
     }
@@ -354,23 +351,14 @@ public final class RecallRuntimeState {
         associationSandbox.hopLimit = 1;
         associationSandbox.recallBudget = Math.max(0, Math.min(4, consciousMemories.size()));
 
-        List<String> consciousIds = consciousMemories.stream()
-                .map(entry -> entry.memoryId)
-                .filter(id -> id != null && !id.isBlank())
-                .collect(Collectors.toList());
-        for (String memoryId : consciousIds) {
-            associationSandbox.sourceMemoryIds.add(memoryId);
-            associationSandbox.memoryIds.add(memoryId);
-            FermentationMemoryEntry retainedEntry;
-            try {
-                retainedEntry = fermentationBuffer.get(UUID.fromString(memoryId));
-            } catch (IllegalArgumentException ignored) {
-                retainedEntry = null;
-            }
-            if (retainedEntry == null) {
+        for (ConsciousMemoryEntry consciousEntry : consciousMemories) {
+            if (consciousEntry == null || consciousEntry.memoryId == null || consciousEntry.memoryId.isBlank()) {
                 continue;
             }
-            for (String tag : retainedEntry.associativeTags) {
+            String memoryId = consciousEntry.memoryId;
+            associationSandbox.sourceMemoryIds.add(memoryId);
+            associationSandbox.memoryIds.add(memoryId);
+            for (String tag : consciousEntry.associativeTags) {
                 appendUniqueCapped(associationSandbox.cueTags, safe(tag), ASSOCIATION_SANDBOX_CUE_CAP);
             }
         }
@@ -438,7 +426,6 @@ public final class RecallRuntimeState {
         copy.lastConsciousGameTime = source.lastConsciousGameTime;
         copy.enteredConsciousThisTurn = source.enteredConsciousThisTurn;
         copy.cueBoostThisTurn = source.cueBoostThisTurn;
-        copy.reinforcementCount = source.reinforcementCount;
         return copy;
     }
 
@@ -450,6 +437,7 @@ public final class RecallRuntimeState {
         copy.sourceType = source.sourceType;
         copy.focusTags.addAll(source.focusTags);
         copy.supportTags.addAll(source.supportTags);
+        copy.associativeTags.addAll(source.associativeTags);
         return copy;
     }
 
@@ -586,7 +574,6 @@ public final class RecallRuntimeState {
         public long lastConsciousGameTime = -1L;
         public boolean enteredConsciousThisTurn;
         public double cueBoostThisTurn;
-        public int reinforcementCount;
     }
 
     public static class ConsciousMemoryEntry {
@@ -596,6 +583,7 @@ public final class RecallRuntimeState {
         public String sourceType = "";
         public List<String> focusTags = new ArrayList<>();
         public List<String> supportTags = new ArrayList<>();
+        public List<String> associativeTags = new ArrayList<>();
     }
 
     public static class AssociationSandbox {

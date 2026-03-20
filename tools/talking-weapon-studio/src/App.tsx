@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { buildTagRecords, studioSeedData } from "./data";
+import { DEFAULT_MEMORY_RECALL_TUNING_FILE, sanitizeMemoryRecallTuningFile } from "./memoryRecallModel";
 import { RuntimeRecallGraphPage } from "./RuntimeRecallGraphPage";
 import {
   describeWorkspaceAccessMode,
@@ -29,6 +30,7 @@ import {
   FocusTag,
   ImplantedMemoryEntry,
   LocationRegistryEntry,
+  MemoryRecallTuningFile,
   NativeCatalogEntry,
   PersonaEntry,
   RuntimeRecallTraceFile,
@@ -205,6 +207,7 @@ type SchemaVersions = {
   personas: number;
   implantedMemories: number;
   agentState: number;
+  recallTuning: number;
   nativeCatalogSnapshot: number;
 };
 
@@ -236,6 +239,7 @@ type ImportedWorkspaceData = {
   personas?: PersonasFile | null;
   memories?: ImplantedMemoriesFile | null;
   agentState?: AgentStateWorkspaceFile | null;
+  memoryRecallTuning?: MemoryRecallTuningFile | null;
   locations?: Record<string, LocationRegistryEntry> | null;
 };
 
@@ -246,6 +250,7 @@ type WorkspaceManifestVersions = {
   runtimeTagView: string;
   runtimeInteractions: string;
   runtimeRecallTrace: string;
+  memoryRecallTuning: string;
   customTags: string;
   descriptions: string;
   relations: string;
@@ -517,7 +522,7 @@ function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFi
 
 function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: "",
     triggerSource: "",
     userPrompt: "",
@@ -526,6 +531,8 @@ function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
     triggerTags: [],
     traceLines: [],
     visibleContexts: [],
+    consciousMemories: [],
+    promptMemories: [],
     recalledMemories: [],
     runtimeState: {
       captureMode: "unified-runtime-v1",
@@ -548,6 +555,12 @@ function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
         recallBudget: 0
       }
     }
+  };
+}
+
+function createEmptyMemoryRecallTuningFile(): MemoryRecallTuningFile {
+  return {
+    ...DEFAULT_MEMORY_RECALL_TUNING_FILE
   };
 }
 
@@ -958,13 +971,80 @@ function normalizeRuntimeRecentInteractionsFile(value: unknown): RuntimeRecentIn
   };
 }
 
+function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return sanitizeMemoryRecallTuningFile({
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    mainCandidatesPerCue:
+      typeof value.mainCandidatesPerCue === "number"
+        ? value.mainCandidatesPerCue
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.mainCandidatesPerCue,
+    sandboxCuesPerMemory:
+      typeof value.sandboxCuesPerMemory === "number"
+        ? value.sandboxCuesPerMemory
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.sandboxCuesPerMemory,
+    consciousMemoryCap:
+      typeof value.consciousMemoryCap === "number"
+        ? value.consciousMemoryCap
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.consciousMemoryCap,
+    recentRecallWindow:
+      typeof value.recentRecallWindow === "number"
+        ? value.recentRecallWindow
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.recentRecallWindow,
+    recentRecallWindowCap:
+      typeof value.recentRecallWindowCap === "number"
+        ? value.recentRecallWindowCap
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.recentRecallWindowCap,
+    implantedFallbackEntryScore:
+      typeof value.implantedFallbackEntryScore === "number"
+        ? value.implantedFallbackEntryScore
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.implantedFallbackEntryScore,
+    promptFillProbabilityScale:
+      typeof value.promptFillProbabilityScale === "number"
+        ? value.promptFillProbabilityScale
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.promptFillProbabilityScale,
+    tagPoolHalfLifeDays:
+      typeof value.tagPoolHalfLifeDays === "number"
+        ? value.tagPoolHalfLifeDays
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolHalfLifeDays,
+    fermentationHalfLifeDays:
+      typeof value.fermentationHalfLifeDays === "number"
+        ? value.fermentationHalfLifeDays
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.fermentationHalfLifeDays,
+    intervalBonusScale:
+      typeof value.intervalBonusScale === "number"
+        ? value.intervalBonusScale
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.intervalBonusScale,
+    intervalBonusSteepness:
+      typeof value.intervalBonusSteepness === "number"
+        ? value.intervalBonusSteepness
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.intervalBonusSteepness,
+    synthesizedMemoryHalfLife:
+      typeof value.synthesizedMemoryHalfLife === "number"
+        ? value.synthesizedMemoryHalfLife
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.synthesizedMemoryHalfLife,
+    desireProfileBonusScale:
+      typeof value.desireProfileBonusScale === "number"
+        ? value.desireProfileBonusScale
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.desireProfileBonusScale,
+    desiredFocusBonusScale:
+      typeof value.desiredFocusBonusScale === "number"
+        ? value.desiredFocusBonusScale
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.desiredFocusBonusScale
+  });
+}
+
 function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile | null {
   if (!isRecord(value)) {
     return null;
   }
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     triggerSource: typeof value.triggerSource === "string" ? value.triggerSource : "",
     userPrompt: typeof value.userPrompt === "string" ? value.userPrompt : "",
@@ -981,6 +1061,30 @@ function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile
             detailTags: stringArrayOf(entry.detailTags),
             baseImportance: typeof entry.baseImportance === "number" ? entry.baseImportance : 0,
             finalScore: typeof entry.finalScore === "number" ? entry.finalScore : 0
+          }))
+      : [],
+    consciousMemories: Array.isArray(value.consciousMemories)
+      ? value.consciousMemories
+          .filter(isRecord)
+          .map((entry) => ({
+            id: typeof entry.id === "string" ? entry.id : "",
+            description: typeof entry.description === "string" ? entry.description : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            detailTags: stringArrayOf(entry.detailTags),
+            semanticTimeTag: typeof entry.semanticTimeTag === "string" ? entry.semanticTimeTag : "",
+            semanticTimeLabel: typeof entry.semanticTimeLabel === "string" ? entry.semanticTimeLabel : ""
+          }))
+      : [],
+    promptMemories: Array.isArray(value.promptMemories)
+      ? value.promptMemories
+          .filter(isRecord)
+          .map((entry) => ({
+            id: typeof entry.id === "string" ? entry.id : "",
+            description: typeof entry.description === "string" ? entry.description : "",
+            focusTags: stringArrayOf(entry.focusTags),
+            detailTags: stringArrayOf(entry.detailTags),
+            semanticTimeTag: typeof entry.semanticTimeTag === "string" ? entry.semanticTimeTag : "",
+            semanticTimeLabel: typeof entry.semanticTimeLabel === "string" ? entry.semanticTimeLabel : ""
           }))
       : [],
     recalledMemories: Array.isArray(value.recalledMemories)
@@ -1047,9 +1151,7 @@ function normalizeRuntimeRecallRuntimeState(value: unknown): RuntimeRecallTraceF
               typeof entry.lastConsciousGameTime === "number" ? entry.lastConsciousGameTime : -1,
             enteredConsciousThisTurn: entry.enteredConsciousThisTurn === true,
             cueBoostThisTurn:
-              typeof entry.cueBoostThisTurn === "number" ? entry.cueBoostThisTurn : 0,
-            reinforcementCount:
-              typeof entry.reinforcementCount === "number" ? entry.reinforcementCount : 0
+              typeof entry.cueBoostThisTurn === "number" ? entry.cueBoostThisTurn : 0
           }))
       : [],
     consciousMemories: Array.isArray(value.consciousMemories)
@@ -1061,7 +1163,8 @@ function normalizeRuntimeRecallRuntimeState(value: unknown): RuntimeRecallTraceF
             score: typeof entry.score === "number" ? entry.score : 0,
             sourceType: typeof entry.sourceType === "string" ? entry.sourceType : "",
             focusTags: stringArrayOf(entry.focusTags),
-            supportTags: stringArrayOf(entry.supportTags)
+            supportTags: stringArrayOf(entry.supportTags),
+            associativeTags: stringArrayOf(entry.associativeTags)
           }))
       : [],
     associationSandbox: isRecord(value.associationSandbox)
@@ -1106,6 +1209,7 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     runtimeTagView: "missing",
     runtimeInteractions: "missing",
     runtimeRecallTrace: "missing",
+    memoryRecallTuning: "missing",
     customTags: "missing",
     descriptions: "missing",
     relations: "missing",
@@ -1138,6 +1242,8 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
         typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
       runtimeRecallTrace:
         typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
+      memoryRecallTuning:
+        typeof rawVersions.memoryRecallTuning === "string" ? rawVersions.memoryRecallTuning : "missing",
       customTags: typeof rawVersions.customTags === "string" ? rawVersions.customTags : "missing",
       descriptions: typeof rawVersions.descriptions === "string" ? rawVersions.descriptions : "missing",
       relations: typeof rawVersions.relations === "string" ? rawVersions.relations : "missing",
@@ -1176,7 +1282,16 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
     assign: (importedData, value) => {
       importedData.runtimeRecallTrace = value as RuntimeRecallTraceFile;
     },
-    describe: (value) => `recall ${(value as RuntimeRecallTraceFile).recalledMemories.length} 条记忆`
+    describe: (value) => `recall ${((value as RuntimeRecallTraceFile).promptMemories.length || (value as RuntimeRecallTraceFile).recalledMemories.length)} 条 prompt 记忆`
+  },
+  {
+    filename: "memory_recall_tuning.json",
+    versionKey: "memoryRecallTuning",
+    normalize: normalizeMemoryRecallTuningFile,
+    assign: (importedData, value) => {
+      importedData.memoryRecallTuning = value as MemoryRecallTuningFile;
+    },
+    describe: (_value) => "recall tuning 1 份"
   },
   {
     filename: "custom_tags.json",
@@ -2085,6 +2200,9 @@ function App() {
   const [runtimeRecallTrace, setRuntimeRecallTrace] = useState<RuntimeRecallTraceFile>(
     createEmptyRuntimeRecallTraceFile()
   );
+  const [memoryRecallTuningFile, setMemoryRecallTuningFile] = useState<MemoryRecallTuningFile>(
+    createEmptyMemoryRecallTuningFile()
+  );
   const [customTags, setCustomTags] = useState<CustomTagEntry[]>(studioSeedData.customTags.tags);
   const [descriptions, setDescriptions] = useState<Record<string, DescriptionEntry>>(
     studioSeedData.descriptions.descriptions
@@ -2096,7 +2214,10 @@ function App() {
   const [memories, setMemories] = useState<ImplantedMemoryEntry[]>(studioSeedData.implantedMemories.memories);
   const [agentStateFile, setAgentStateFile] = useState<AgentStateWorkspaceFile>(studioSeedData.agentState);
   const [locations, setLocations] = useState<Record<string, LocationRegistryEntry>>(studioSeedData.locations);
-  const [schemaVersions, setSchemaVersions] = useState<SchemaVersions>(studioSeedData.schemaVersions);
+  const [schemaVersions, setSchemaVersions] = useState<SchemaVersions>({
+    ...studioSeedData.schemaVersions,
+    recallTuning: 1
+  });
   const [workspaceDirectoryHandle, setWorkspaceDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [workspaceDirectoryName, setWorkspaceDirectoryName] = useState("");
   const [workspaceImportedFiles, setWorkspaceImportedFiles] = useState<Map<string, File>>(() => new Map());
@@ -3028,6 +3149,13 @@ function App() {
     }));
   };
 
+  const updateMemoryRecallTuning = (patch: Partial<MemoryRecallTuningFile>) => {
+    setMemoryRecallTuningFile((currentFile) => sanitizeMemoryRecallTuningFile({
+      ...currentFile,
+      ...patch
+    }));
+  };
+
   const buildCustomTagsFile = (): CustomTagsFile => ({
     schemaVersion: schemaVersions.customTags,
     tags: customTags
@@ -3058,13 +3186,23 @@ function App() {
     schemaVersion: schemaVersions.agentState
   });
 
+  const buildMemoryRecallTuningFile = (): MemoryRecallTuningFile => ({
+    ...sanitizeMemoryRecallTuningFile(memoryRecallTuningFile),
+    schemaVersion: schemaVersions.recallTuning
+  });
+
   const buildLocationRegistryFile = (): Record<string, unknown> => buildLocationRegistryJson(locations);
 
   const editableWorkspaceFiles: Array<{
     filename: string;
-    versionKey: Extract<keyof WorkspaceManifestVersions, "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
+    versionKey: Extract<keyof WorkspaceManifestVersions, "memoryRecallTuning" | "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
     build: () => unknown;
   }> = [
+    {
+      filename: "memory_recall_tuning.json",
+      versionKey: "memoryRecallTuning",
+      build: buildMemoryRecallTuningFile
+    },
     {
       filename: "custom_tags.json",
       versionKey: "customTags",
@@ -3148,6 +3286,13 @@ function App() {
     }
     if (importedData.runtimeRecallTrace) {
       setRuntimeRecallTrace(importedData.runtimeRecallTrace);
+    }
+    if (importedData.memoryRecallTuning) {
+      setMemoryRecallTuningFile(sanitizeMemoryRecallTuningFile(importedData.memoryRecallTuning));
+      setSchemaVersions((current) => ({
+        ...current,
+        recallTuning: importedData.memoryRecallTuning?.schemaVersion ?? current.recallTuning
+      }));
     }
     if (importedData.customTags) {
       setCustomTags(importedData.customTags.tags);
@@ -3723,6 +3868,16 @@ function App() {
         ) : null}
         {page === "recallGraph" ? (
           <RuntimeRecallGraphPage
+            agentStateFile={agentStateFile}
+            memoryRecallTuningFile={memoryRecallTuningFile}
+            onAgentRecallTuningChange={(key, value) => updateAgentRuntimeState({
+              recall_tuning: {
+                ...agentStateFile.state.recall_tuning,
+                [key]: value
+              }
+            })}
+            onAgentStateChange={updateAgentRuntimeState}
+            onMemoryRecallTuningChange={updateMemoryRecallTuning}
             recallTrace={runtimeRecallTrace}
           />
         ) : null}

@@ -304,7 +304,7 @@ effective_tag_decay_shape =
 - cue 匹配
 - focus 对齐
 - source gate
-- importance / clarity
+- importance
 - age factor
 - recent recall penalty
 

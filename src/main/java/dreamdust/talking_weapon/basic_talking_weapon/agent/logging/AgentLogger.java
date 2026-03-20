@@ -17,7 +17,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -240,13 +244,20 @@ public final class AgentLogger {
                 w.println("    [" + i + "] " + memory.getLtmRecords().get(i));
             }
         }
-        java.util.List<java.util.UUID> recentRecallIds = memory.getRecentRecalledMemoryIds();
-        w.println("  最近召回窗口 (" + recentRecallIds.size() + "/" + memory.getRecentRecallWindow() + "):");
-        if (recentRecallIds.isEmpty()) {
+        Map<UUID, Integer> suppressionTable = memory.getRecentRecallSuppressionTable();
+        List<Map.Entry<UUID, Integer>> suppressionEntries = new ArrayList<>(suppressionTable.entrySet());
+        suppressionEntries.sort(Comparator
+                .<Map.Entry<UUID, Integer>, Integer>comparing(Map.Entry::getValue)
+                .reversed()
+                .thenComparing(entry -> entry.getKey().toString()));
+        w.println("  显性回忆抑制表 (" + suppressionEntries.size()
+                + " 条, 抑制时长=" + memory.getRecentRecallWindow() + " 轮):");
+        if (suppressionEntries.isEmpty()) {
             w.println("    (空)");
         } else {
-            for (int i = 0; i < recentRecallIds.size(); i++) {
-                w.println("    [" + i + "] " + recentRecallIds.get(i));
+            for (int i = 0; i < suppressionEntries.size(); i++) {
+                Map.Entry<UUID, Integer> entry = suppressionEntries.get(i);
+                w.println("    [" + i + "] cooldown=" + entry.getValue() + " memoryId=" + entry.getKey());
             }
         }
         w.println();

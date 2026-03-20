@@ -45,6 +45,9 @@ Studio 的核心数据源分为六层：
 6. `native_catalog_icons/`
    由 mod 运行时导出，保存 native tag 对应的 PNG 图标文件。图标相对路径直接记录在 `native_catalog.snapshot.json` 的 metadata 中。
 
+7. `memory_recall_tuning.json`
+   Recall 公式参数的 workspace 真源。Studio 会用它来渲染函数曲线、调整 recall 公式参数；游戏运行时会直接读取它，并同步到真实的 Forge config / toml。
+
 ## 推荐配置目录
 
 ```text
@@ -56,6 +59,7 @@ Studio 的核心数据源分为六层：
 ├─ implanted_memories.json
 └─ studio_workspace/
    ├─ native_catalog.snapshot.json
+   ├─ memory_recall_tuning.json
    ├─ custom_tags.json
    ├─ tag_descriptions.json
    ├─ tag_relations.json
@@ -75,8 +79,9 @@ Studio 的核心数据源分为六层：
 - `relation` 图必须保持无环。
 - Studio 的所有选择器都基于“合并后的 tag 视图”工作，而不是只看某一个文件。
 - `studio_runtime_tag_view.json` 是只读诊断/聚合产物，用于校验当前实例内的 tag 语义层是否完整。
-- `studio_workspace/` 是编辑工作区，不是运行时直接读取目录。
+- `studio_workspace/` 是 authored data 工作区；这批 authored 文件会被游戏运行时直接读取或在启动 / 发布时同步到运行时。
 - `studio_workspace.manifest.json` 是当前的同步桥：Studio 前端轮询它感知游戏导出变化，游戏客户端也轮询它，并在 `updatedBy=studio` 时自动发布编辑结果回运行时。
+- `memory_recall_tuning.json` 是 recall 公式参数的 workspace 真源；`TalkingWeaponConfig` 是运行时承接层，不再是这组参数的人工编辑真源。
 
 ## Studio 页面与这四个 schema 的关系
 
@@ -106,16 +111,27 @@ Studio 的核心数据源分为六层：
 - 植入记忆不再直接编辑维度、群系、天气等运行时环境锚点
 - 允许植入记忆带上其他 mod 的 native tags 或映射到 clean custom tags
 
+### 4. Recall Workbench
+
+- 读取 `studio_runtime_recall_trace.json`
+- 读取 `agent_state.json`
+- 读取 `memory_recall_tuning.json`
+- 以“运行时参数 + 公式参数 + 函数图像 + trace flow”四块拼成 recall 专页
+- 当前会把 `conscious memories` 和 `prompt memories` 分开显示，并为半衰期、长间隔补偿、recent suppression、prompt fill、temperature sampling 等公式绘图
+
 ## 当前落地范围
 
-当前仓库已定义 6 个核心 schema：
+当前仓库已定义 9 个核心 schema：
 
 - `shared-schema/native_catalog.snapshot.schema.json`
+- `shared-schema/agent_state.schema.json`
 - `shared-schema/custom_tags.schema.json`
 - `shared-schema/tag_descriptions.schema.json`
 - `shared-schema/tag_relations.schema.json`
 - `shared-schema/personas.schema.json`
 - `shared-schema/implanted_memories.schema.json`
+- `shared-schema/location_registry.schema.json`
+- `shared-schema/memory_recall_tuning.schema.json`
 
 当前 mod 侧还额外提供三个运行时导出器：
 
@@ -140,6 +156,7 @@ Studio 的核心数据源分为六层：
 - `Custom Tag Catalog`
 - `Persona`
 - `Memory`
+- `Recall Workbench`
 
 当前版本仍然使用 `examples/` 里的示例 JSON 作为 seed data，用于验证：
 
@@ -157,6 +174,7 @@ Studio 的核心数据源分为六层：
 - 导入 `tag_relations.json`
 - 导入 `personas.json`
 - 导入 `implanted_memories.json`
+- 导入 `memory_recall_tuning.json`
 - 导入 legacy 顶层数组格式的 implanted memories
 - 导出上述单独文件
 - 导出包含全部当前状态的 workspace bundle，便于做内容编辑中间稿备份
@@ -165,7 +183,7 @@ Studio 的核心数据源分为六层：
 当前模组侧还额外提供一个整包导出目录：
 
 - `config/talking_weapon/studio_workspace/`
-- 其中会放入 snapshot / runtime tag view / icons / custom tags / descriptions / relations / implanted memories / manifest
+- 其中会放入 snapshot / runtime tag view / icons / custom tags / descriptions / relations / implanted memories / memory recall tuning / manifest
 - `personas.json` 现在会在发布阶段进入运行时目录，并作为静态 persona 条目来源被游戏读取
 - `favorability` 与 `playerProfile` 仍属于运行时状态，不写入 `personas.json`
 - 目录句柄模式下，Studio 改动会经由 manifest 被游戏自动发布；手动点击“发布 Studio 到运行时”仍然保留，作为显式兜底入口

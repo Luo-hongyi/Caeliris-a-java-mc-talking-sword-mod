@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.config;
 
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioMemoryRecallTuningFile;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
@@ -17,6 +18,7 @@ public final class TalkingWeaponConfig {
 
         private static final String DEFAULT_WEAPON_NAME = "塞勒瑞斯";
         private static volatile String resolvedWeaponName = DEFAULT_WEAPON_NAME;
+        private static volatile boolean syncingRecallParametersFromWorkspace = false;
 
         // ═══════════════════════════════════════════════════════════════
         // 厂商 / 模型预设
@@ -99,6 +101,9 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.IntValue LTM_RECALL_SANDBOX_CUES_PER_MEMORY;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_CONSCIOUS_MEMORY_CAP;
         public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW;
+        public static final ForgeConfigSpec.IntValue LTM_RECALL_RECENT_WINDOW_CAP;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_SCALE;
@@ -129,6 +134,8 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue NOISE_THRESHOLD;
         public static final ForgeConfigSpec.BooleanValue LOOKING_AT_ATTENTION_BONUS_ENABLED;
         public static final ForgeConfigSpec.DoubleValue LOOKING_AT_ATTENTION_BONUS_VALUE;
+
+        private static final int RECENT_RECALL_WINDOW_ABSOLUTE_CAP = 256;
 
         static {
                 ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -320,8 +327,17 @@ public final class TalkingWeaponConfig {
                                 .comment("CUSTOM 召回预设默认值：最终最多允许多少条记忆进入表层意识；仅在 agent_state.json 未提供 recall_tuning 时使用")
                                 .defineInRange("consciousMemoryCap", 3, 0, 8);
                 LTM_RECALL_RECENT_WINDOW = builder
-                                .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆")
-                                .defineInRange("recentRecallWindow", 6, 1, 20);
+                                .comment("最近召回记忆抑制窗口：越大越不容易连续几轮重复同一段记忆；实际生效值还会受 recentRecallWindowCap 限制")
+                                .defineInRange("recentRecallWindow", 6, 1, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
+                LTM_RECALL_RECENT_WINDOW_CAP = builder
+                                .comment("最近召回窗口上限：用于限制 recentRecallWindow 的最大有效值，便于在运行时快速收紧或放宽抑制范围")
+                                .defineInRange("recentRecallWindowCap", 20, 1, RECENT_RECALL_WINDOW_ABSOLUTE_CAP);
+                LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE = builder
+                                .comment("植入记忆保底被补入 conscious/retained 时的注入分数；越高越容易压过本轮普通召回结果")
+                                .defineInRange("implantedFallbackEntryScore", 1.25, 0.0, 3.0);
+                LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE = builder
+                                .comment("prompt fill 阀门的整体开合系数；越低越不愿意把已意识到的记忆说出口，越高越容易真的填入 prompt")
+                                .defineInRange("promptFillProbabilityScale", 1.0, 0.0, 3.0);
                 LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS = builder
                                 .comment("tag_pool 半衰期，单位为游戏内天数；越大代表 cue 保留越久")
                                 .defineInRange("tagPoolHalfLifeDays", 0.40, 0.05, 30.0);
@@ -363,6 +379,22 @@ public final class TalkingWeaponConfig {
                 return resolvedWeaponName;
         }
 
+        public static int getRecentRecallWindowCapValue() {
+                return Math.max(1, Math.min(RECENT_RECALL_WINDOW_ABSOLUTE_CAP, LTM_RECALL_RECENT_WINDOW_CAP.get()));
+        }
+
+        public static int getEffectiveRecentRecallWindow() {
+                return Math.max(1, Math.min(LTM_RECALL_RECENT_WINDOW.get(), getRecentRecallWindowCapValue()));
+        }
+
+        public static double getImplantedFallbackEntryScoreValue() {
+                return Math.max(0.0, Math.min(3.0, LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE.get()));
+        }
+
+        public static double getPromptFillProbabilityScaleValue() {
+                return Math.max(0.0, Math.min(3.0, LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE.get()));
+        }
+
         @SubscribeEvent
         public static void onConfigLoading(ModConfigEvent.Loading event) {
                 syncResolvedValues(event);
@@ -384,9 +416,29 @@ public final class TalkingWeaponConfig {
                         resolvedWeaponName = DEFAULT_WEAPON_NAME;
                         System.err.println("[TalkingWeapon] Failed to resolve weaponName from config: " + t);
                 }
+
+                syncRecallParametersFromWorkspace();
         }
 
         private static String sanitizeWeaponName(String value) {
                 return value == null ? "" : value;
+        }
+
+        private static void syncRecallParametersFromWorkspace() {
+                if (syncingRecallParametersFromWorkspace) {
+                        return;
+                }
+
+                syncingRecallParametersFromWorkspace = true;
+                try {
+                        boolean loaded = StudioMemoryRecallTuningFile.applyWorkspaceValuesToRuntime(true);
+                        if (!loaded) {
+                                StudioMemoryRecallTuningFile.ensureWorkspaceFileExists();
+                        }
+                } catch (Throwable t) {
+                        System.err.println("[TalkingWeapon] Failed to sync recall parameters from workspace: " + t);
+                } finally {
+                        syncingRecallParametersFromWorkspace = false;
+                }
         }
 }
