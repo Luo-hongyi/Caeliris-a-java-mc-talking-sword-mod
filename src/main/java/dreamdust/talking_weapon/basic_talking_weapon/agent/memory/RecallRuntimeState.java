@@ -36,8 +36,6 @@ import java.util.UUID;
 public final class RecallRuntimeState {
 
     private static final String CAPTURE_MODE_UNIFIED_RUNTIME = "unified-runtime-v1";
-    private static final double TAG_POOL_EPSILON = 0.035;
-    private static final double FERMENTATION_EPSILON = 0.06;
     private static final int TAG_POOL_CAP = 96;
     private static final int FERMENTATION_BUFFER_CAP = 32;
     private static final int ASSOCIATION_SANDBOX_CUE_CAP = 24;
@@ -207,11 +205,12 @@ public final class RecallRuntimeState {
             return;
         }
         double factor = decayFactor(deltaGameTime, resolveTagPoolHalfLifeTicks(), resolveTagPoolDecayShape());
+        double dropThreshold = resolveTagPoolDropThreshold();
         Iterator<Map.Entry<String, TagPoolEntry>> iterator = tagPool.entrySet().iterator();
         while (iterator.hasNext()) {
             TagPoolEntry entry = iterator.next().getValue();
             entry.score *= factor;
-            if (entry.score < TAG_POOL_EPSILON) {
+            if (entry.score < dropThreshold) {
                 iterator.remove();
             }
         }
@@ -222,11 +221,12 @@ public final class RecallRuntimeState {
             return;
         }
         double factor = decayFactor(deltaGameTime, resolveFermentationHalfLifeTicks(), resolveFermentationDecayShape());
+        double dropThreshold = resolveFermentationDropThreshold();
         Iterator<Map.Entry<UUID, FermentationMemoryEntry>> iterator = fermentationBuffer.entrySet().iterator();
         while (iterator.hasNext()) {
             FermentationMemoryEntry entry = iterator.next().getValue();
             entry.score *= factor;
-            if (entry.score < FERMENTATION_EPSILON) {
+            if (entry.score < dropThreshold) {
                 iterator.remove();
             }
         }
@@ -367,11 +367,11 @@ public final class RecallRuntimeState {
     }
 
     private void trimTagPool() {
-        trimLinkedMapByScore(tagPool, TAG_POOL_CAP, TAG_POOL_EPSILON, entry -> entry.score);
+        trimLinkedMapByScore(tagPool, TAG_POOL_CAP, resolveTagPoolDropThreshold(), entry -> entry.score);
     }
 
     private void trimFermentationBuffer() {
-        trimLinkedMapByScore(fermentationBuffer, FERMENTATION_BUFFER_CAP, FERMENTATION_EPSILON, entry -> entry.score);
+        trimLinkedMapByScore(fermentationBuffer, FERMENTATION_BUFFER_CAP, resolveFermentationDropThreshold(), entry -> entry.score);
     }
 
     private static List<String> toFocusTagNames(Collection<FocusTag> focusTags) {
@@ -523,8 +523,16 @@ public final class RecallRuntimeState {
         return TalkingWeaponConfig.LTM_RECALL_TAG_POOL_DECAY_SHAPE.get();
     }
 
+    private static double resolveTagPoolDropThreshold() {
+        return TalkingWeaponConfig.getTagPoolDropThresholdValue();
+    }
+
     private static double resolveFermentationDecayShape() {
         return TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DECAY_SHAPE.get();
+    }
+
+    private static double resolveFermentationDropThreshold() {
+        return TalkingWeaponConfig.getFermentationDropThresholdValue();
     }
 
     private static double clamp(double min, double max, double value) {

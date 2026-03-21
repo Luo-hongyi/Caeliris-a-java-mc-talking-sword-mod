@@ -60,29 +60,75 @@ public final class LTMRecallEngine {
         public final Set<String> triggerTags;
         public final List<String> traceLines;
         public final RecallRuntimeState.Snapshot runtimeState;
+        public final RecallTimings timings;
 
         public RecallResult(List<LTMEntry> promptMemories, Set<String> triggerTags, List<String> traceLines) {
-            this(promptMemories, promptMemories, triggerTags, traceLines, null);
+            this(promptMemories, promptMemories, triggerTags, traceLines, null, RecallTimings.empty());
         }
 
         public RecallResult(List<LTMEntry> promptMemories, Set<String> triggerTags, List<String> traceLines,
                 RecallRuntimeState.Snapshot runtimeState) {
-            this(promptMemories, promptMemories, triggerTags, traceLines, runtimeState);
+            this(promptMemories, promptMemories, triggerTags, traceLines, runtimeState, RecallTimings.empty());
         }
 
         public RecallResult(List<LTMEntry> consciousMemories, List<LTMEntry> promptMemories,
                 Set<String> triggerTags, List<String> traceLines,
                 RecallRuntimeState.Snapshot runtimeState) {
+            this(consciousMemories, promptMemories, triggerTags, traceLines, runtimeState, RecallTimings.empty());
+        }
+
+        public RecallResult(List<LTMEntry> consciousMemories, List<LTMEntry> promptMemories,
+                Set<String> triggerTags, List<String> traceLines,
+                RecallRuntimeState.Snapshot runtimeState, RecallTimings timings) {
             this.consciousMemories = Collections.unmodifiableList(new ArrayList<>(consciousMemories));
             this.promptMemories = Collections.unmodifiableList(new ArrayList<>(promptMemories));
             this.recalledMemories = this.promptMemories;
             this.triggerTags = Collections.unmodifiableSet(new LinkedHashSet<>(triggerTags));
             this.traceLines = Collections.unmodifiableList(new ArrayList<>(traceLines));
             this.runtimeState = runtimeState != null ? runtimeState : new RecallRuntimeState.Snapshot();
+            this.timings = timings != null ? timings : RecallTimings.empty();
         }
 
         public boolean isEmpty() {
             return promptMemories.isEmpty();
+        }
+    }
+
+    public static final class RecallTimings {
+        public final double totalMillis;
+        public final double focusProfileMillis;
+        public final double cueBuildMillis;
+        public final double candidateCollectionMillis;
+        public final double promotionSelectionMillis;
+        public final double retainedSelectionMillis;
+        public final double consciousSelectionMillis;
+        public final double implantedFallbackMillis;
+        public final double promptFillMillis;
+        public final double sandboxMillis;
+        public final double stateCommitMillis;
+        public final double resultAssemblyMillis;
+
+        public RecallTimings(double totalMillis, double focusProfileMillis, double cueBuildMillis,
+                double candidateCollectionMillis, double promotionSelectionMillis,
+                double retainedSelectionMillis, double consciousSelectionMillis,
+                double implantedFallbackMillis, double promptFillMillis, double sandboxMillis,
+                double stateCommitMillis, double resultAssemblyMillis) {
+            this.totalMillis = totalMillis;
+            this.focusProfileMillis = focusProfileMillis;
+            this.cueBuildMillis = cueBuildMillis;
+            this.candidateCollectionMillis = candidateCollectionMillis;
+            this.promotionSelectionMillis = promotionSelectionMillis;
+            this.retainedSelectionMillis = retainedSelectionMillis;
+            this.consciousSelectionMillis = consciousSelectionMillis;
+            this.implantedFallbackMillis = implantedFallbackMillis;
+            this.promptFillMillis = promptFillMillis;
+            this.sandboxMillis = sandboxMillis;
+            this.stateCommitMillis = stateCommitMillis;
+            this.resultAssemblyMillis = resultAssemblyMillis;
+        }
+
+        public static RecallTimings empty() {
+            return new RecallTimings(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
     }
 
@@ -322,6 +368,18 @@ public final class LTMRecallEngine {
 
     public static RecallResult recall(List<TaggedContextEntry> visibleContexts, AgentMemory memory, AgentState state,
             long currentGameTime) {
+        long recallStartNanos = System.nanoTime();
+        long focusProfileNanos = 0L;
+        long cueBuildNanos = 0L;
+        long candidateCollectionNanos = 0L;
+        long promotionSelectionNanos = 0L;
+        long retainedSelectionNanos = 0L;
+        long consciousSelectionNanos = 0L;
+        long implantedFallbackNanos = 0L;
+        long promptFillNanos = 0L;
+        long sandboxNanos = 0L;
+        long stateCommitNanos = 0L;
+        long resultAssemblyNanos = 0L;
         RecallRuntimeState runtimeState = memory != null ? memory.getRecallRuntimeState() : null;
         if (runtimeState != null) {
             runtimeState.beginTurn(visibleContexts, state, currentGameTime);
@@ -333,9 +391,23 @@ public final class LTMRecallEngine {
             }
             return new RecallResult(
                     Collections.emptyList(),
+                    Collections.emptyList(),
                     Collections.emptySet(),
                     Collections.emptyList(),
-                    runtimeState != null ? runtimeState.snapshot() : null);
+                    runtimeState != null ? runtimeState.snapshot() : null,
+                    buildRecallTimings(
+                            recallStartNanos,
+                            focusProfileNanos,
+                            cueBuildNanos,
+                            candidateCollectionNanos,
+                            promotionSelectionNanos,
+                            retainedSelectionNanos,
+                            consciousSelectionNanos,
+                            implantedFallbackNanos,
+                            promptFillNanos,
+                            sandboxNanos,
+                            stateCommitNanos,
+                            resultAssemblyNanos));
         }
 
         RecallPresetProfile profile = RecallPresetProfile.fromState(state);
@@ -345,9 +417,23 @@ public final class LTMRecallEngine {
             }
             return new RecallResult(
                     Collections.emptyList(),
+                    Collections.emptyList(),
                     Collections.emptySet(),
                     Collections.emptyList(),
-                    runtimeState != null ? runtimeState.snapshot() : null);
+                    runtimeState != null ? runtimeState.snapshot() : null,
+                    buildRecallTimings(
+                            recallStartNanos,
+                            focusProfileNanos,
+                            cueBuildNanos,
+                            candidateCollectionNanos,
+                            promotionSelectionNanos,
+                            retainedSelectionNanos,
+                            consciousSelectionNanos,
+                            implantedFallbackNanos,
+                            promptFillNanos,
+                            sandboxNanos,
+                            stateCommitNanos,
+                            resultAssemblyNanos));
         }
 
         memory.setRecentRecallWindow(TalkingWeaponConfig.getEffectiveRecentRecallWindow());
@@ -359,7 +445,9 @@ public final class LTMRecallEngine {
         long now = System.currentTimeMillis();
 
         List<TaggedContextEntry> safeVisibleContexts = visibleContexts != null ? visibleContexts : Collections.emptyList();
+        long phaseStart = System.nanoTime();
         FocusProfile focusProfile = buildFocusProfile(safeVisibleContexts, concentration, desireTag);
+        focusProfileNanos += System.nanoTime() - phaseStart;
         List<RecallRuntimeState.TagPoolEntry> initialTagPool = runtimeState != null
                 ? runtimeState.snapshotTagPool()
                 : Collections.emptyList();
@@ -371,7 +459,9 @@ public final class LTMRecallEngine {
             traceLines.add("[注意力方向] dominant_focus=" + focusProfile.dominantFocus.name());
         }
 
+        phaseStart = System.nanoTime();
         List<Seed> activeCueInputs = buildInitialCueInputs(initialTagPool, safeVisibleContexts.size(), traceLines);
+        cueBuildNanos += System.nanoTime() - phaseStart;
         Set<String> triggerTags = new LinkedHashSet<>();
         Set<UUID> promotedIds = new LinkedHashSet<>();
         List<MemoryCandidate> promotedCandidates = new ArrayList<>();
@@ -384,6 +474,7 @@ public final class LTMRecallEngine {
                     ? "[记忆起点] no active tag-pool cues and fermentation is empty"
                     : "[记忆起点] no active tag-pool cues, fallback to fermentation-only competition");
             if (!fermentationSnapshot.isEmpty()) {
+                phaseStart = System.nanoTime();
                 List<MemoryCandidate> fermentationOnlyCandidates = collectLayerCandidates(
                         Collections.emptyList(),
                         fermentationSnapshot,
@@ -393,10 +484,13 @@ public final class LTMRecallEngine {
                         focusProfile,
                         state,
                         currentGameTime);
+                candidateCollectionNanos += System.nanoTime() - phaseStart;
+                phaseStart = System.nanoTime();
                 promotedCandidates.addAll(selectPromotionCandidates(
                         fermentationOnlyCandidates,
                         Math.min(retentionCap, fermentationOnlyCandidates.size()),
                         wanderingMind));
+                promotionSelectionNanos += System.nanoTime() - phaseStart;
             }
         } else {
             List<Seed> mainCueBatch = new ArrayList<>();
@@ -408,6 +502,7 @@ public final class LTMRecallEngine {
 
             traceLines.add(String.format("[主召回] cue_count=%d fermentation=%d", mainCueBatch.size(),
                     fermentationSnapshot.size()));
+            phaseStart = System.nanoTime();
             List<MemoryCandidate> candidates = collectLayerCandidates(
                     mainCueBatch,
                     fermentationSnapshot,
@@ -417,12 +512,15 @@ public final class LTMRecallEngine {
                     focusProfile,
                     state,
                     currentGameTime);
+            candidateCollectionNanos += System.nanoTime() - phaseStart;
             if (candidates.isEmpty()) {
                 traceLines.add("[主召回] no candidate memories");
             } else {
                 int layerBudget = Math.min(retentionCap,
                         Math.max(1, Math.min(candidates.size(), profile.mainCandidatesPerCue)));
+                phaseStart = System.nanoTime();
                 List<MemoryCandidate> picked = selectPromotionCandidates(candidates, layerBudget, wanderingMind);
+                promotionSelectionNanos += System.nanoTime() - phaseStart;
                 for (MemoryCandidate candidate : picked) {
                     if (!promotedIds.add(candidate.entry.getId())) {
                         continue;
@@ -448,18 +546,23 @@ public final class LTMRecallEngine {
             }
         }
 
+        phaseStart = System.nanoTime();
         List<SelectionCandidate> retainedCandidates = buildRetainedCandidates(
                 promotedCandidates,
                 fermentationSnapshot,
                 memory,
                 currentGameTime);
         List<SelectionCandidate> retainedSelection = selectTopCandidates(retainedCandidates, retentionCap);
+        retainedSelectionNanos += System.nanoTime() - phaseStart;
+        phaseStart = System.nanoTime();
         List<SelectionCandidate> consciousSelection = selectConsciousCandidates(
                 retainedSelection,
                 memory,
                 profile.consciousMemoryCap);
+        consciousSelectionNanos += System.nanoTime() - phaseStart;
         Set<UUID> forcedPromptIds = new LinkedHashSet<>();
 
+        phaseStart = System.nanoTime();
         if (state != null
                 && state.isImplantedMemorySafetyNetEnabled()
                 && !containsImplantedSelection(consciousSelection)
@@ -484,13 +587,19 @@ public final class LTMRecallEngine {
                 forcedPromptIds.add(implantedFallback.getId());
             }
         }
+        implantedFallbackNanos += System.nanoTime() - phaseStart;
 
+        phaseStart = System.nanoTime();
         List<SelectionCandidate> promptSelection = fillPromptMemories(consciousSelection, forcedPromptIds, traceLines);
+        promptFillNanos += System.nanoTime() - phaseStart;
+        phaseStart = System.nanoTime();
         List<LTMEntry> consciousMemories = materializeSelection(consciousSelection, now, false);
         List<LTMEntry> promptMemories = materializeSelection(promptSelection, now, true);
         Set<UUID> consciousIds = toMemoryIdSet(consciousSelection);
         Set<UUID> promptIds = toMemoryIdSet(promptSelection);
+        resultAssemblyNanos += System.nanoTime() - phaseStart;
 
+        phaseStart = System.nanoTime();
         List<SelectionCandidate> associationSelection = recallAssociationSandbox(
                 consciousSelection,
                 memory,
@@ -501,6 +610,7 @@ public final class LTMRecallEngine {
                 wanderingMind,
                 profile,
                 traceLines);
+        sandboxNanos += System.nanoTime() - phaseStart;
 
         traceLines.add(String.format("[三层筛选] promoted=%d retained=%d conscious=%d prompt=%d",
                 promotedCandidates.size(), retainedSelection.size(), consciousSelection.size(), promptSelection.size()));
@@ -516,6 +626,7 @@ public final class LTMRecallEngine {
             }
         }
 
+        phaseStart = System.nanoTime();
         memory.noteRecalledMemories(promptMemories);
         if (runtimeState != null) {
             runtimeState.applySelectionOutcome(
@@ -524,12 +635,75 @@ public final class LTMRecallEngine {
                     promptMemories.size());
             runtimeState.applyAssociationSandboxOutcome(toMemoryIds(associationSelection));
         }
+        stateCommitNanos += System.nanoTime() - phaseStart;
+        RecallTimings timings = buildRecallTimings(
+                recallStartNanos,
+                focusProfileNanos,
+                cueBuildNanos,
+                candidateCollectionNanos,
+                promotionSelectionNanos,
+                retainedSelectionNanos,
+                consciousSelectionNanos,
+                implantedFallbackNanos,
+                promptFillNanos,
+                sandboxNanos,
+                stateCommitNanos,
+                resultAssemblyNanos);
+        traceLines.add(String.format(
+                "[Recall耗时] total=%.2fms collect=%.2fms sandbox=%.2fms commit=%.2fms",
+                timings.totalMillis,
+                timings.candidateCollectionMillis,
+                timings.sandboxMillis,
+                timings.stateCommitMillis));
+        traceLines.add(String.format(
+                "[Recall耗时细分] focus=%.2fms cues=%.2fms promote=%.2fms retained=%.2fms conscious=%.2fms fallback=%.2fms prompt=%.2fms assemble=%.2fms",
+                timings.focusProfileMillis,
+                timings.cueBuildMillis,
+                timings.promotionSelectionMillis,
+                timings.retainedSelectionMillis,
+                timings.consciousSelectionMillis,
+                timings.implantedFallbackMillis,
+                timings.promptFillMillis,
+                timings.resultAssemblyMillis));
         return new RecallResult(
                 consciousMemories,
                 promptMemories,
                 triggerTags,
                 traceLines,
-                runtimeState != null ? runtimeState.snapshot() : null);
+                runtimeState != null ? runtimeState.snapshot() : null,
+                timings);
+    }
+
+    private static RecallTimings buildRecallTimings(long recallStartNanos,
+            long focusProfileNanos,
+            long cueBuildNanos,
+            long candidateCollectionNanos,
+            long promotionSelectionNanos,
+            long retainedSelectionNanos,
+            long consciousSelectionNanos,
+            long implantedFallbackNanos,
+            long promptFillNanos,
+            long sandboxNanos,
+            long stateCommitNanos,
+            long resultAssemblyNanos) {
+        long totalNanos = Math.max(0L, System.nanoTime() - recallStartNanos);
+        return new RecallTimings(
+                nanosToMillis(totalNanos),
+                nanosToMillis(focusProfileNanos),
+                nanosToMillis(cueBuildNanos),
+                nanosToMillis(candidateCollectionNanos),
+                nanosToMillis(promotionSelectionNanos),
+                nanosToMillis(retainedSelectionNanos),
+                nanosToMillis(consciousSelectionNanos),
+                nanosToMillis(implantedFallbackNanos),
+                nanosToMillis(promptFillNanos),
+                nanosToMillis(sandboxNanos),
+                nanosToMillis(stateCommitNanos),
+                nanosToMillis(resultAssemblyNanos));
+    }
+
+    private static double nanosToMillis(long nanos) {
+        return Math.max(0.0, nanos / 1_000_000.0);
     }
 
     private static int computeRetentionCapacity(RecallPresetProfile profile) {

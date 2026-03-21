@@ -2,6 +2,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.studio;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.CustomTagRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagRelationDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage;
@@ -41,6 +43,8 @@ public final class StudioWorkspacePublisher {
         }
 
         LocationRegistry.getInstance();
+        ImportanceRegistry.getInstance();
+        PromptRegistry.getInstance();
         Path workspaceCustomTags = requireWorkspaceFile(workspaceRoot, "custom_tags.json");
         Path workspaceDescriptions = requireWorkspaceFile(workspaceRoot, "tag_descriptions.json");
         Path workspaceRelations = requireWorkspaceFile(workspaceRoot, "tag_relations.json");
@@ -48,6 +52,8 @@ public final class StudioWorkspacePublisher {
         Path workspaceMemories = requireWorkspaceFile(workspaceRoot, "implanted_memories.json");
         Path workspaceAgentState = requireWorkspaceFile(workspaceRoot, "agent_state.json");
         Path workspaceLocations = requireWorkspaceFile(workspaceRoot, "location_registry.json");
+        Path workspaceImportance = requireWorkspaceFile(workspaceRoot, "importance.json");
+        Path workspacePrompts = requireWorkspaceFile(workspaceRoot, "prompts.json");
         Path workspaceRecallTuning = workspaceRoot.resolve(StudioMemoryRecallTuningFile.FILENAME);
 
         try {
@@ -61,6 +67,8 @@ public final class StudioWorkspacePublisher {
             int memoryCount = LTMStorage.validateConfig(workspaceMemories, customTagLookup);
             AgentStateStorage.validateConfig(workspaceAgentState);
             int locationCount = LocationRegistry.readEntries(workspaceLocations).size();
+            ImportanceRegistry.readEntries(workspaceImportance);
+            PromptRegistry.readEntries(workspacePrompts);
             if (Files.isRegularFile(workspaceRecallTuning)) {
                 StudioMemoryRecallTuningFile.applyToRuntime(StudioMemoryRecallTuningFile.readOrEmpty());
             }
@@ -73,6 +81,8 @@ public final class StudioWorkspacePublisher {
             publishedFiles.add(workspaceMemories.getFileName().toString());
             publishedFiles.add(workspaceAgentState.getFileName().toString());
             publishedFiles.add(workspaceLocations.getFileName().toString());
+            publishedFiles.add(workspaceImportance.getFileName().toString());
+            publishedFiles.add(workspacePrompts.getFileName().toString());
             if (Files.isRegularFile(workspaceRecallTuning)) {
                 publishedFiles.add(workspaceRecallTuning.getFileName().toString());
             }
@@ -86,6 +96,8 @@ public final class StudioWorkspacePublisher {
             AgentRuntime.getInstance().getMemory().reloadImplantedMemories();
             AgentStateStorage.loadIntoRuntime(AgentRuntime.getInstance().getState(), AgentRuntime.getInstance().getPersona());
             LocationRegistry.reload();
+            ImportanceRegistry.reload();
+            PromptRegistry.reload();
 
             return new PublishResult(workspaceRoot, publishedFiles, customTags.size(), descriptionCount, relationCount,
                     personaCount, memoryCount, locationCount);

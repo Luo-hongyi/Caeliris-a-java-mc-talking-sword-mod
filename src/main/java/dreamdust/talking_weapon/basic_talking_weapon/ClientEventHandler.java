@@ -62,12 +62,35 @@ public class ClientEventHandler {
 
         Player player = mc.player;
 
-        boolean holdingSword = player.getMainHandItem().getItem() instanceof TalkingSword ||
-                player.getOffhandItem().getItem() instanceof TalkingSword;
-
-        if (!holdingSword)
+        if (!isHoldingTalkingSword(player))
             return;
 
         AgentSensor.getInstance().triggerCancel(player);
+    }
+
+    @SubscribeEvent
+    public void onUseInput(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isUseItem()) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.screen != null) {
+            return;
+        }
+
+        Player player = mc.player;
+        if (!isHoldingTalkingSword(player)) {
+            return;
+        }
+
+        // 持剑右键时统一走 right trigger，不让方块 / 实体先吃掉交互。
+        event.setCanceled(true);
+        AgentSensor.getInstance().fireTrigger(new dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.RightClickTrigger(), player);
+    }
+
+    private static boolean isHoldingTalkingSword(Player player) {
+        return player.getMainHandItem().getItem() instanceof TalkingSword
+                || player.getOffhandItem().getItem() instanceof TalkingSword;
     }
 }

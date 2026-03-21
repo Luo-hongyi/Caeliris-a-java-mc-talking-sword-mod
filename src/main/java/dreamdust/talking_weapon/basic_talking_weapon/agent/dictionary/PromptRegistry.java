@@ -3,7 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import net.minecraftforge.fml.loading.FMLPaths;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -108,18 +108,8 @@ public final class PromptRegistry {
         Path configPath = getConfigPath();
         ensureConfigExists(configPath);
 
-        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
-            Type type = new TypeToken<Map<String, String>>() {
-            }.getType();
-            Map<String, String> raw = GSON.fromJson(reader, type);
-            Map<String, String> filtered = new HashMap<>();
-            if (raw != null) {
-                raw.forEach((k, v) -> {
-                    if (!k.startsWith("_comment"))
-                        filtered.put(k, v);
-                });
-            }
-            return new PromptRegistry(filtered);
+        try {
+            return new PromptRegistry(readEntries(configPath));
         } catch (Exception e) {
             System.err.println(LOG_PREFIX + "加载失败：" + e.getMessage());
             return new PromptRegistry(Collections.emptyMap());
@@ -127,15 +117,35 @@ public final class PromptRegistry {
     }
 
     public static Path getConfigPath() {
-        return FMLPaths.CONFIGDIR.get()
-                .resolve(CONFIG_SUBDIR)
-                .resolve(CONFIG_FILENAME);
+        return StudioWorkspacePaths.getAuthoredFilePath(CONFIG_FILENAME);
+    }
+
+    public static Map<String, String> readEntries(Path configPath) throws IOException {
+        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
+            Type type = new TypeToken<Map<String, String>>() {
+            }.getType();
+            Map<String, String> raw = GSON.fromJson(reader, type);
+            Map<String, String> filtered = new HashMap<>();
+            if (raw != null) {
+                raw.forEach((k, v) -> {
+                    if (!k.startsWith("_comment")) {
+                        filtered.put(k, v);
+                    }
+                });
+            }
+            return filtered;
+        }
     }
 
     private static void ensureConfigExists(Path configPath) {
         if (Files.exists(configPath))
             return;
         try {
+            StudioWorkspacePaths.migrateLegacyFileIfMissing(configPath,
+                    StudioWorkspacePaths.getLegacyConfigPath(CONFIG_FILENAME), LOG_PREFIX);
+            if (Files.exists(configPath)) {
+                return;
+            }
             Files.createDirectories(configPath.getParent());
             try (InputStream in = PromptRegistry.class.getResourceAsStream(DEFAULT_RESOURCE)) {
                 if (in == null)

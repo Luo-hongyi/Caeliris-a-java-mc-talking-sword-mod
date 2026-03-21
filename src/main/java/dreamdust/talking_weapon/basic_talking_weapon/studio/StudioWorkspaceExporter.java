@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.CustomTagRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagRelationDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMStorage;
@@ -47,6 +49,8 @@ public final class StudioWorkspaceExporter {
         LTMStorage.loadGlobalImplantedMemories();
         PersonaStorage.loadRuntimePersonas();
         LocationRegistry.getInstance();
+        PromptRegistry.getInstance();
+        ImportanceRegistry.getInstance();
         NativeCatalogSnapshotExporter.ExportResult snapshot = NativeCatalogSnapshotExporter.exportSnapshot();
         StudioRuntimeTagViewExporter.ExportResult runtimeTagView = StudioRuntimeTagViewExporter.exportMergedView();
         NativeCatalogIconExporter.ExportResult icons = NativeCatalogIconExporter.exportAllIcons();
@@ -74,6 +78,10 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(PersonaStorage.getConfigPath().getFileName()), exportedFiles);
             copyFile(LocationRegistry.getConfigPath(),
                     workspaceRoot.resolve(LocationRegistry.getConfigPath().getFileName()), exportedFiles);
+            copyFile(ImportanceRegistry.getConfigPath(),
+                    workspaceRoot.resolve(ImportanceRegistry.getConfigPath().getFileName()), exportedFiles);
+            copyFile(PromptRegistry.getConfigPath(),
+                    workspaceRoot.resolve(PromptRegistry.getConfigPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecentInteractionsFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecentInteractionsFile.getPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecallTraceFile.getPath(),
@@ -187,6 +195,8 @@ public final class StudioWorkspaceExporter {
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
         versions.put("memoryRecallTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioMemoryRecallTuningFile.FILENAME)));
+        versions.put("importance", lastModifiedToken(getWorkspaceRoot().resolve("importance.json")));
+        versions.put("prompts", lastModifiedToken(getWorkspaceRoot().resolve("prompts.json")));
         versions.put("customTags", lastModifiedToken(getWorkspaceRoot().resolve("custom_tags.json")));
         versions.put("descriptions", lastModifiedToken(getWorkspaceRoot().resolve("tag_descriptions.json")));
         versions.put("relations", lastModifiedToken(getWorkspaceRoot().resolve("tag_relations.json")));

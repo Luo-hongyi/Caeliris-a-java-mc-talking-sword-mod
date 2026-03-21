@@ -29,10 +29,12 @@ import {
   DetailTagKind,
   FocusTag,
   ImplantedMemoryEntry,
+  ImportanceRegistryFile,
   LocationRegistryEntry,
   MemoryRecallTuningFile,
   NativeCatalogEntry,
   PersonaEntry,
+  PromptRegistryFile,
   RuntimeRecallTraceFile,
   RuntimeRecentInteractionsFile,
   TagRecord
@@ -43,6 +45,8 @@ type PageId =
   | "descriptions"
   | "relations"
   | "persona"
+  | "prompts"
+  | "importance"
   | "memory"
   | "state"
   | "thoughts"
@@ -201,6 +205,8 @@ type NativeCatalogSnapshotFile = {
 };
 
 type SchemaVersions = {
+  importance: number;
+  prompts: number;
   customTags: number;
   descriptions: number;
   relations: number;
@@ -233,6 +239,8 @@ type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
   runtimeInteractions?: RuntimeRecentInteractionsFile | null;
   runtimeRecallTrace?: RuntimeRecallTraceFile | null;
+  importance?: ImportanceRegistryFile | null;
+  prompts?: PromptRegistryFile | null;
   customTags?: CustomTagsFile | null;
   descriptions?: TagDescriptionsFile | null;
   relations?: TagRelationsFile | null;
@@ -251,6 +259,8 @@ type WorkspaceManifestVersions = {
   runtimeInteractions: string;
   runtimeRecallTrace: string;
   memoryRecallTuning: string;
+  importance: string;
+  prompts: string;
   customTags: string;
   descriptions: string;
   relations: string;
@@ -350,6 +360,8 @@ const pages: Array<{ id: PageId; label: string; blurb: string }> = [
   { id: "descriptions", label: "Descriptions", blurb: "统一编辑所有 tag 的自然语言 description。" },
   { id: "relations", label: "Relations", blurb: "管理标签联动引用图、环检测与正则批量操作。" },
   { id: "state", label: "State", blurb: "编辑 agent_state.json，与游戏内 state screen 共用同一份 authored 状态。" },
+  { id: "importance", label: "Importance", blurb: "编辑 importance.json，把 base importance 基准接入共享 workspace。" },
+  { id: "prompts", label: "Prompts", blurb: "编辑 prompts.json，把触发提示词与系统文案接入共享 workspace。" },
   { id: "thoughts", label: "Thoughts", blurb: "查看每次 inner monologue 的完整记录，而不只看最近一次。" },
   { id: "interactions", label: "Turns", blurb: "按回合查看触发记录、说话输出与 action 列表。" },
   { id: "recallGraph", label: "Recall Graph", blurb: "展示最近一次记忆联想的思维导图、触发 tags 与 trace。" },
@@ -530,7 +542,7 @@ function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFi
 
 function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedAt: "",
     triggerSource: "",
     userPrompt: "",
@@ -562,6 +574,20 @@ function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
         hopLimit: 1,
         recallBudget: 0
       }
+    },
+    timings: {
+      totalMillis: 0,
+      focusProfileMillis: 0,
+      cueBuildMillis: 0,
+      candidateCollectionMillis: 0,
+      promotionSelectionMillis: 0,
+      retainedSelectionMillis: 0,
+      consciousSelectionMillis: 0,
+      implantedFallbackMillis: 0,
+      promptFillMillis: 0,
+      sandboxMillis: 0,
+      stateCommitMillis: 0,
+      resultAssemblyMillis: 0
     }
   };
 }
@@ -657,6 +683,34 @@ function isAgentStateWorkspaceFile(value: unknown): value is AgentStateWorkspace
   }
 
   return AGENT_STATE_WEIGHT_KEYS.every((key) => typeof weights[key] === "number");
+}
+
+function normalizePromptRegistryFile(value: unknown): PromptRegistryFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const entries = Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, entry]) => !key.startsWith("_comment") && typeof entry === "string"
+    )
+  ) as PromptRegistryFile;
+
+  return entries;
+}
+
+function normalizeImportanceRegistryFile(value: unknown): ImportanceRegistryFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const entries = Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, entry]) => !key.startsWith("_comment") && typeof entry === "number"
+    )
+  ) as ImportanceRegistryFile;
+
+  return entries;
 }
 
 function isDescriptionMap(value: unknown): value is Record<string, DescriptionEntry> {
@@ -802,9 +856,15 @@ function normalizeAgentStateWorkspaceFile(value: unknown): AgentStateWorkspaceFi
       favorability: typeof value.persona_state.favorability === "number" ? value.persona_state.favorability : 0,
       player_profile: typeof value.persona_state.player_profile === "string" ? value.persona_state.player_profile : ""
     },
-    attention_weights: Object.fromEntries(
-      AGENT_STATE_WEIGHT_KEYS.map((key) => [key, typeof value.attention_weights[key] === "number" ? value.attention_weights[key] : 1])
-    ) as AgentStateWorkspaceFile["attention_weights"]
+    attention_weights: {
+      ...(Object.fromEntries(
+        AGENT_STATE_WEIGHT_KEYS.map((key) => [key, typeof value.attention_weights[key] === "number" ? value.attention_weights[key] : 1])
+      ) as Record<AgentStateWeightKey, number>),
+      crosshair_bonus_enabled:
+        typeof value.attention_weights.crosshair_bonus_enabled === "boolean"
+          ? value.attention_weights.crosshair_bonus_enabled
+          : true
+    }
   };
 }
 
@@ -894,7 +954,7 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
       : null;
 
   return {
-    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 2,
+    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 3,
     state: {
       primary_emotion:
         typeof file.state.primary_emotion === "string" && file.state.primary_emotion.trim()
@@ -922,9 +982,15 @@ function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorksp
       favorability: Math.round(clampNumber(file.persona_state.favorability, -100, 100)),
       player_profile: typeof file.persona_state.player_profile === "string" ? file.persona_state.player_profile : ""
     },
-    attention_weights: Object.fromEntries(
-      AGENT_STATE_WEIGHT_KEYS.map((key) => [key, clampNumber(file.attention_weights[key], 0, 10)])
-    ) as AgentStateWorkspaceFile["attention_weights"]
+    attention_weights: {
+      ...(Object.fromEntries(
+        AGENT_STATE_WEIGHT_KEYS.map((key) => [key, clampNumber(file.attention_weights[key], 0, 10)])
+      ) as Record<AgentStateWeightKey, number>),
+      crosshair_bonus_enabled:
+        typeof file.attention_weights.crosshair_bonus_enabled === "boolean"
+          ? file.attention_weights.crosshair_bonus_enabled
+          : true
+    }
   };
 }
 
@@ -1031,6 +1097,10 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
       typeof value.tagPoolDecayShape === "number"
         ? value.tagPoolDecayShape
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolDecayShape,
+    tagPoolDropThreshold:
+      typeof value.tagPoolDropThreshold === "number"
+        ? value.tagPoolDropThreshold
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolDropThreshold,
     fermentationHalfLifeDays:
       typeof value.fermentationHalfLifeDays === "number"
         ? value.fermentationHalfLifeDays
@@ -1039,6 +1109,10 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
       typeof value.fermentationDecayShape === "number"
         ? value.fermentationDecayShape
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.fermentationDecayShape,
+    fermentationDropThreshold:
+      typeof value.fermentationDropThreshold === "number"
+        ? value.fermentationDropThreshold
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.fermentationDropThreshold,
     intervalBonusScale:
       typeof value.intervalBonusScale === "number"
         ? value.intervalBonusScale
@@ -1123,7 +1197,30 @@ function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile
             semanticTimeLabel: typeof entry.semanticTimeLabel === "string" ? entry.semanticTimeLabel : ""
           }))
       : [],
-    runtimeState: normalizeRuntimeRecallRuntimeState(value.runtimeState)
+    runtimeState: normalizeRuntimeRecallRuntimeState(value.runtimeState),
+    timings: normalizeRuntimeRecallTimings(value.timings)
+  };
+}
+
+function normalizeRuntimeRecallTimings(value: unknown): RuntimeRecallTraceFile["timings"] {
+  const empty = createEmptyRuntimeRecallTraceFile().timings;
+  if (!isRecord(value)) {
+    return empty;
+  }
+
+  return {
+    totalMillis: typeof value.totalMillis === "number" ? value.totalMillis : 0,
+    focusProfileMillis: typeof value.focusProfileMillis === "number" ? value.focusProfileMillis : 0,
+    cueBuildMillis: typeof value.cueBuildMillis === "number" ? value.cueBuildMillis : 0,
+    candidateCollectionMillis: typeof value.candidateCollectionMillis === "number" ? value.candidateCollectionMillis : 0,
+    promotionSelectionMillis: typeof value.promotionSelectionMillis === "number" ? value.promotionSelectionMillis : 0,
+    retainedSelectionMillis: typeof value.retainedSelectionMillis === "number" ? value.retainedSelectionMillis : 0,
+    consciousSelectionMillis: typeof value.consciousSelectionMillis === "number" ? value.consciousSelectionMillis : 0,
+    implantedFallbackMillis: typeof value.implantedFallbackMillis === "number" ? value.implantedFallbackMillis : 0,
+    promptFillMillis: typeof value.promptFillMillis === "number" ? value.promptFillMillis : 0,
+    sandboxMillis: typeof value.sandboxMillis === "number" ? value.sandboxMillis : 0,
+    stateCommitMillis: typeof value.stateCommitMillis === "number" ? value.stateCommitMillis : 0,
+    resultAssemblyMillis: typeof value.resultAssemblyMillis === "number" ? value.resultAssemblyMillis : 0
   };
 }
 
@@ -1234,6 +1331,8 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     runtimeInteractions: "missing",
     runtimeRecallTrace: "missing",
     memoryRecallTuning: "missing",
+    importance: "missing",
+    prompts: "missing",
     customTags: "missing",
     descriptions: "missing",
     relations: "missing",
@@ -1268,6 +1367,8 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
         typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
       memoryRecallTuning:
         typeof rawVersions.memoryRecallTuning === "string" ? rawVersions.memoryRecallTuning : "missing",
+      importance: typeof rawVersions.importance === "string" ? rawVersions.importance : "missing",
+      prompts: typeof rawVersions.prompts === "string" ? rawVersions.prompts : "missing",
       customTags: typeof rawVersions.customTags === "string" ? rawVersions.customTags : "missing",
       descriptions: typeof rawVersions.descriptions === "string" ? rawVersions.descriptions : "missing",
       relations: typeof rawVersions.relations === "string" ? rawVersions.relations : "missing",
@@ -1316,6 +1417,24 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.memoryRecallTuning = value as MemoryRecallTuningFile;
     },
     describe: (_value) => "recall tuning 1 份"
+  },
+  {
+    filename: "importance.json",
+    versionKey: "importance",
+    normalize: normalizeImportanceRegistryFile,
+    assign: (importedData, value) => {
+      importedData.importance = value as ImportanceRegistryFile;
+    },
+    describe: (value) => `importance ${Object.keys(value as ImportanceRegistryFile).length} 条`
+  },
+  {
+    filename: "prompts.json",
+    versionKey: "prompts",
+    normalize: normalizePromptRegistryFile,
+    assign: (importedData, value) => {
+      importedData.prompts = value as PromptRegistryFile;
+    },
+    describe: (value) => `prompts ${Object.keys(value as PromptRegistryFile).length} 条`
   },
   {
     filename: "custom_tags.json",
@@ -2215,6 +2334,12 @@ function App() {
   const [personaFocusFilter, setPersonaFocusFilter] = useState<"all" | FocusTag>("all");
   const [memoryQuery, setMemoryQuery] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
+  const [importanceQuery, setImportanceQuery] = useState("");
+  const [promptQuery, setPromptQuery] = useState("");
+  const [newImportanceKey, setNewImportanceKey] = useState("");
+  const [newImportanceValue, setNewImportanceValue] = useState("0.50");
+  const [newPromptKey, setNewPromptKey] = useState("");
+  const [newPromptValue, setNewPromptValue] = useState("");
   const [nativeCatalogSnapshot, setNativeCatalogSnapshot] = useState<NativeCatalogSnapshotFile>(
     createSeedNativeCatalogSnapshot()
   );
@@ -2227,6 +2352,8 @@ function App() {
   const [memoryRecallTuningFile, setMemoryRecallTuningFile] = useState<MemoryRecallTuningFile>(
     createEmptyMemoryRecallTuningFile()
   );
+  const [importanceFile, setImportanceFile] = useState<ImportanceRegistryFile>({});
+  const [promptsFile, setPromptsFile] = useState<PromptRegistryFile>({});
   const [customTags, setCustomTags] = useState<CustomTagEntry[]>(studioSeedData.customTags.tags);
   const [descriptions, setDescriptions] = useState<Record<string, DescriptionEntry>>(
     studioSeedData.descriptions.descriptions
@@ -2236,10 +2363,13 @@ function App() {
   );
   const [personas, setPersonas] = useState<PersonaEntry[]>(studioSeedData.personas.personas);
   const [memories, setMemories] = useState<ImplantedMemoryEntry[]>(studioSeedData.implantedMemories.memories);
-  const [agentStateFile, setAgentStateFile] = useState<AgentStateWorkspaceFile>(studioSeedData.agentState);
+  const [agentStateFile, setAgentStateFile] = useState<AgentStateWorkspaceFile>(sanitizeAgentStateFile(studioSeedData.agentState));
   const [locations, setLocations] = useState<Record<string, LocationRegistryEntry>>(studioSeedData.locations);
   const [schemaVersions, setSchemaVersions] = useState<SchemaVersions>({
     ...studioSeedData.schemaVersions,
+    agentState: Math.max(studioSeedData.schemaVersions.agentState ?? 1, 3),
+    importance: 1,
+    prompts: 1,
     recallTuning: 1
   });
   const [workspaceDirectoryHandle, setWorkspaceDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -3180,6 +3310,102 @@ function App() {
     }));
   };
 
+  const updateImportanceEntry = (key: string, nextValue: number) => {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    setImportanceFile((currentFile) => ({
+      ...currentFile,
+      [normalizedKey]: clampNumber(nextValue, 0, 1)
+    }));
+  };
+
+  const removeImportanceEntry = (key: string) => {
+    setImportanceFile((currentFile) => {
+      const next = { ...currentFile };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const addImportanceEntry = () => {
+    const normalizedKey = newImportanceKey.trim();
+    const parsedValue = Number.parseFloat(newImportanceValue);
+    if (!normalizedKey || !Number.isFinite(parsedValue)) {
+      return;
+    }
+    setImportanceFile((currentFile) => ({
+      ...currentFile,
+      [normalizedKey]: clampNumber(parsedValue, 0, 1)
+    }));
+    setNewImportanceKey("");
+  };
+
+  const updatePromptEntry = (key: string, nextValue: string) => {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    setPromptsFile((currentFile) => ({
+      ...currentFile,
+      [normalizedKey]: nextValue
+    }));
+  };
+
+  const removePromptEntry = (key: string) => {
+    setPromptsFile((currentFile) => {
+      const next = { ...currentFile };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const addPromptEntry = () => {
+    const normalizedKey = newPromptKey.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    setPromptsFile((currentFile) => ({
+      ...currentFile,
+      [normalizedKey]: newPromptValue
+    }));
+    setNewPromptKey("");
+  };
+
+  const filteredImportanceEntries = useMemo(() => {
+    const normalizedQuery = importanceQuery.trim().toLowerCase();
+    return Object.entries(importanceFile)
+      .filter(([key]) => !normalizedQuery || key.toLowerCase().includes(normalizedQuery))
+      .sort((left, right) => left[0].localeCompare(right[0], "zh-CN"));
+  }, [importanceFile, importanceQuery]);
+
+  const filteredPromptEntries = useMemo(() => {
+    const normalizedQuery = promptQuery.trim().toLowerCase();
+    return Object.entries(promptsFile)
+      .filter(([key, value]) =>
+        !normalizedQuery
+        || key.toLowerCase().includes(normalizedQuery)
+        || value.toLowerCase().includes(normalizedQuery))
+      .sort((left, right) => left[0].localeCompare(right[0], "zh-CN"));
+  }, [promptQuery, promptsFile]);
+
+  const buildImportanceFile = (): ImportanceRegistryFile =>
+    Object.fromEntries(
+      Object.entries(importanceFile)
+        .filter(([key, value]) => key.trim().length > 0 && Number.isFinite(value))
+        .sort((left, right) => left[0].localeCompare(right[0], "zh-CN"))
+        .map(([key, value]) => [key.trim(), clampNumber(value, 0, 1)])
+    );
+
+  const buildPromptsFile = (): PromptRegistryFile =>
+    Object.fromEntries(
+      Object.entries(promptsFile)
+        .filter(([key, value]) => key.trim().length > 0 && typeof value === "string")
+        .sort((left, right) => left[0].localeCompare(right[0], "zh-CN"))
+        .map(([key, value]) => [key.trim(), value])
+    );
+
   const buildCustomTagsFile = (): CustomTagsFile => ({
     schemaVersion: schemaVersions.customTags,
     tags: customTags
@@ -3219,13 +3445,23 @@ function App() {
 
   const editableWorkspaceFiles: Array<{
     filename: string;
-    versionKey: Extract<keyof WorkspaceManifestVersions, "memoryRecallTuning" | "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
+    versionKey: Extract<keyof WorkspaceManifestVersions, "memoryRecallTuning" | "importance" | "prompts" | "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
     build: () => unknown;
   }> = [
     {
       filename: "memory_recall_tuning.json",
       versionKey: "memoryRecallTuning",
       build: buildMemoryRecallTuningFile
+    },
+    {
+      filename: "importance.json",
+      versionKey: "importance",
+      build: buildImportanceFile
+    },
+    {
+      filename: "prompts.json",
+      versionKey: "prompts",
+      build: buildPromptsFile
     },
     {
       filename: "custom_tags.json",
@@ -3318,6 +3554,12 @@ function App() {
         recallTuning: importedData.memoryRecallTuning?.schemaVersion ?? current.recallTuning
       }));
     }
+    if (importedData.importance) {
+      setImportanceFile(importedData.importance);
+    }
+    if (importedData.prompts) {
+      setPromptsFile(importedData.prompts);
+    }
     if (importedData.customTags) {
       setCustomTags(importedData.customTags.tags);
       setSchemaVersions((current) => ({
@@ -3357,7 +3599,7 @@ function App() {
       setAgentStateFile(sanitizeAgentStateFile(importedData.agentState));
       setSchemaVersions((current) => ({
         ...current,
-        agentState: importedData.agentState?.schemaVersion ?? current.agentState
+        agentState: Math.max(importedData.agentState?.schemaVersion ?? current.agentState, 3)
       }));
     }
     if (importedData.locations) {
@@ -3876,6 +4118,43 @@ function App() {
             onStateChange={updateAgentRuntimeState}
             onPersonaStateChange={updateAgentPersonaState}
             onAttentionWeightChange={updateAgentAttentionWeight}
+            onCrosshairBonusEnabledChange={(nextValue) =>
+              setAgentStateFile((currentFile) => ({
+                ...currentFile,
+                attention_weights: {
+                  ...currentFile.attention_weights,
+                  crosshair_bonus_enabled: nextValue
+                }
+              }))
+            }
+          />
+        ) : null}
+        {page === "importance" ? (
+          <ImportancePage
+            entries={filteredImportanceEntries}
+            query={importanceQuery}
+            newKey={newImportanceKey}
+            newValue={newImportanceValue}
+            onQueryChange={setImportanceQuery}
+            onNewKeyChange={setNewImportanceKey}
+            onNewValueChange={setNewImportanceValue}
+            onAdd={addImportanceEntry}
+            onUpdate={updateImportanceEntry}
+            onDelete={removeImportanceEntry}
+          />
+        ) : null}
+        {page === "prompts" ? (
+          <PromptsPage
+            entries={filteredPromptEntries}
+            query={promptQuery}
+            newKey={newPromptKey}
+            newValue={newPromptValue}
+            onQueryChange={setPromptQuery}
+            onNewKeyChange={setNewPromptKey}
+            onNewValueChange={setNewPromptValue}
+            onAdd={addPromptEntry}
+            onUpdate={updatePromptEntry}
+            onDelete={removePromptEntry}
           />
         ) : null}
         {page === "thoughts" ? (
@@ -5819,12 +6098,14 @@ function AgentStatePage({
   agentStateFile,
   onStateChange,
   onPersonaStateChange,
-  onAttentionWeightChange
+  onAttentionWeightChange,
+  onCrosshairBonusEnabledChange
 }: {
   agentStateFile: AgentStateWorkspaceFile;
   onStateChange: (patch: Partial<AgentStateWorkspaceFile["state"]>) => void;
   onPersonaStateChange: (patch: Partial<AgentStateWorkspaceFile["persona_state"]>) => void;
   onAttentionWeightChange: (weightKey: AgentStateWeightKey, nextValue: number) => void;
+  onCrosshairBonusEnabledChange: (nextValue: boolean) => void;
 }) {
   const strongestAttention = useMemo(() => {
     return [...AGENT_STATE_WEIGHT_KEYS]
@@ -5922,6 +6203,7 @@ function AgentStatePage({
             <span className="chip">{`随想值：${agentStateFile.state.wandering_mind.toFixed(2)}`}</span>
             <span className="chip">{`忆旧值（预留）：${agentStateFile.state.nostalgia.toFixed(2)}`}</span>
             <span className="chip">{`植入保底：${agentStateFile.state.implanted_memory_safety_net ? "开启" : "关闭"}`}</span>
+            <span className="chip">{`准心加分：${agentStateFile.attention_weights.crosshair_bonus_enabled ? "开启" : "关闭"}`}</span>
             {agentStateFile.state.recall_preset === "CUSTOM" ? (
               <span className="chip">{`Recall Tuning：${recallTuningSummary}`}</span>
             ) : null}
@@ -6205,6 +6487,15 @@ function AgentStatePage({
           <span className="badge">{`${AGENT_STATE_WEIGHT_KEYS.length} 项`}</span>
         </div>
 
+        <label className="checkbox-field">
+          <input
+            type="checkbox"
+            checked={agentStateFile.attention_weights.crosshair_bonus_enabled}
+            onChange={(event) => onCrosshairBonusEnabledChange(event.target.checked)}
+          />
+          <span>启用准心额外加分。开启后，`crosshairTarget = true` 的可见上下文会叠加独立加分。</span>
+        </label>
+
         <div className="two-col state-weight-layout">
           <AttentionWeightRadarChart weights={agentStateFile.attention_weights} />
 
@@ -6248,6 +6539,175 @@ function AgentStatePage({
               </label>
             ))}
           </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ImportancePage({
+  entries,
+  query,
+  newKey,
+  newValue,
+  onQueryChange,
+  onNewKeyChange,
+  onNewValueChange,
+  onAdd,
+  onUpdate,
+  onDelete
+}: {
+  entries: Array<[string, number]>;
+  query: string;
+  newKey: string;
+  newValue: string;
+  onQueryChange: (value: string) => void;
+  onNewKeyChange: (value: string) => void;
+  onNewValueChange: (value: string) => void;
+  onAdd: () => void;
+  onUpdate: (key: string, nextValue: number) => void;
+  onDelete: (key: string) => void;
+}) {
+  return (
+    <div className="panel page-panel catalog-editor">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Base Importance</p>
+          <h2>Importance Registry</h2>
+          <p className="muted-copy">本页直接编辑 `importance.json`。游戏端 collector 的 base importance 基准现在与 Studio 共用同一份 workspace authored 文件。</p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${entries.length} 条`}</span>
+          <span className="badge muted">workspace true source</span>
+        </div>
+      </div>
+
+      <section className="info-block">
+        <div className="form-grid state-form-grid">
+          <label className="field">
+            <span>搜索 key</span>
+            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="例如 base:health_critical" />
+          </label>
+          <label className="field">
+            <span>新增 key</span>
+            <input value={newKey} onChange={(event) => onNewKeyChange(event.target.value)} placeholder="例如 look:entity" />
+          </label>
+          <label className="field">
+            <span>新增 value</span>
+            <input value={newValue} onChange={(event) => onNewValueChange(event.target.value)} type="number" min={0} max={1} step={0.01} />
+          </label>
+        </div>
+        <div className="row-actions">
+          <button className="action-button primary" onClick={onAdd} type="button">新增 importance</button>
+        </div>
+      </section>
+
+      <section className="info-block">
+        <div className="section-head">
+          <div>
+            <h3>Workspace Entries</h3>
+            <p className="muted-copy">value 范围按 0.0 到 1.0 处理。这里改的是 collector 注入 `baseImportance` 时的 authored 基准值。</p>
+          </div>
+        </div>
+        <div className="form-grid">
+          {entries.map(([key, value]) => (
+            <div className="field full" key={key}>
+              <span>{key}</span>
+              <div className="row-actions">
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={value}
+                  onChange={(event) => onUpdate(key, Number.parseFloat(event.target.value))}
+                />
+                <button className="action-button quiet" onClick={() => onDelete(key)} type="button">删除</button>
+              </div>
+            </div>
+          ))}
+          {!entries.length ? <p className="muted-copy">当前没有匹配的 importance 项。</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PromptsPage({
+  entries,
+  query,
+  newKey,
+  newValue,
+  onQueryChange,
+  onNewKeyChange,
+  onNewValueChange,
+  onAdd,
+  onUpdate,
+  onDelete
+}: {
+  entries: Array<[string, string]>;
+  query: string;
+  newKey: string;
+  newValue: string;
+  onQueryChange: (value: string) => void;
+  onNewKeyChange: (value: string) => void;
+  onNewValueChange: (value: string) => void;
+  onAdd: () => void;
+  onUpdate: (key: string, nextValue: string) => void;
+  onDelete: (key: string) => void;
+}) {
+  return (
+    <div className="panel page-panel catalog-editor">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Prompt Registry</p>
+          <h2>Prompts</h2>
+          <p className="muted-copy">本页直接编辑 `prompts.json`。触发 user message、event instruction 和系统文案现在与 Studio 共用同一份 workspace authored 文件。</p>
+        </div>
+        <div className="stacked-badges">
+          <span className="badge">{`${entries.length} 条`}</span>
+          <span className="badge muted">workspace true source</span>
+        </div>
+      </div>
+
+      <section className="info-block">
+        <div className="form-grid state-form-grid">
+          <label className="field">
+            <span>搜索 key / value</span>
+            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="例如 trigger.right_click" />
+          </label>
+          <label className="field">
+            <span>新增 key</span>
+            <input value={newKey} onChange={(event) => onNewKeyChange(event.target.value)} placeholder="例如 trigger.right_click.event_instruction" />
+          </label>
+          <label className="field full">
+            <span>新增文本</span>
+            <textarea rows={3} value={newValue} onChange={(event) => onNewValueChange(event.target.value)} />
+          </label>
+        </div>
+        <div className="row-actions">
+          <button className="action-button primary" onClick={onAdd} type="button">新增 prompt</button>
+        </div>
+      </section>
+
+      <section className="info-block">
+        <div className="section-head">
+          <div>
+            <h3>Workspace Entries</h3>
+            <p className="muted-copy">这里直接编辑 PromptRegistry 的真实键值。删除后，运行时会回退到代码里的默认文案。</p>
+          </div>
+        </div>
+        <div className="form-grid">
+          {entries.map(([key, value]) => (
+            <label className="field full" key={key}>
+              <span>{key}</span>
+              <textarea rows={4} value={value} onChange={(event) => onUpdate(key, event.target.value)} />
+              <div className="row-actions">
+                <button className="action-button quiet" onClick={() => onDelete(key)} type="button">删除</button>
+              </div>
+            </label>
+          ))}
+          {!entries.length ? <p className="muted-copy">当前没有匹配的 prompt 项。</p> : null}
         </div>
       </section>
     </div>

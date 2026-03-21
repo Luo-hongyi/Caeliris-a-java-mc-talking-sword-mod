@@ -9,7 +9,7 @@ const RECENT_RECALL_CURVE_EXPONENT = 1.8;
 const MAX_INTERVAL_BONUS = 2.6;
 
 export const DEFAULT_MEMORY_RECALL_TUNING_FILE: MemoryRecallTuningFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   generatedAt: "",
   mainCandidatesPerCue: 6,
   sandboxCuesPerMemory: 6,
@@ -21,8 +21,10 @@ export const DEFAULT_MEMORY_RECALL_TUNING_FILE: MemoryRecallTuningFile = {
   promptFillProbabilityScale: 1.0,
   tagPoolHalfLifeDays: 0.4,
   tagPoolDecayShape: 1.0,
+  tagPoolDropThreshold: 0.035,
   fermentationHalfLifeDays: 1.2,
   fermentationDecayShape: 1.0,
+  fermentationDropThreshold: 0.06,
   intervalBonusScale: 0.95,
   intervalBonusSteepness: 4.0,
   synthesizedMemoryHalfLife: 63.0,
@@ -40,7 +42,7 @@ export function clamp01(value: number): number {
 
 export function sanitizeMemoryRecallTuningFile(value: MemoryRecallTuningFile): MemoryRecallTuningFile {
   return {
-    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 2,
+    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 3,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     mainCandidatesPerCue: Math.round(clampNumber(value.mainCandidatesPerCue, 1, 32)),
     sandboxCuesPerMemory: Math.round(clampNumber(value.sandboxCuesPerMemory, 1, 32)),
@@ -52,8 +54,10 @@ export function sanitizeMemoryRecallTuningFile(value: MemoryRecallTuningFile): M
     promptFillProbabilityScale: clampNumber(value.promptFillProbabilityScale, 0, 2),
     tagPoolHalfLifeDays: clampNumber(value.tagPoolHalfLifeDays, 0.1, 1),
     tagPoolDecayShape: clampNumber(value.tagPoolDecayShape, 0.25, 4),
+    tagPoolDropThreshold: clampNumber(value.tagPoolDropThreshold, 0, 0.2),
     fermentationHalfLifeDays: clampNumber(value.fermentationHalfLifeDays, 0.1, 2),
     fermentationDecayShape: clampNumber(value.fermentationDecayShape, 0.25, 4),
+    fermentationDropThreshold: clampNumber(value.fermentationDropThreshold, 0, 0.2),
     intervalBonusScale: clampNumber(value.intervalBonusScale, 0, 2.5),
     intervalBonusSteepness: clampNumber(value.intervalBonusSteepness, 0.25, 8),
     synthesizedMemoryHalfLife: clampNumber(value.synthesizedMemoryHalfLife, 1, 240),

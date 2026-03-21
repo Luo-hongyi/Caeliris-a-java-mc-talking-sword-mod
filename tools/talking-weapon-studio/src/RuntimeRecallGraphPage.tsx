@@ -152,6 +152,10 @@ function formatShortNumber(value: number, digits = 2): string {
   return Number.isFinite(value) ? value.toFixed(digits) : "0.00";
 }
 
+function formatMillis(value: number): string {
+  return `${formatShortNumber(value)} ms`;
+}
+
 function readNumber(raw: string, fallback: number, round = false): number {
   const parsed = Number.parseFloat(raw);
   if (!Number.isFinite(parsed)) {
@@ -649,6 +653,83 @@ export function RuntimeRecallGraphPage({
   }, [recallTrace.runtimeState.consciousMemories]);
 
   const sandboxTrace = useMemo(() => parseSandboxTrace(recallTrace.traceLines), [recallTrace.traceLines]);
+  const timingItems = useMemo(
+    () => [
+      {
+        id: "timing-total",
+        title: "Total Recall",
+        scoreLabel: formatMillis(recallTrace.timings.totalMillis),
+        detail: "整轮 recall 的总耗时，包含主召回、sandbox、prompt fill 和状态提交。"
+      },
+      {
+        id: "timing-collect",
+        title: "Candidate Collection",
+        scoreLabel: formatMillis(recallTrace.timings.candidateCollectionMillis),
+        detail: "候选收集阶段。主召回与发酵层参赛记忆在这里汇总。"
+      },
+      {
+        id: "timing-sandbox",
+        title: "Sandbox Recall",
+        scoreLabel: formatMillis(recallTrace.timings.sandboxMillis),
+        detail: "独立 1-hop 联想沙盒的整段耗时。"
+      },
+      {
+        id: "timing-commit",
+        title: "State Commit",
+        scoreLabel: formatMillis(recallTrace.timings.stateCommitMillis),
+        detail: "把 retained / conscious / sandbox 结果回写到运行时状态的耗时。"
+      },
+      {
+        id: "timing-focus",
+        title: "Focus Profile",
+        scoreLabel: formatMillis(recallTrace.timings.focusProfileMillis),
+        detail: "从 visible contexts 构造 focus profile。"
+      },
+      {
+        id: "timing-cues",
+        title: "Cue Build",
+        scoreLabel: formatMillis(recallTrace.timings.cueBuildMillis),
+        detail: "从 tag pool 投影出本轮 cue 输入。"
+      },
+      {
+        id: "timing-promote",
+        title: "Promotion Select",
+        scoreLabel: formatMillis(recallTrace.timings.promotionSelectionMillis),
+        detail: "从候选集中按温度抽样选出 promoted candidates。"
+      },
+      {
+        id: "timing-retained",
+        title: "Retained Selection",
+        scoreLabel: formatMillis(recallTrace.timings.retainedSelectionMillis),
+        detail: "构建 retained 候选并截出 retention 层。"
+      },
+      {
+        id: "timing-conscious",
+        title: "Conscious Selection",
+        scoreLabel: formatMillis(recallTrace.timings.consciousSelectionMillis),
+        detail: "按 conscious score 从 retained 层浮现到表层意识。"
+      },
+      {
+        id: "timing-fallback",
+        title: "Implanted Fallback",
+        scoreLabel: formatMillis(recallTrace.timings.implantedFallbackMillis),
+        detail: "植入记忆保底检测与补入耗时。"
+      },
+      {
+        id: "timing-prompt",
+        title: "Prompt Fill",
+        scoreLabel: formatMillis(recallTrace.timings.promptFillMillis),
+        detail: "conscious -> prompt 的 Bernoulli 阀门耗时。"
+      },
+      {
+        id: "timing-assemble",
+        title: "Result Assembly",
+        scoreLabel: formatMillis(recallTrace.timings.resultAssemblyMillis),
+        detail: "把 selection 物化成输出记忆列表并整理结果集。"
+      }
+    ],
+    [recallTrace.timings]
+  );
   const memoryDescriptionById = useMemo(() => {
     const descriptions = new Map<string, string>();
     for (const entry of recallTrace.runtimeState.fermentationBuffer) {
@@ -885,6 +966,20 @@ export function RuntimeRecallGraphPage({
             这页默认把 `prompt memories` 视为真正进入 LLM prompt 的输出层；`conscious memories` 作为上一层单独展示，方便对照 prompt fill 阀门。
           </p>
         </section>
+
+        <LayerMonitorBlock
+          emptyText="当前还没有 recall 耗时记录。"
+          items={timingItems}
+          stats={
+            <div className="stacked-badges">
+              <span className="badge">{`total ${formatMillis(recallTrace.timings.totalMillis)}`}</span>
+              <span className="badge muted">{`collect ${formatMillis(recallTrace.timings.candidateCollectionMillis)}`}</span>
+              <span className="badge muted">{`sandbox ${formatMillis(recallTrace.timings.sandboxMillis)}`}</span>
+            </div>
+          }
+          summary="按单次 recall 的真实执行分段记录 wall time。这里看到的是 worker 线程里的 recall 耗时，用来定位哪一层最重。"
+          title="Recall 耗时"
+        />
       </div>
 
       <div className="recall-controls-grid">
@@ -1264,6 +1359,23 @@ export function RuntimeRecallGraphPage({
           </FormulaCard>
 
           <FormulaCard
+            formula={`drop if tagScore < tagPoolDropThreshold`}
+            stats={<span className="chip">{`当前阈值 ${formatShortNumber(memoryRecallTuningFile.tagPoolDropThreshold, 3)}`}</span>}
+            summary="只决定 tag_pool 条目何时掉出缓冲层，不改变衰减曲线本身。阈值越高，常见 tag 越容易被清掉。"
+            title="Tag Pool 掉出阈值"
+          >
+            <RangeField
+              formatValue={(value) => formatShortNumber(value, 3)}
+              label="tagPoolDropThreshold"
+              max={0.2}
+              min={0}
+              onChange={(next) => onMemoryRecallTuningChange({ tagPoolDropThreshold: next })}
+              step={0.005}
+              value={memoryRecallTuningFile.tagPoolDropThreshold}
+            />
+          </FormulaCard>
+
+          <FormulaCard
             formula={`decayFactor = exp(- (deltaDays / fermentationHalfLifeDays) ^ fermentationDecayShape)`}
             stats={<span className="chip">{`当前 Δt=${formatShortNumber(currentDeltaDays)} 天 -> ${formatShortNumber(computeFermentationDecay(currentDeltaDays, memoryRecallTuningFile))}`}</span>}
             summary="控制 fermentation_buffer 的跨轮保温时长。"
@@ -1295,6 +1407,23 @@ export function RuntimeRecallGraphPage({
               samples={fermentationDecaySamples}
               xLabel="deltaDays"
               yLabel="decayFactor"
+            />
+          </FormulaCard>
+
+          <FormulaCard
+            formula={`drop if fermentationScore < fermentationDropThreshold`}
+            stats={<span className="chip">{`当前阈值 ${formatShortNumber(memoryRecallTuningFile.fermentationDropThreshold, 3)}`}</span>}
+            summary="只决定 fermentation_buffer 条目何时掉出缓冲层，不改变发酵分本身的衰减曲线。"
+            title="Fermentation 掉出阈值"
+          >
+            <RangeField
+              formatValue={(value) => formatShortNumber(value, 3)}
+              label="fermentationDropThreshold"
+              max={0.2}
+              min={0}
+              onChange={(next) => onMemoryRecallTuningChange({ fermentationDropThreshold: next })}
+              step={0.005}
+              value={memoryRecallTuningFile.fermentationDropThreshold}
             />
           </FormulaCard>
 

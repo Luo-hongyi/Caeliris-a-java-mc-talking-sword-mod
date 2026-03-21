@@ -35,7 +35,7 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final String FILENAME = "studio_runtime_recall_trace.json";
     public static final String VERSION_KEY = "runtimeRecallTrace";
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     private StudioRuntimeRecallTraceFile() {
     }
@@ -98,6 +98,7 @@ public final class StudioRuntimeRecallTraceFile {
             file.runtimeState = recallResult.runtimeState != null
                     ? recallResult.runtimeState
                     : new RecallRuntimeState.Snapshot();
+            file.timings = toTimings(recallResult.timings);
             for (LTMEntry memory : recallResult.consciousMemories) {
                 RecalledMemoryEntry entry = toRecalledMemoryEntry(memory);
                 if (entry == null) {
@@ -116,6 +117,26 @@ public final class StudioRuntimeRecallTraceFile {
         }
 
         write(file);
+    }
+
+    private static RecallTimingSummary toTimings(LTMRecallEngine.RecallTimings timings) {
+        if (timings == null) {
+            return new RecallTimingSummary();
+        }
+        RecallTimingSummary summary = new RecallTimingSummary();
+        summary.totalMillis = timings.totalMillis;
+        summary.focusProfileMillis = timings.focusProfileMillis;
+        summary.cueBuildMillis = timings.cueBuildMillis;
+        summary.candidateCollectionMillis = timings.candidateCollectionMillis;
+        summary.promotionSelectionMillis = timings.promotionSelectionMillis;
+        summary.retainedSelectionMillis = timings.retainedSelectionMillis;
+        summary.consciousSelectionMillis = timings.consciousSelectionMillis;
+        summary.implantedFallbackMillis = timings.implantedFallbackMillis;
+        summary.promptFillMillis = timings.promptFillMillis;
+        summary.sandboxMillis = timings.sandboxMillis;
+        summary.stateCommitMillis = timings.stateCommitMillis;
+        summary.resultAssemblyMillis = timings.resultAssemblyMillis;
+        return summary;
     }
 
     private static RecalledMemoryEntry toRecalledMemoryEntry(LTMEntry memory) {
@@ -164,6 +185,7 @@ public final class StudioRuntimeRecallTraceFile {
         public List<RecalledMemoryEntry> promptMemories = new ArrayList<>();
         public List<RecalledMemoryEntry> recalledMemories = new ArrayList<>();
         public RecallRuntimeState.Snapshot runtimeState = new RecallRuntimeState.Snapshot();
+        public RecallTimingSummary timings = new RecallTimingSummary();
 
         private void normalize() {
             if (schemaVersion <= 0) {
@@ -205,7 +227,25 @@ public final class StudioRuntimeRecallTraceFile {
             if (runtimeState == null) {
                 runtimeState = new RecallRuntimeState.Snapshot();
             }
+            if (timings == null) {
+                timings = new RecallTimingSummary();
+            }
         }
+    }
+
+    public static final class RecallTimingSummary {
+        public double totalMillis;
+        public double focusProfileMillis;
+        public double cueBuildMillis;
+        public double candidateCollectionMillis;
+        public double promotionSelectionMillis;
+        public double retainedSelectionMillis;
+        public double consciousSelectionMillis;
+        public double implantedFallbackMillis;
+        public double promptFillMillis;
+        public double sandboxMillis;
+        public double stateCommitMillis;
+        public double resultAssemblyMillis;
     }
 
     public static final class VisibleContextEntry {

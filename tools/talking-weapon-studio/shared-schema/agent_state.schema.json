@@ -11,9 +11,9 @@
     "attention_weights"
   ],
   "properties": {
-    "schemaVersion": {
+        "schemaVersion": {
       "type": "integer",
-      "minimum": 2
+      "minimum": 3
     },
     "state": {
       "type": "object",
@@ -71,23 +71,29 @@
           "required": [
             "main_candidates_per_cue",
             "sandbox_cues_per_memory",
-            "conscious_memory_cap"
+            "conscious_memory_cap",
+            "retention_memory_cap"
           ],
           "properties": {
             "main_candidates_per_cue": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 6
+              "maximum": 32
             },
             "sandbox_cues_per_memory": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 4
+              "minimum": 1,
+              "maximum": 32
             },
             "conscious_memory_cap": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 8
+              "minimum": 1,
+              "maximum": 16
+            },
+            "retention_memory_cap": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
             }
           }
         },
@@ -139,7 +145,8 @@
         "consumable",
         "block",
         "tool",
-        "common"
+        "common",
+        "crosshair_bonus_enabled"
       ],
       "properties": {
         "combat": { "type": "number", "minimum": 0, "maximum": 10 },
@@ -154,7 +161,8 @@
         "consumable": { "type": "number", "minimum": 0, "maximum": 10 },
         "block": { "type": "number", "minimum": 0, "maximum": 10 },
         "tool": { "type": "number", "minimum": 0, "maximum": 10 },
-        "common": { "type": "number", "minimum": 0, "maximum": 10 }
+        "common": { "type": "number", "minimum": 0, "maximum": 10 },
+        "crosshair_bonus_enabled": { "type": "boolean" }
       }
     }
   }

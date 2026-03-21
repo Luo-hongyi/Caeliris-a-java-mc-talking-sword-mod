@@ -107,8 +107,10 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_DECAY_SHAPE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_DROP_THRESHOLD;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_DECAY_SHAPE;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_DROP_THRESHOLD;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_SCALE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_INTERVAL_BONUS_STEEPNESS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE;
@@ -350,12 +352,18 @@ public final class TalkingWeaponConfig {
                 LTM_RECALL_TAG_POOL_DECAY_SHAPE = builder
                                 .comment("tag_pool 衰减曲线形状；1.0=标准指数衰减，<1 更长尾，>1 前期衰减更快")
                                 .defineInRange("tagPoolDecayShape", 1.0, 0.25, 4.0);
+                LTM_RECALL_TAG_POOL_DROP_THRESHOLD = builder
+                                .comment("tag_pool 掉出阈值；衰减后或 trim 后低于该值的 tag 会被移除")
+                                .defineInRange("tagPoolDropThreshold", 0.035, 0.0, 0.20);
                 LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS = builder
                                 .comment("fermentation_buffer 半衰期，单位为游戏内天数；越大代表潜意识候选记忆保留越久")
                                 .defineInRange("fermentationHalfLifeDays", 1.20, 0.10, 2.0);
                 LTM_RECALL_FERMENTATION_DECAY_SHAPE = builder
                                 .comment("fermentation_buffer 衰减曲线形状；1.0=标准指数衰减，<1 更长尾，>1 前期衰减更快")
                                 .defineInRange("fermentationDecayShape", 1.0, 0.25, 4.0);
+                LTM_RECALL_FERMENTATION_DROP_THRESHOLD = builder
+                                .comment("fermentation_buffer 掉出阈值；衰减后或 trim 后低于该值的记忆会被移除")
+                                .defineInRange("fermentationDropThreshold", 0.06, 0.0, 0.20);
                 LTM_RECALL_INTERVAL_BONUS_SCALE = builder
                                 .comment("长间隔补偿的整体缩放系数；越大代表隔一段时间后新注入 cue 的额外加成越高")
                                 .defineInRange("intervalBonusScale", 0.95, 0.0, 2.5);
@@ -405,6 +413,14 @@ public final class TalkingWeaponConfig {
 
         public static double getPromptFillProbabilityScaleValue() {
                 return Math.max(0.0, Math.min(2.0, LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE.get()));
+        }
+
+        public static double getTagPoolDropThresholdValue() {
+                return Math.max(0.0, Math.min(0.20, LTM_RECALL_TAG_POOL_DROP_THRESHOLD.get()));
+        }
+
+        public static double getFermentationDropThresholdValue() {
+                return Math.max(0.0, Math.min(0.20, LTM_RECALL_FERMENTATION_DROP_THRESHOLD.get()));
         }
 
         @SubscribeEvent

@@ -127,6 +127,7 @@
 
 - 半衰期：`LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS * 游戏内一天`
 - 形状参数：`LTM_RECALL_TAG_POOL_DECAY_SHAPE`
+- 掉出阈值：`LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
 - 当前默认值：`0.40 * 游戏内一天`
 - 公式：
 
@@ -135,12 +136,14 @@ decayFactor = exp(- (deltaGameTime / TAG_POOL_HALF_LIFE_TICKS) ^ TAG_POOL_DECAY_
 newScore = oldScore * decayFactor
 ```
 
-- 低于 `0.035` 的 tag 会被移除
+- 若 `newScore < LTM_RECALL_TAG_POOL_DROP_THRESHOLD`，该 tag 会被移除
+- 当前默认掉出阈值：`0.035`
 
 ### 3.2 Fermentation Buffer 衰减
 
 - 半衰期：`LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS * 游戏内一天`
 - 形状参数：`LTM_RECALL_FERMENTATION_DECAY_SHAPE`
+- 掉出阈值：`LTM_RECALL_FERMENTATION_DROP_THRESHOLD`
 - 当前默认值：`1.20 * 游戏内一天`
 - 公式：
 
@@ -149,7 +152,8 @@ decayFactor = exp(- (deltaGameTime / FERMENTATION_HALF_LIFE_TICKS) ^ FERMENTATIO
 newScore = oldScore * decayFactor
 ```
 
-- 低于 `0.06` 的记忆会被移除
+- 若 `newScore < LTM_RECALL_FERMENTATION_DROP_THRESHOLD`，该记忆会被移除
+- 当前默认掉出阈值：`0.06`
 
 ### 3.3 长间隔补偿
 
@@ -695,8 +699,10 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 - `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE`
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
 - `LTM_RECALL_TAG_POOL_DECAY_SHAPE`
+- `LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
 - `LTM_RECALL_FERMENTATION_DECAY_SHAPE`
+- `LTM_RECALL_FERMENTATION_DROP_THRESHOLD`
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
 - `LTM_RECALL_INTERVAL_BONUS_STEEPNESS`
 - `LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE`
@@ -706,7 +712,9 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 注意：
 
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
+- `LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
+- `LTM_RECALL_FERMENTATION_DROP_THRESHOLD`
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
 - `LTM_RECALL_INTERVAL_BONUS_STEEPNESS`
 
@@ -757,8 +765,10 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 | `LTM_RECALL_PROMPT_FILL_PROBABILITY_SCALE` | `speakProbability = clamp(0, 1, rawProbability * scale)` | `consciousScore` | `speakProbability` |
 | `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `tagPool decayFactor` |
 | `LTM_RECALL_TAG_POOL_DECAY_SHAPE` | 同上 | `deltaDays` | `tagPool decayFactor` |
+| `LTM_RECALL_TAG_POOL_DROP_THRESHOLD` | `drop if tagScore < threshold` | `tagScore` | `tag 是否保留在 pool 中` |
 | `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `fermentation decayFactor` |
 | `LTM_RECALL_FERMENTATION_DECAY_SHAPE` | 同上 | `deltaDays` | `fermentation decayFactor` |
+| `LTM_RECALL_FERMENTATION_DROP_THRESHOLD` | `drop if fermentationScore < threshold` | `fermentationScore` | `记忆是否保留在发酵层中` |
 | `LTM_RECALL_INTERVAL_BONUS_SCALE` | `intervalBonus = clamp(1, 2.6, 1 + min(1.6, log1p(days * steepness) * scale))` | `deltaDays` | `intervalBonus` |
 | `LTM_RECALL_INTERVAL_BONUS_STEEPNESS` | 同上 | `deltaDays` | `intervalBonus` |
 | `LTM_RECALL_SYNTHESIZED_MEMORY_HALF_LIFE` | `ageFactor = clamp(0.15, 1.0, exp(-ageDays / halfLifeDays))` | `ageDays` | `ageFactor` |

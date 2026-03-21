@@ -17,8 +17,10 @@
     "promptFillProbabilityScale",
     "tagPoolHalfLifeDays",
     "tagPoolDecayShape",
+    "tagPoolDropThreshold",
     "fermentationHalfLifeDays",
     "fermentationDecayShape",
+    "fermentationDropThreshold",
     "intervalBonusScale",
     "intervalBonusSteepness",
     "synthesizedMemoryHalfLife",
@@ -28,7 +30,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "generatedAt": {
       "type": "string"
@@ -83,6 +85,11 @@
       "minimum": 0.25,
       "maximum": 4
     },
+    "tagPoolDropThreshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.2
+    },
     "fermentationHalfLifeDays": {
       "type": "number",
       "minimum": 0.1,
@@ -92,6 +99,11 @@
       "type": "number",
       "minimum": 0.25,
       "maximum": 4
+    },
+    "fermentationDropThreshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.2
     },
     "intervalBonusScale": {
       "type": "number",

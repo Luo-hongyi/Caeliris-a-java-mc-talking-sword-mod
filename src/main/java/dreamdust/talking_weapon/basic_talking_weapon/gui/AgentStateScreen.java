@@ -57,6 +57,7 @@ public class AgentStateScreen extends Screen {
     // 注意力权重编辑框
     private EditBox wCombat, wMovement, wLabor, wCreation, wCreature, wSocial;
     private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool, wCommon;
+    private boolean crosshairBonusEnabled;
 
     // 思维特性编辑引用
     private EditBox wanderingMindBox;
@@ -74,6 +75,7 @@ public class AgentStateScreen extends Screen {
     private Button recallPresetLabel;
     private Button desireTagLabel;
     private Button implantedMemorySafetyNetButton;
+    private Button crosshairBonusButton;
     private StateScrollList scrollList;
 
     public AgentStateScreen(Screen parent) {
@@ -84,6 +86,7 @@ public class AgentStateScreen extends Screen {
         this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
         this.recallPresetIndex = recallPresetIndexOf(state.getRecallPreset());
         this.implantedMemorySafetyNetEnabled = state.isImplantedMemorySafetyNetEnabled();
+        this.crosshairBonusEnabled = TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.get();
         // desireTagIndex: 0=无渴望, 1..n=FocusTag
         FocusTag desire = state.getCurrentDesireTag();
         this.desireTagIndex = desire == null ? 0 : desireTagIndexOf(desire) + 1;
@@ -186,6 +189,13 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new BoxRow("TOOL 工具", left, rowWidth, wTool));
         wCommon = weightBox(TalkingWeaponConfig.WEIGHT_COMMON.get());
         scrollList.addEntry(new BoxRow("COMMON 通用", left, rowWidth, wCommon));
+        crosshairBonusButton = Button.builder(
+                Component.literal(crosshairBonusEnabled ? "开启" : "关闭"),
+                btn -> {
+                    crosshairBonusEnabled = !crosshairBonusEnabled;
+                    btn.setMessage(Component.literal(crosshairBonusEnabled ? "开启" : "关闭"));
+                }).bounds(0, 0, 100, 20).build();
+        scrollList.addEntry(new ButtonRow("准心额外加分", left, rowWidth, crosshairBonusButton));
 
         // ── 思维特性 ──
         scrollList.addEntry(new LabelRow("§b▸ 思维特性"));
@@ -405,6 +415,7 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_BLOCK, wBlock);
         setWeight(TalkingWeaponConfig.WEIGHT_TOOL, wTool);
         setWeight(TalkingWeaponConfig.WEIGHT_COMMON, wCommon);
+        TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.set(crosshairBonusEnabled);
         TalkingWeaponConfig.SPEC.save();
         AgentStateStorage.flushSaveRuntimeState(state, persona);
 

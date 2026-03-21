@@ -171,8 +171,8 @@ public final class AgentStateStorage {
 
     private static AgentStateFile normalized(AgentStateFile raw) {
         AgentStateFile file = raw != null ? raw : new AgentStateFile();
-        if (file.schemaVersion < 2) {
-            file.schemaVersion = 2;
+        if (file.schemaVersion < 3) {
+            file.schemaVersion = 3;
         }
         if (file.state == null) {
             file.state = new AgentRuntimeStateSection();
@@ -225,6 +225,7 @@ public final class AgentStateStorage {
         file.attention_weights.block = TalkingWeaponConfig.WEIGHT_BLOCK.get();
         file.attention_weights.tool = TalkingWeaponConfig.WEIGHT_TOOL.get();
         file.attention_weights.common = TalkingWeaponConfig.WEIGHT_COMMON.get();
+        file.attention_weights.crosshair_bonus_enabled = TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.get();
         return file;
     }
 
@@ -260,6 +261,7 @@ public final class AgentStateStorage {
         applyWeight(TalkingWeaponConfig.WEIGHT_BLOCK, file.attention_weights.block);
         applyWeight(TalkingWeaponConfig.WEIGHT_TOOL, file.attention_weights.tool);
         applyWeight(TalkingWeaponConfig.WEIGHT_COMMON, file.attention_weights.common);
+        TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.set(file.attention_weights.crosshair_bonus_enabled);
         TalkingWeaponConfig.SPEC.save();
     }
 
@@ -279,7 +281,7 @@ public final class AgentStateStorage {
     }
 
     public static final class AgentStateFile {
-        public int schemaVersion = 2;
+        public int schemaVersion = 3;
         public AgentRuntimeStateSection state = new AgentRuntimeStateSection();
         public AgentPersonaStateSection persona_state = new AgentPersonaStateSection();
         public AttentionWeightsSection attention_weights = new AttentionWeightsSection();
@@ -361,5 +363,6 @@ public final class AgentStateStorage {
         public double block = 1.0d;
         public double tool = 1.0d;
         public double common = 1.0d;
+        public boolean crosshair_bonus_enabled = true;
     }
 }

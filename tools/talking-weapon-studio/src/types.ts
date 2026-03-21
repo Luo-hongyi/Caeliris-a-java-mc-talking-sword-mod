@@ -85,6 +85,14 @@ export interface AgentStateRecallTuning {
   retention_memory_cap: number;
 }
 
+export interface PromptRegistryFile {
+  [key: string]: string;
+}
+
+export interface ImportanceRegistryFile {
+  [key: string]: number;
+}
+
 export interface MemoryRecallTuningFile {
   schemaVersion: number;
   generatedAt: string;
@@ -98,8 +106,10 @@ export interface MemoryRecallTuningFile {
   promptFillProbabilityScale: number;
   tagPoolHalfLifeDays: number;
   tagPoolDecayShape: number;
+  tagPoolDropThreshold: number;
   fermentationHalfLifeDays: number;
   fermentationDecayShape: number;
+  fermentationDropThreshold: number;
   intervalBonusScale: number;
   intervalBonusSteepness: number;
   synthesizedMemoryHalfLife: number;
@@ -127,7 +137,9 @@ export interface AgentStateFile {
     favorability: number;
     player_profile: string;
   };
-  attention_weights: Record<AgentStateWeightKey, number>;
+  attention_weights: Record<AgentStateWeightKey, number> & {
+    crosshair_bonus_enabled: boolean;
+  };
 }
 
 export interface LocationRegistryEntry {
@@ -277,6 +289,21 @@ export interface RuntimeRecallRuntimeState {
   associationSandbox: RuntimeRecallAssociationSandbox;
 }
 
+export interface RuntimeRecallTimings {
+  totalMillis: number;
+  focusProfileMillis: number;
+  cueBuildMillis: number;
+  candidateCollectionMillis: number;
+  promotionSelectionMillis: number;
+  retainedSelectionMillis: number;
+  consciousSelectionMillis: number;
+  implantedFallbackMillis: number;
+  promptFillMillis: number;
+  sandboxMillis: number;
+  stateCommitMillis: number;
+  resultAssemblyMillis: number;
+}
+
 export interface RuntimeRecallTraceFile {
   schemaVersion: number;
   generatedAt: string;
@@ -291,4 +318,5 @@ export interface RuntimeRecallTraceFile {
   promptMemories: RuntimeRecalledMemoryEntry[];
   recalledMemories: RuntimeRecalledMemoryEntry[];
   runtimeState: RuntimeRecallRuntimeState;
+  timings: RuntimeRecallTimings;
 }

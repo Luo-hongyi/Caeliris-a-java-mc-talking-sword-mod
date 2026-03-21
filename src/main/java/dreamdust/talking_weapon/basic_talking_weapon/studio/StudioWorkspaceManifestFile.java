@@ -43,6 +43,8 @@ public final class StudioWorkspaceManifestFile {
             "runtimeInteractions",
             "runtimeRecallTrace",
             "memoryRecallTuning",
+            "importance",
+            "prompts",
             "customTags",
             "descriptions",
             "relations",
@@ -54,6 +56,8 @@ public final class StudioWorkspaceManifestFile {
 
     public static final List<String> EDITABLE_VERSION_KEYS = List.of(
             "memoryRecallTuning",
+            "importance",
+            "prompts",
             "customTags",
             "descriptions",
             "relations",
