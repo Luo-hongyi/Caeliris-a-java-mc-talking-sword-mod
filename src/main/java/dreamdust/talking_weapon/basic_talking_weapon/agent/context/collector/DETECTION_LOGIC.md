@@ -364,13 +364,14 @@
 
 ### 输入
 
-- `AgentRuntime.getInstance().getMemory().getActionBuffer()`
+- `AgentRuntime.getInstance().getMemory().getRecentActionBuffer()`
 
 ### 判定逻辑
 
-- 如果 `ActionBuffer` 为空，则不输出
-- 每次读取后会 `clear()`
-  - 即“阅后即焚”，避免同一批动作被重复感知
+- 如果 `RecentActionBuffer` 为空，则不输出
+- 每次读取后会选择性消费 prompt 已接入的动作
+  - 即“近期摘要阅后即焚”，避免同一批动作被重复感知
+  - 原始动作副本仍保留在 `ActionArchive`
 - 先按 Primary Focus 分组，再对每组生成一条总结
 - 重要度按 Focus 分类：
   - `COMBAT / HAZARD` -> combat importance

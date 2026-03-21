@@ -19,18 +19,18 @@
 | 类名 | 触发条件 | 用途 |
 |---|---|---|
 | `ReflectionTrigger` | 计划中的低频反思时机 | 旧版 LTM 合成入口骨架，尚未接入当前自动调度链 |
-| `CombatRecapTrigger` | ActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾骨架 |
+| `CombatRecapTrigger` | RecentActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾骨架 |
 | `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗记忆骨架 |
 
 ### 事件感知器
 
 | 类名 | 职责 |
 |---|---|
-| `TickEventWatcher` | 统一事件感知器：监听 Forge 事件，写入 ActionBuffer，检测群系变化和旅行 |
+| `TickEventWatcher` | 统一事件感知器：监听 Forge 事件，同时写入 RecentActionBuffer 与 ActionArchive，检测群系变化和旅行 |
 
 ## TickEventWatcher 事件监听
 
-`TickEventWatcher` 已扩展为统一事件感知器，监听以下 Forge 事件并写入 `ActionBuffer`：
+`TickEventWatcher` 已扩展为统一事件感知器，监听以下 Forge 事件，并将同一条动作同时写入 `RecentActionBuffer` 与 `ActionArchive`：
 
 | @SubscribeEvent | 产生的 ActionRecord |
 |---|---|
@@ -41,7 +41,7 @@
 | Tick 采样：锚点位移 | `TRAVEL`（距锚点 >200 格） |
 | Tick 采样：群系差分 | `BIOME_CHANGE` + fire BiomeChangeTrigger |
 
-> **重要**：所有新增的事件监听方法仅向 ActionBuffer 写入记录，不直接触发 LLM。
+> **重要**：所有新增的事件监听方法仅记录动作，不直接触发 LLM。
 
 > **当前状态**：`TickEventWatcher` 目前没有自动派发 `ReflectionTrigger`。因此，长期记忆生成虽然保留了旧版 `ReflectionTask` 代码，但并未形成一条已经投入当前设计使用的稳定触发链。
 

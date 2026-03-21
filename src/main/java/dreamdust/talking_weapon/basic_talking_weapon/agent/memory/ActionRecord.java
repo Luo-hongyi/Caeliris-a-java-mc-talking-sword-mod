@@ -10,9 +10,9 @@ import java.util.Set;
  * 极轻量的玩家动作记录。
  * <p>
  * 当多条同类型 + 同目标的动作在短时间内连续发生时，
- * {@link ActionBuffer} 会将它们合并为一条记录并递增 {@link #count}。
+ * {@link RecentActionBuffer} 会将它们合并为一条记录并递增 {@link #count}。
  * <p>
- * 此类本身是<b>可变的</b>（仅 count 字段），但只有 ActionBuffer 内部会修改。
+ * 此类本身是<b>可变的</b>（仅 count 字段），但只有 {@link RecentActionBuffer} 内部会修改。
  */
 public final class ActionRecord {
 
@@ -23,10 +23,14 @@ public final class ActionRecord {
     private final Set<DetailTag> detailTags;
 
     public ActionRecord(ActionType type, String target, Set<DetailTag> detailTags) {
+        this(type, target, 1, System.currentTimeMillis(), detailTags);
+    }
+
+    private ActionRecord(ActionType type, String target, int count, long timestamp, Set<DetailTag> detailTags) {
         this.type = type;
         this.target = target;
-        this.count = 1;
-        this.timestamp = System.currentTimeMillis();
+        this.count = count;
+        this.timestamp = timestamp;
         this.detailTags = (detailTags != null)
                 ? Collections.unmodifiableSet(new LinkedHashSet<>(detailTags))
                 : Collections.emptySet();
@@ -66,8 +70,15 @@ public final class ActionRecord {
         return detailTags;
     }
 
+    /**
+     * 返回一份独立副本，避免同一条记录在不同存储层之间共享可变状态。
+     */
+    public ActionRecord copy() {
+        return new ActionRecord(type, target, count, timestamp, detailTags);
+    }
+
     // ─────────────────────────────────────────────
-    // 合并支持（仅 ActionBuffer 内部调用）
+    // 合并支持（仅 RecentActionBuffer 内部调用）
     // ─────────────────────────────────────────────
 
     /** 递增合并计数 */

@@ -12,11 +12,12 @@ import java.util.UUID;
  * Agent 记忆系统：三池架构。
  * <ol>
  * <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
- * <li><b>ActionBuffer</b> — 环形动作流，高频轻量，不触发 LLM</li>
+ * <li><b>RecentActionBuffer</b> — prompt 侧近期动作缓冲</li>
+ * <li><b>ActionArchive</b> — 面向 intent / LTM 的原始动作记录流</li>
  * <li><b>LTMRecords</b> — 剑视角的深度记忆切片列表 / 偏好设定</li>
  * </ol>
  * <p>
- * 线程安全说明：ActionBuffer 自身线程安全；ltmRecords
+ * 线程安全说明：RecentActionBuffer / ActionArchive 自身线程安全；ltmRecords
  * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
@@ -28,10 +29,16 @@ public class AgentMemory {
     private String identity;
 
     // ═══════════════════════════════════════════════════════════════
-    // Layer 1: ActionBuffer（环形动作流）
+    // Layer 1: RecentActionBuffer（prompt 近期动作）
     // ═══════════════════════════════════════════════════════════════
 
-    private final ActionBuffer actionBuffer;
+    private final RecentActionBuffer recentActionBuffer;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 1.2: ActionArchive（原始动作归档）
+    // ═══════════════════════════════════════════════════════════════
+
+    private final ActionArchive actionArchive;
 
     // ═══════════════════════════════════════════════════════════════
     // Layer 1.5: STMPool (短期记忆聚合池)
@@ -55,7 +62,8 @@ public class AgentMemory {
 
     public AgentMemory() {
         this.identity = "";
-        this.actionBuffer = new ActionBuffer(64);
+        this.recentActionBuffer = new RecentActionBuffer(64);
+        this.actionArchive = new ActionArchive(4096);
         this.stmPool = new STMPool();
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
@@ -82,10 +90,33 @@ public class AgentMemory {
         this.identity = identity;
     }
 
-    // ── ActionBuffer ─────────────────────────────────────────────
+    // ── RecentActionBuffer / ActionArchive ──────────────────────
 
-    public ActionBuffer getActionBuffer() {
-        return actionBuffer;
+    public RecentActionBuffer getRecentActionBuffer() {
+        return recentActionBuffer;
+    }
+
+    public ActionArchive getActionArchive() {
+        return actionArchive;
+    }
+
+    /**
+     * 兼容旧调用链的别名。新代码应改用 {@link #getRecentActionBuffer()}。
+     */
+    @Deprecated
+    public RecentActionBuffer getActionBuffer() {
+        return recentActionBuffer;
+    }
+
+    /**
+     * 将同一条观察到的动作同时写入“prompt 近期缓冲”和“长期分析归档”。
+     */
+    public void recordObservedAction(ActionRecord record) {
+        if (record == null) {
+            return;
+        }
+        actionArchive.add(record);
+        recentActionBuffer.add(record.copy());
     }
 
     public STMPool getSTMPool() {
@@ -211,7 +242,8 @@ public class AgentMemory {
     @Override
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
-                + ", actionBuffer=" + actionBuffer.size()
+                + ", recentActionBuffer=" + recentActionBuffer.size()
+                + ", actionArchive=" + actionArchive.size()
                 + ", stmPool=" + stmPool
                 + ", ltmRecords=" + ltmRecords.size()
                 + ", recentRecall=" + recentRecallSuppressionTable.size()

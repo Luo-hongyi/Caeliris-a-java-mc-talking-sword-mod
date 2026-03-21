@@ -108,6 +108,9 @@ public final class TalkingWeaponConfig {
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_DECAY_SHAPE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_DROP_THRESHOLD;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT;
+        public static final ForgeConfigSpec.DoubleValue LTM_RECALL_TAG_POOL_REHEAT_FLOOR;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_DECAY_SHAPE;
         public static final ForgeConfigSpec.DoubleValue LTM_RECALL_FERMENTATION_DROP_THRESHOLD;
@@ -243,7 +246,7 @@ public final class TalkingWeaponConfig {
                                 .comment("右键触发：启用思考模式（LLM 先思考再回复，思考内容仅保留在日志中）")
                                 .define("enableThinking", false);
                 RC_ENABLE_RECENT_ACTIONS = builder
-                                .comment("右键触发：启用近期动作流总览（从 ActionBuffer 中抽取内容，非常推荐开启）")
+                                .comment("右键触发：启用近期动作流总览（从 RecentActionBuffer 中抽取内容，非常推荐开启）")
                                 .define("enableRecentActions", true);
                 builder.pop(); // right_click
 
@@ -355,6 +358,15 @@ public final class TalkingWeaponConfig {
                 LTM_RECALL_TAG_POOL_DROP_THRESHOLD = builder
                                 .comment("tag_pool 掉出阈值；衰减后或 trim 后低于该值的 tag 会被移除")
                                 .defineInRange("tagPoolDropThreshold", 0.035, 0.0, 0.20);
+                LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN = builder
+                                .comment("tag 第一次进入 tag_pool 时的注入脉冲倍率；越高代表首见时越容易被强烈点亮")
+                                .defineInRange("tagPoolReheatPulseGain", 1.85, 1.0, 3.0);
+                LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT = builder
+                                .comment("tag 每次再次命中后的 reheat gain 保留比例；越低代表连续命中时越快掉向习惯化水平")
+                                .defineInRange("tagPoolReheatDecayPerHit", 0.55, 0.0, 1.0);
+                LTM_RECALL_TAG_POOL_REHEAT_FLOOR = builder
+                                .comment("tag reheat gain 的习惯化下限；越低代表常见 tag 后续再加热越弱")
+                                .defineInRange("tagPoolReheatFloor", 0.72, 0.10, 1.0);
                 LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS = builder
                                 .comment("fermentation_buffer 半衰期，单位为游戏内天数；越大代表潜意识候选记忆保留越久")
                                 .defineInRange("fermentationHalfLifeDays", 1.20, 0.10, 2.0);
@@ -417,6 +429,18 @@ public final class TalkingWeaponConfig {
 
         public static double getTagPoolDropThresholdValue() {
                 return Math.max(0.0, Math.min(0.20, LTM_RECALL_TAG_POOL_DROP_THRESHOLD.get()));
+        }
+
+        public static double getTagPoolReheatPulseGainValue() {
+                return Math.max(1.0, Math.min(3.0, LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN.get()));
+        }
+
+        public static double getTagPoolReheatDecayPerHitValue() {
+                return Math.max(0.0, Math.min(1.0, LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT.get()));
+        }
+
+        public static double getTagPoolReheatFloorValue() {
+                return Math.max(0.10, Math.min(1.0, LTM_RECALL_TAG_POOL_REHEAT_FLOOR.get()));
         }
 
         public static double getFermentationDropThresholdValue() {

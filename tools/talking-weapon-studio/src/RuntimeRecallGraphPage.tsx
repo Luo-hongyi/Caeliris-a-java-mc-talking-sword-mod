@@ -16,6 +16,7 @@ import "@xyflow/react/dist/style.css";
 import {
   applyTemperature,
   buildSampleSeries,
+  buildTagReheatHitSamples,
   computeDesiredFocusBonus,
   computeDesireProfileBonus,
   computeEffectiveRecentRecallWindow,
@@ -28,6 +29,8 @@ import {
   computeSandboxCueBudget,
   computeSandboxRecallBudget,
   computeSynthesizedAgeFactor,
+  computeTagReheatGainAfterHit,
+  computeTagReheatGainAfterTime,
   computeTagPoolDecay,
   computeTemperatureExponent,
   gameTicksToDays
@@ -778,9 +781,16 @@ export function RuntimeRecallGraphPage({
         id: `tag-pool-${entry.tag}-${index}`,
         title: entry.tag || "(空 tag)",
         scoreLabel: `score ${formatShortNumber(entry.score)}`,
-        detail: `sources ${entry.sourceCount} · injected ${formatShortNumber(entry.injectedScoreThisTurn)}`
-          + (entry.newlyInjectedThisTurn ? " · 本轮新注入" : ""),
-        chips: buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 6)
+        detail: entry.newlyInjectedThisTurn
+          ? `sources ${entry.sourceCount} · raw ${formatShortNumber(entry.rawInjectedScoreThisTurn)} × interval ${formatShortNumber(entry.intervalBonusThisTurn)} × reheat ${formatShortNumber(entry.reheatGainAppliedThisTurn)} = injected ${formatShortNumber(entry.injectedScoreThisTurn)}`
+          : `sources ${entry.sourceCount} · stored reheat ${formatShortNumber(entry.reheatGain)}`,
+        chips: [
+          {
+            label: `reheat:${formatShortNumber(entry.reheatGain)}`,
+            tone: entry.reheatGain < 1 ? "warn" as const : "muted" as const
+          },
+          ...buildLayerChips(entry.focusTags.map((tag) => `focus:${tag}`), "muted", 6)
+        ]
       })),
     [recallTrace.runtimeState.tagPool]
   );
@@ -894,6 +904,10 @@ export function RuntimeRecallGraphPage({
   );
   const tagPoolDecaySamples = useMemo(
     () => buildSampleSeries(Math.max(1.2, memoryRecallTuningFile.tagPoolHalfLifeDays * 3), 36, (days) => computeTagPoolDecay(days, memoryRecallTuningFile)),
+    [memoryRecallTuningFile]
+  );
+  const tagReheatHitSamples = useMemo(
+    () => buildTagReheatHitSamples(8, memoryRecallTuningFile),
     [memoryRecallTuningFile]
   );
   const fermentationDecaySamples = useMemo(
@@ -1372,6 +1386,56 @@ export function RuntimeRecallGraphPage({
               onChange={(next) => onMemoryRecallTuningChange({ tagPoolDropThreshold: next })}
               step={0.005}
               value={memoryRecallTuningFile.tagPoolDropThreshold}
+            />
+          </FormulaCard>
+
+          <FormulaCard
+            formula={`appliedReheatGain = tagPoolReheatPulseGain                         if first insert\nappliedReheatGain = reheatFloor + (currentReheatGain - reheatFloor) * decayFactor otherwise\nnextReheatGain = reheatFloor + (appliedReheatGain - reheatFloor) * tagPoolReheatDecayPerHit\neffectiveInjectedScore = rawInjectedScore * intervalBonus * appliedReheatGain`}
+            stats={
+              <>
+                <span className="chip">{`首击 ${formatShortNumber(memoryRecallTuningFile.tagPoolReheatPulseGain)}`}</span>
+                <span className="chip">{`二连击 ${formatShortNumber(computeTagReheatGainAfterHit(memoryRecallTuningFile.tagPoolReheatPulseGain, memoryRecallTuningFile))}`}</span>
+                <span className="chip muted">{`静置 ${formatShortNumber(memoryRecallTuningFile.tagPoolHalfLifeDays / 2)}d 后 ${formatShortNumber(computeTagReheatGainAfterTime(computeTagReheatGainAfterHit(memoryRecallTuningFile.tagPoolReheatPulseGain, memoryRecallTuningFile), memoryRecallTuningFile.tagPoolHalfLifeDays / 2, memoryRecallTuningFile))}`}</span>
+              </>
+            }
+            summary="时间衰减复用 tag_pool 的 decay 曲线；第一次命中给脉冲，后续连续命中会快速掉向 1 附近并继续习惯化。"
+            title="Tag Reheat Gain"
+          >
+            <div className="form-grid recall-form-grid">
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
+                label="tagPoolReheatPulseGain"
+                max={3}
+                min={1}
+                onChange={(next) => onMemoryRecallTuningChange({ tagPoolReheatPulseGain: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.tagPoolReheatPulseGain}
+              />
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
+                label="tagPoolReheatDecayPerHit"
+                max={1}
+                min={0}
+                onChange={(next) => onMemoryRecallTuningChange({ tagPoolReheatDecayPerHit: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.tagPoolReheatDecayPerHit}
+              />
+              <RangeField
+                formatValue={(value) => formatShortNumber(value)}
+                label="tagPoolReheatFloor"
+                max={1}
+                min={0.1}
+                onChange={(next) => onMemoryRecallTuningChange({ tagPoolReheatFloor: next })}
+                step={0.05}
+                value={memoryRecallTuningFile.tagPoolReheatFloor}
+              />
+            </div>
+            <FormulaChart
+              formatX={(value) => `${Math.round(value)} hit`}
+              formatY={(value) => formatShortNumber(value)}
+              samples={tagReheatHitSamples}
+              xLabel="consecutiveHits"
+              yLabel="appliedReheatGain"
             />
           </FormulaCard>
 

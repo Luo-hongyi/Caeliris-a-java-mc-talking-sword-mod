@@ -191,6 +191,9 @@ public final class RecallRuntimeState {
     private void resetPerTurnAnnotations() {
         for (TagPoolEntry entry : tagPool.values()) {
             entry.newlyInjectedThisTurn = false;
+            entry.rawInjectedScoreThisTurn = 0.0;
+            entry.intervalBonusThisTurn = 0.0;
+            entry.reheatGainAppliedThisTurn = 0.0;
             entry.injectedScoreThisTurn = 0.0;
         }
         for (FermentationMemoryEntry entry : fermentationBuffer.values()) {
@@ -206,10 +209,12 @@ public final class RecallRuntimeState {
         }
         double factor = decayFactor(deltaGameTime, resolveTagPoolHalfLifeTicks(), resolveTagPoolDecayShape());
         double dropThreshold = resolveTagPoolDropThreshold();
+        double reheatFloor = resolveTagPoolReheatFloor();
         Iterator<Map.Entry<String, TagPoolEntry>> iterator = tagPool.entrySet().iterator();
         while (iterator.hasNext()) {
             TagPoolEntry entry = iterator.next().getValue();
             entry.score *= factor;
+            entry.reheatGain = decayTagReheatGain(entry.reheatGain, factor, reheatFloor);
             if (entry.score < dropThreshold) {
                 iterator.remove();
             }
@@ -275,14 +280,23 @@ public final class RecallRuntimeState {
             TagPoolEntry tagEntry = new TagPoolEntry();
             tagEntry.tag = accumulator.tag.toString();
             TagPoolEntry existing = tagPool.get(tagEntry.tag);
-            double injectedScore = accumulator.score * intervalBonus;
+            double rawInjectedScore = accumulator.score;
+            double appliedReheatGain = existing == null
+                    ? resolveTagPoolReheatPulseGain()
+                    : Math.max(resolveTagPoolReheatFloor(), existing.reheatGain);
+            double injectedScore = rawInjectedScore * intervalBonus * appliedReheatGain;
+            double nextReheatGain = decayTagReheatGainOnHit(appliedReheatGain);
             if (existing == null) {
                 tagEntry.score = injectedScore;
                 tagEntry.sourceCount = accumulator.sourceCount;
                 tagEntry.focusTags.addAll(accumulator.focusTags);
                 tagEntry.lastInjectedGameTime = currentGameTime;
                 tagEntry.lastMatchedGameTime = currentGameTime;
+                tagEntry.reheatGain = nextReheatGain;
                 tagEntry.newlyInjectedThisTurn = true;
+                tagEntry.rawInjectedScoreThisTurn = rawInjectedScore;
+                tagEntry.intervalBonusThisTurn = intervalBonus;
+                tagEntry.reheatGainAppliedThisTurn = appliedReheatGain;
                 tagEntry.injectedScoreThisTurn = injectedScore;
                 tagPool.put(tagEntry.tag, tagEntry);
             } else {
@@ -291,7 +305,11 @@ public final class RecallRuntimeState {
                 mergeUnique(existing.focusTags, accumulator.focusTags);
                 existing.lastInjectedGameTime = currentGameTime;
                 existing.lastMatchedGameTime = currentGameTime;
+                existing.reheatGain = nextReheatGain;
                 existing.newlyInjectedThisTurn = true;
+                existing.rawInjectedScoreThisTurn += rawInjectedScore;
+                existing.intervalBonusThisTurn = intervalBonus;
+                existing.reheatGainAppliedThisTurn = appliedReheatGain;
                 existing.injectedScoreThisTurn += injectedScore;
             }
         }
@@ -408,7 +426,11 @@ public final class RecallRuntimeState {
         copy.focusTags.addAll(source.focusTags);
         copy.lastInjectedGameTime = source.lastInjectedGameTime;
         copy.lastMatchedGameTime = source.lastMatchedGameTime;
+        copy.reheatGain = source.reheatGain;
         copy.newlyInjectedThisTurn = source.newlyInjectedThisTurn;
+        copy.rawInjectedScoreThisTurn = source.rawInjectedScoreThisTurn;
+        copy.intervalBonusThisTurn = source.intervalBonusThisTurn;
+        copy.reheatGainAppliedThisTurn = source.reheatGainAppliedThisTurn;
         copy.injectedScoreThisTurn = source.injectedScoreThisTurn;
         return copy;
     }
@@ -527,6 +549,18 @@ public final class RecallRuntimeState {
         return TalkingWeaponConfig.getTagPoolDropThresholdValue();
     }
 
+    private static double resolveTagPoolReheatPulseGain() {
+        return TalkingWeaponConfig.getTagPoolReheatPulseGainValue();
+    }
+
+    private static double resolveTagPoolReheatDecayPerHit() {
+        return TalkingWeaponConfig.getTagPoolReheatDecayPerHitValue();
+    }
+
+    private static double resolveTagPoolReheatFloor() {
+        return TalkingWeaponConfig.getTagPoolReheatFloorValue();
+    }
+
     private static double resolveFermentationDecayShape() {
         return TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DECAY_SHAPE.get();
     }
@@ -537,6 +571,19 @@ public final class RecallRuntimeState {
 
     private static double clamp(double min, double max, double value) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static double decayTagReheatGain(double currentGain, double decayFactor, double floor) {
+        double safeFloor = clamp(0.10, 1.0, floor);
+        double safeGain = Math.max(safeFloor, currentGain);
+        return safeFloor + (safeGain - safeFloor) * clamp(0.0, 1.0, decayFactor);
+    }
+
+    private static double decayTagReheatGainOnHit(double appliedGain) {
+        double floor = resolveTagPoolReheatFloor();
+        double keep = resolveTagPoolReheatDecayPerHit();
+        double safeGain = Math.max(floor, appliedGain);
+        return floor + (safeGain - floor) * clamp(0.0, 1.0, keep);
     }
 
     private static String safe(String value) {
@@ -576,7 +623,11 @@ public final class RecallRuntimeState {
         public List<String> focusTags = new ArrayList<>();
         public long lastInjectedGameTime = -1L;
         public long lastMatchedGameTime = -1L;
+        public double reheatGain = 1.0;
         public boolean newlyInjectedThisTurn;
+        public double rawInjectedScoreThisTurn;
+        public double intervalBonusThisTurn;
+        public double reheatGainAppliedThisTurn;
         public double injectedScoreThisTurn;
     }
 

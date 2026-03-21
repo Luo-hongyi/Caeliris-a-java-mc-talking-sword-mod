@@ -71,6 +71,12 @@ public class AgentSensor {
         // 0. 开始日志会话
         AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
 
+        // 临时测试钩子：当前在 right_click fire 时额外写出一份 ActionArchive dump，
+        // 用于验证原始动作时间线。后续在 ActionArchive 链路稳定后应删除。
+        if ("right_click".equals(trigger.getSourceName())) {
+            AgentLogger.logActionArchiveDump(runtime.getMemory().getActionArchive());
+        }
+
         // 1. 创建 Builder，设置基础元信息
         Minecraft mc = Minecraft.getInstance();
         Player p = mc.player;

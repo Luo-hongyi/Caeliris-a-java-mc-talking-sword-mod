@@ -542,7 +542,7 @@ function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFi
 
 function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     generatedAt: "",
     triggerSource: "",
     userPrompt: "",
@@ -1055,7 +1055,7 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
   }
 
   return sanitizeMemoryRecallTuningFile({
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 4,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     mainCandidatesPerCue:
       typeof value.mainCandidatesPerCue === "number"
@@ -1101,6 +1101,18 @@ function normalizeMemoryRecallTuningFile(value: unknown): MemoryRecallTuningFile
       typeof value.tagPoolDropThreshold === "number"
         ? value.tagPoolDropThreshold
         : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolDropThreshold,
+    tagPoolReheatPulseGain:
+      typeof value.tagPoolReheatPulseGain === "number"
+        ? value.tagPoolReheatPulseGain
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolReheatPulseGain,
+    tagPoolReheatDecayPerHit:
+      typeof value.tagPoolReheatDecayPerHit === "number"
+        ? value.tagPoolReheatDecayPerHit
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolReheatDecayPerHit,
+    tagPoolReheatFloor:
+      typeof value.tagPoolReheatFloor === "number"
+        ? value.tagPoolReheatFloor
+        : DEFAULT_MEMORY_RECALL_TUNING_FILE.tagPoolReheatFloor,
     fermentationHalfLifeDays:
       typeof value.fermentationHalfLifeDays === "number"
         ? value.fermentationHalfLifeDays
@@ -1142,7 +1154,7 @@ function normalizeRuntimeRecallTraceFile(value: unknown): RuntimeRecallTraceFile
   }
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 5,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     triggerSource: typeof value.triggerSource === "string" ? value.triggerSource : "",
     userPrompt: typeof value.userPrompt === "string" ? value.userPrompt : "",
@@ -1250,7 +1262,15 @@ function normalizeRuntimeRecallRuntimeState(value: unknown): RuntimeRecallTraceF
               typeof entry.lastInjectedGameTime === "number" ? entry.lastInjectedGameTime : -1,
             lastMatchedGameTime:
               typeof entry.lastMatchedGameTime === "number" ? entry.lastMatchedGameTime : -1,
+            reheatGain:
+              typeof entry.reheatGain === "number" ? entry.reheatGain : 1,
             newlyInjectedThisTurn: entry.newlyInjectedThisTurn === true,
+            rawInjectedScoreThisTurn:
+              typeof entry.rawInjectedScoreThisTurn === "number" ? entry.rawInjectedScoreThisTurn : 0,
+            intervalBonusThisTurn:
+              typeof entry.intervalBonusThisTurn === "number" ? entry.intervalBonusThisTurn : 0,
+            reheatGainAppliedThisTurn:
+              typeof entry.reheatGainAppliedThisTurn === "number" ? entry.reheatGainAppliedThisTurn : 0,
             injectedScoreThisTurn:
               typeof entry.injectedScoreThisTurn === "number" ? entry.injectedScoreThisTurn : 0
           }))

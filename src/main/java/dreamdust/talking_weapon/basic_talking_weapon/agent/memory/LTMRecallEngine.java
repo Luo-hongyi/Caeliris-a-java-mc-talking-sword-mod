@@ -1224,8 +1224,15 @@ public final class LTMRecallEngine {
                     sourceScore);
             result.add(seed);
             if (previewCount < INITIAL_SEED_TRACE_PREVIEW_LIMIT) {
-                traceLines.add(String.format("  -> pool_tag: %s score=%.2f injected=%.2f sources=%d sourceScore=%.2f",
-                        parsedTag, tagPoolEntry.score, tagPoolEntry.injectedScoreThisTurn, tagPoolEntry.sourceCount,
+                traceLines.add(String.format(
+                        "  -> pool_tag: %s score=%.2f raw=%.2f interval=%.2f reheat=%.2f injected=%.2f sources=%d sourceScore=%.2f",
+                        parsedTag,
+                        tagPoolEntry.score,
+                        tagPoolEntry.rawInjectedScoreThisTurn,
+                        tagPoolEntry.intervalBonusThisTurn,
+                        tagPoolEntry.reheatGainAppliedThisTurn,
+                        tagPoolEntry.injectedScoreThisTurn,
+                        tagPoolEntry.sourceCount,
                         sourceScore));
             }
             previewCount++;

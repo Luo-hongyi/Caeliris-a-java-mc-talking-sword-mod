@@ -5,8 +5,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.RecentActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -19,10 +20,30 @@ import java.util.Set;
 /**
  * 近期动作采集器。
  * <p>
- * 从 {@link ActionBuffer} 读取玩家最近的高频动作流（挖掘、杀敌、受击等），
+ * 从 {@link RecentActionBuffer} 读取玩家最近的高频动作流（挖掘、杀敌、受击等），
  * 并提炼汇总注入到上下文中，让剑能直观感知刚发生的战斗或劳作。
  */
 public class RecentActionCollector implements IContextCollector {
+
+    /**
+     * 当前 prompt 侧只消费已经稳定接入语义的旧动作。
+     * <p>
+     * 新增的 intent/LTM 专用动作先留在 ActionArchive 中，避免在提示词里与旧语义混用。
+     */
+    private static final EnumSet<ActionType> PROMPT_VISIBLE_ACTIONS = EnumSet.of(
+            ActionType.ATTACK,
+            ActionType.KILL,
+            ActionType.HURT_BY,
+            ActionType.DEATH,
+            ActionType.MINE_BLOCK,
+            ActionType.PLACE_BLOCK,
+            ActionType.EAT,
+            ActionType.USE_ITEM,
+            ActionType.TRAVEL,
+            ActionType.BIOME_CHANGE,
+            ActionType.DIM_CHANGE,
+            ActionType.TRADE
+    );
 
     @Override
     public String getName() {
@@ -31,30 +52,30 @@ public class RecentActionCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
-        ActionBuffer actionBuffer = AgentRuntime.getInstance().getMemory().getActionBuffer();
-        if (actionBuffer.isEmpty()) {
+        RecentActionBuffer recentActionBuffer = AgentRuntime.getInstance().getMemory().getRecentActionBuffer();
+        if (recentActionBuffer.isEmpty()) {
             return;
         }
 
-        // 输出 ActionBuffer 快照日志供调试（转移前）
-        dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger.logActionBufferDump(actionBuffer);
+        // 输出近期动作缓冲快照日志供调试（消费前）
+        dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger.logRecentActionBufferDump(recentActionBuffer);
 
-        // 获取快照进行提取
-        List<ActionRecord> records = actionBuffer.snapshot();
-
-        // 【关键】阅后即焚：将已经被看到的动作转移至“已读池”中
-        // 防止下一次右键重复看到同样的动作幻觉，但为后续的 反思任务 (ReflectionTask) 保留记录
-        actionBuffer.clear(); // STM Pool 接管归档职能
+        // 当前 prompt 只消费稳定动作；原始动作全量副本已经在 ActionArchive 中保留。
+        List<ActionRecord> records = recentActionBuffer.consumeMatching(
+                record -> PROMPT_VISIBLE_ACTIONS.contains(record.getType()));
+        if (records.isEmpty()) {
+            return;
+        }
 
         // 按 PrimaryFocusTag 进行分组
-        java.util.Map<FocusTag, List<ActionRecord>> groupedRecords = actionBuffer.groupRecordsByFocus(records);
+        java.util.Map<FocusTag, List<ActionRecord>> groupedRecords = recentActionBuffer.groupRecordsByFocus(records);
 
         // 对每一个领域类别生成单独的上下文明细条目
         for (java.util.Map.Entry<FocusTag, List<ActionRecord>> entry : groupedRecords.entrySet()) {
             FocusTag focus = entry.getKey();
             List<ActionRecord> group = entry.getValue();
 
-            String groupSummary = actionBuffer.createSummaryForGroup(group);
+            String groupSummary = recentActionBuffer.createSummaryForGroup(group);
 
             // 根据焦点类型决定该组动作的初始剧情重要度和描述文案
             float importance;

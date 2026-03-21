@@ -28,7 +28,7 @@ public final class StudioMemoryRecallTuningFile {
 
     public static final String FILENAME = "memory_recall_tuning.json";
     public static final String VERSION_KEY = "memoryRecallTuning";
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     private StudioMemoryRecallTuningFile() {
     }
@@ -93,6 +93,9 @@ public final class StudioMemoryRecallTuningFile {
         TalkingWeaponConfig.LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS.set(safeFile.tagPoolHalfLifeDays);
         TalkingWeaponConfig.LTM_RECALL_TAG_POOL_DECAY_SHAPE.set(safeFile.tagPoolDecayShape);
         TalkingWeaponConfig.LTM_RECALL_TAG_POOL_DROP_THRESHOLD.set(safeFile.tagPoolDropThreshold);
+        TalkingWeaponConfig.LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN.set(safeFile.tagPoolReheatPulseGain);
+        TalkingWeaponConfig.LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT.set(safeFile.tagPoolReheatDecayPerHit);
+        TalkingWeaponConfig.LTM_RECALL_TAG_POOL_REHEAT_FLOOR.set(safeFile.tagPoolReheatFloor);
         TalkingWeaponConfig.LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS.set(safeFile.fermentationHalfLifeDays);
         TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DECAY_SHAPE.set(safeFile.fermentationDecayShape);
         TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DROP_THRESHOLD.set(safeFile.fermentationDropThreshold);
@@ -120,6 +123,9 @@ public final class StudioMemoryRecallTuningFile {
         file.tagPoolHalfLifeDays = TalkingWeaponConfig.LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS.get();
         file.tagPoolDecayShape = TalkingWeaponConfig.LTM_RECALL_TAG_POOL_DECAY_SHAPE.get();
         file.tagPoolDropThreshold = TalkingWeaponConfig.getTagPoolDropThresholdValue();
+        file.tagPoolReheatPulseGain = TalkingWeaponConfig.getTagPoolReheatPulseGainValue();
+        file.tagPoolReheatDecayPerHit = TalkingWeaponConfig.getTagPoolReheatDecayPerHitValue();
+        file.tagPoolReheatFloor = TalkingWeaponConfig.getTagPoolReheatFloorValue();
         file.fermentationHalfLifeDays = TalkingWeaponConfig.LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS.get();
         file.fermentationDecayShape = TalkingWeaponConfig.LTM_RECALL_FERMENTATION_DECAY_SHAPE.get();
         file.fermentationDropThreshold = TalkingWeaponConfig.getFermentationDropThresholdValue();
@@ -170,6 +176,9 @@ public final class StudioMemoryRecallTuningFile {
         public double tagPoolHalfLifeDays = 0.40;
         public double tagPoolDecayShape = 1.0;
         public double tagPoolDropThreshold = 0.035;
+        public double tagPoolReheatPulseGain = 1.85;
+        public double tagPoolReheatDecayPerHit = 0.55;
+        public double tagPoolReheatFloor = 0.72;
         public double fermentationHalfLifeDays = 1.20;
         public double fermentationDecayShape = 1.0;
         public double fermentationDropThreshold = 0.06;
@@ -197,6 +206,9 @@ public final class StudioMemoryRecallTuningFile {
             tagPoolHalfLifeDays = clampDouble(tagPoolHalfLifeDays, 0.10, 1.0);
             tagPoolDecayShape = clampDouble(tagPoolDecayShape, 0.25, 4.0);
             tagPoolDropThreshold = clampDouble(tagPoolDropThreshold, 0.0, 0.20);
+            tagPoolReheatPulseGain = clampDouble(tagPoolReheatPulseGain, 1.0, 3.0);
+            tagPoolReheatDecayPerHit = clampDouble(tagPoolReheatDecayPerHit, 0.0, 1.0);
+            tagPoolReheatFloor = clampDouble(tagPoolReheatFloor, 0.10, 1.0);
             fermentationHalfLifeDays = clampDouble(fermentationHalfLifeDays, 0.10, 2.0);
             fermentationDecayShape = clampDouble(fermentationDecayShape, 0.25, 4.0);
             fermentationDropThreshold = clampDouble(fermentationDropThreshold, 0.0, 0.20);

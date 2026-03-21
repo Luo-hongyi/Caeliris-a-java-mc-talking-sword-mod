@@ -171,18 +171,18 @@ public final class AgentLogger {
     }
 
     /**
-     * 将整个 ActionBuffer 快照单独输出到一个日志文件中，方便调试。
-     * 文件名格式: action_buffer_dump_<时间戳>.log
+     * 将整个 RecentActionBuffer 快照单独输出到一个日志文件中，方便调试。
+     * 文件名格式: recent_action_buffer_dump_<时间戳>.log
      */
-    public static void logActionBufferDump(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionBuffer buffer) {
+    public static void logRecentActionBufferDump(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.RecentActionBuffer buffer) {
         try {
             Path dir = ensureLogDir();
             String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
-            File file = dir.resolve("action_buffer_dump_" + timestamp + ".log").toFile();
+            File file = dir.resolve("recent_action_buffer_dump_" + timestamp + ".log").toFile();
             try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
                 w.println("╔══════════════════════════════════════════════════════════════╗");
-                w.println("║          TALKING WEAPON — ACTION BUFFER DUMP                 ║");
+                w.println("║       TALKING WEAPON — RECENT ACTION BUFFER DUMP            ║");
                 w.println("╚══════════════════════════════════════════════════════════════╝");
                 w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
                 w.println("动作总数: " + buffer.size());
@@ -194,6 +194,42 @@ public final class AgentLogger {
                     dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
                     w.println(String.format("[%03d] Type: %-15s Target: %-20s Count: %-3d Focus: %s Details: %s",
                             i, r.getType(), r.getTarget(), r.getCount(),
+                            r.getType().getAllFocusTags(), r.getDetailTags()));
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 将整个 ActionArchive 快照单独输出到一个日志文件中，方便验证原始动作时间线。
+     * <p>
+     * 当前仅作为 right_click fire 时的临时测试钩子，后续应删除。
+     * 文件名格式: action_archive_dump_<时间戳>.log
+     */
+    public static void logActionArchiveDump(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchive archive) {
+        try {
+            Path dir = ensureLogDir();
+            String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
+            File file = dir.resolve("action_archive_dump_" + timestamp + ".log").toFile();
+            try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
+                w.println("╔══════════════════════════════════════════════════════════════╗");
+                w.println("║         TALKING WEAPON — ACTION ARCHIVE DUMP               ║");
+                w.println("╚══════════════════════════════════════════════════════════════╝");
+                w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
+                w.println("说明: 当前仅作为 right_click fire 时的临时测试日志，后续应删除");
+                w.println("动作总数: " + archive.size());
+                w.println();
+
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord> records = archive
+                        .snapshot();
+                for (int i = 0; i < records.size(); i++) {
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
+                    w.println(String.format(
+                            "[%04d] ts=%d Type: %-24s Target: %-24s Count: %-3d Focus: %s Details: %s",
+                            i, r.getTimestamp(), r.getType(), r.getTarget(), r.getCount(),
                             r.getType().getAllFocusTags(), r.getDetailTags()));
                 }
             }

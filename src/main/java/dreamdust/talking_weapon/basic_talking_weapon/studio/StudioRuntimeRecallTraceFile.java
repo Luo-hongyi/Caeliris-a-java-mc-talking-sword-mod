@@ -35,7 +35,7 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final String FILENAME = "studio_runtime_recall_trace.json";
     public static final String VERSION_KEY = "runtimeRecallTrace";
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     private StudioRuntimeRecallTraceFile() {
     }

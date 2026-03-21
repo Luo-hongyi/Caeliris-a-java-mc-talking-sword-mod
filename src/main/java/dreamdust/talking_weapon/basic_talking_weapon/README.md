@@ -26,7 +26,7 @@
 - **Trigger / Collector 策略模式**：触发器声明所需采集器列表，采集器按需动态组合
 - **Per-Trigger 独立配置**：每种触发器独立配置自己的采集器开关和专属 User Prompt
 - **感知系统增强**：进入新群系、穿越维度或完成长距离旅行时自动感知并发表评论
-- **智能动作流 (ActionBuffer)**：高频合并动作，支持 3 分钟滑动窗口自动过期与“阅后即焚”机制
+- **双层动作流**：`RecentActionBuffer` 负责近期动作摘要，`ActionArchive` 保留原始动作时间线
 - **环境自适应摘要**：建造复杂房子时自动对 5 种以上方块动作进行聚类折叠，保护上下文长度
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
 - **多厂商支持**：支持 OpenAI / Qwen / DeepSeek(无视觉) / Custom（通过 OpenAI 兼容接口）
@@ -56,7 +56,7 @@ agent/
 │       ├── BiomeChangeTrigger.java   — 群系变化触发（含 3 分钟平滑防抖/节流）
 │       ├── DimensionChangeTrigger.java — 维度切换触发（支持跨维度坐标重置）
 │       ├── TravelTrigger.java        — 长距离位移触发（默认横向 200 格或纵向 50 格）
-│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → ActionBuffer + 群系/维度/旅行检测）
+│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → RecentActionBuffer + ActionArchive + 群系/维度/旅行检测）
 │       ├── CombatRecapTrigger.java   — 连杀回顾触发器（骨架）
 │       ├── BossKillTrigger.java      — Boss击杀触发器（骨架）
 │       └── README.md                — 触发器开发指南
@@ -68,7 +68,8 @@ agent/
 │   ├── STMPool.java                 — 短期记忆聚合池：收集本纪元的全局 Context Entries + Interaction回合
 │   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
 │   ├── ActionRecord.java            — 极轻量动作记录（TTL 刷新 + 全缓冲区扫描合并）
-│   ├── ActionBuffer.java            — 环形动作缓冲区（3min 滑动窗口淘汰，支持 drainTo 已读池）
+│   ├── RecentActionBuffer.java      — prompt 近期动作缓冲区（3min 滑动窗口淘汰 + 合并压缩）
+│   ├── ActionArchive.java           — 原始动作归档层（无 TTL、无压缩，供 intent/LTM 使用）
 │   ├── LTMEntry.java                — 长期记忆切片（基于Tag检索，含重要度和清晰度衰减）
 │   ├── LTMStorage.java              — 长期记忆跨存档读取保存持久化服务
 │   ├── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
@@ -300,7 +301,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 |------|------|
 | **感知** | `AgentSensor` + `IContextCollector` — 模块化采集器组合 → 不可变 `AgentContext` |
 | **触发** | `IAgentTrigger` — 声明采集器列表 + 专属 prompt + 任务类型，支持被动/主动两种模式 |
-| **记忆** | `AgentMemory` — 四级架构：Identity / ActionBuffer / STMPool / LTMRecords |
+| **记忆** | `AgentMemory` — 五层架构：Identity / RecentActionBuffer / ActionArchive / STMPool / LTMRecords |
 | **状态** | `AgentState` — 情绪(8种Mood) + 熟悉度(0-100) + 当前目标 |
 | **决策** | `LLMInteractionTask` — 构建含记忆+状态+上下文+extras 的 prompt → LLM 推理（JSON输出） |
 | **行动** | `SpeechAction` / `SoundAction` / `EmoteAction` — 主线程执行 |

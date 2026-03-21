@@ -107,6 +107,9 @@ export interface MemoryRecallTuningFile {
   tagPoolHalfLifeDays: number;
   tagPoolDecayShape: number;
   tagPoolDropThreshold: number;
+  tagPoolReheatPulseGain: number;
+  tagPoolReheatDecayPerHit: number;
+  tagPoolReheatFloor: number;
   fermentationHalfLifeDays: number;
   fermentationDecayShape: number;
   fermentationDropThreshold: number;
@@ -237,7 +240,11 @@ export interface RuntimeRecallTagPoolEntry {
   focusTags: string[];
   lastInjectedGameTime: number;
   lastMatchedGameTime: number;
+  reheatGain: number;
   newlyInjectedThisTurn: boolean;
+  rawInjectedScoreThisTurn: number;
+  intervalBonusThisTurn: number;
+  reheatGainAppliedThisTurn: number;
   injectedScoreThisTurn: number;
 }
 

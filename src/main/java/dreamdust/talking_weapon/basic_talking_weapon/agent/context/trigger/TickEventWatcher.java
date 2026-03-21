@@ -2,7 +2,6 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
@@ -17,20 +16,29 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
+import net.minecraftforge.event.entity.player.FillBucketEvent;
+import net.minecraftforge.event.entity.player.ItemFishedEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * 统一事件感知器：监听 Forge 游戏事件并写入 {@link ActionBuffer}。
+ * 统一事件感知器：监听 Forge 游戏事件并写入近期动作缓冲与原始动作归档。
  * <p>
  * 职责：
  * <ol>
@@ -40,7 +48,7 @@ import java.util.UUID;
  * <li>锚点位移检测（长途旅行）</li>
  * </ol>
  * <p>
- * 所有新增的 {@code @SubscribeEvent} 方法仅做一件事：向 ActionBuffer 写入记录。
+ * 所有新增的 {@code @SubscribeEvent} 方法仅做一件事：记录观察到的玩家动作。
  * 不触发 LLM、不创建 Task。
  */
 public class TickEventWatcher {
@@ -54,6 +62,12 @@ public class TickEventWatcher {
     /** 旅行触发垂直距离阈值 (blocks) */
     private static final double TRAVEL_VERTICAL_THRESHOLD = 50.0;
 
+    /** 玩家伤害归因窗口：在此时间内死亡的目标，视为可归因到玩家主导击杀 */
+    private static final long RECENT_PLAYER_DAMAGE_WINDOW_MS = 15_000L;
+
+    /** 采集型 START 防抖窗口：避免同一方块上的重复启动在短时间内连记多次 */
+    private static final long GATHER_TOOL_START_DEBOUNCE_MS = 600L;
+
     private int tickCounter = 0;
 
     // ── 群系与维度变化检测状态 ──
@@ -63,6 +77,12 @@ public class TickEventWatcher {
 
     // ── 锚点位移检测状态 ──
     private BlockPos anchorPos = null;
+
+    // ── 战斗归因状态 ──
+    private final Map<UUID, Long> recentPlayerDamageByTarget = new LinkedHashMap<>();
+
+    // ── 采集启动防抖状态 ──
+    private final Map<String, Long> recentGatherToolStarts = new LinkedHashMap<>();
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
@@ -76,24 +96,26 @@ public class TickEventWatcher {
             return;
         tickCounter = 0;
 
+        long now = System.currentTimeMillis();
+        pruneRecentPlayerDamage(now);
+        pruneRecentGatherToolStarts(now);
+
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
         Level level = mc.level;
         if (player == null || level == null)
             return;
 
-        ActionBuffer buffer = AgentRuntime.getInstance().getMemory().getActionBuffer();
-
         // ── 维度变化检测 ──
-        checkDimensionChange(player, level, buffer);
+        checkDimensionChange(player, level);
 
         // ── 群系变化检测 ──
         if (TalkingWeaponConfig.ENABLE_BIOME_DETECTION.get()) {
-            checkBiomeChange(player, level, buffer);
+            checkBiomeChange(player, level);
         }
 
         // ── 锚点位移检测（旅行） ──
-        checkTravel(player, level, buffer);
+        checkTravel(player, level);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -109,19 +131,23 @@ public class TickEventWatcher {
         if (mc.player == null)
             return;
 
+        long now = System.currentTimeMillis();
+        pruneRecentPlayerDamage(now);
+
         LivingEntity hurt = event.getEntity();
         UUID playerUUID = mc.player.getUUID();
 
         // 玩家攻击别人
         if (event.getSource().getEntity() != null
-                && event.getSource().getEntity().getUUID().equals(playerUUID)) {
+                && event.getSource().getEntity().getUUID().equals(playerUUID)
+                && !hurt.getUUID().equals(playerUUID)) {
+            noteRecentPlayerDamage(hurt.getUUID(), now);
             String targetId = entityId(hurt);
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(hurt, tags);
             ActionRecord record = ActionRecord.of(ActionType.ATTACK, targetId, tags);
-            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
         }
         // 玩家被攻击
         else if (hurt.getUUID().equals(playerUUID)) {
@@ -131,8 +157,7 @@ public class TickEventWatcher {
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(sourceId));
             ActionRecord record = ActionRecord.of(ActionType.HURT_BY, sourceId, tags);
-            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
         }
     }
 
@@ -145,20 +170,22 @@ public class TickEventWatcher {
         if (mc.player == null)
             return;
 
+        long now = System.currentTimeMillis();
+        pruneRecentPlayerDamage(now);
+
         LivingEntity dead = event.getEntity();
         UUID playerUUID = mc.player.getUUID();
 
         // 玩家击杀了目标
-        if (event.getSource().getEntity() != null
-                && event.getSource().getEntity().getUUID().equals(playerUUID)
-                && !dead.getUUID().equals(playerUUID)) {
+        if (!dead.getUUID().equals(playerUUID)
+                && wasRecentlyDamagedByPlayer(dead.getUUID(), now)) {
+            recentPlayerDamageByTarget.remove(dead.getUUID());
             String targetId = entityId(dead);
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(dead, tags);
             ActionRecord record = ActionRecord.of(ActionType.KILL, targetId, tags);
-            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
         }
         // 玩家自己死亡
         else if (dead.getUUID().equals(playerUUID)) {
@@ -166,14 +193,131 @@ public class TickEventWatcher {
                     ? entityId((LivingEntity) event.getSource().getEntity())
                     : "unknown";
             ActionRecord record = ActionRecord.of(ActionType.DEATH, sourceId);
-            AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
     // 资源事件
     // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 玩家开始对一个方块进行有效采集。
+     */
+    @SubscribeEvent
+    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getSide() != LogicalSide.SERVER) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+        if (event.getAction() != PlayerInteractEvent.LeftClickBlock.Action.START) {
+            return;
+        }
+
+        ItemStack stack = event.getItemStack();
+        if (stack.isEmpty()) {
+            return;
+        }
+
+        BlockState state = event.getLevel().getBlockState(event.getPos());
+        if (state.isAir()) {
+            return;
+        }
+        if (!isEffectiveGatherToolUse(event.getEntity(), stack, state)) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        pruneRecentGatherToolStarts(now);
+        String gatherStartKey = gatherToolStartKey(event.getLevel(), event.getPos(), stack);
+        if (isGatherToolStartDebounced(gatherStartKey, now)) {
+            return;
+        }
+        noteGatherToolStart(gatherStartKey, now);
+
+        String blockId = blockId(state);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.nativeSpecific(blockId));
+        addItemTag(stack, tags);
+        if (stack.isCorrectToolForDrops(state) || event.getEntity().hasCorrectToolForDrops(state)) {
+            tags.add(DetailTag.customGeneric("correct_tool"));
+        } else {
+            tags.add(DetailTag.customGeneric("effective_tool"));
+        }
+
+        recordAction(ActionType.USE_GATHER_TOOL, blockId, tags);
+    }
+
+    /**
+     * 玩家使用空桶尝试获取流体。
+     */
+    @SubscribeEvent
+    public void onFillBucket(FillBucketEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getLevel().isClientSide()) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        ItemStack bucket = event.getEmptyBucket();
+        if (bucket.isEmpty()) {
+            return;
+        }
+
+        HitResult target = event.getTarget();
+        if (!(target instanceof BlockHitResult blockHit)) {
+            return;
+        }
+
+        BlockState state = event.getLevel().getBlockState(blockHit.getBlockPos());
+        if (state.isAir()) {
+            return;
+        }
+
+        String blockId = blockId(state);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.nativeSpecific(blockId));
+        tags.add(DetailTag.customGeneric("bucket_fill"));
+        addItemTag(bucket, tags);
+
+        recordAction(ActionType.USE_GATHER_TOOL, blockId, tags);
+    }
+
+    /**
+     * 玩家成功钓起物品。
+     */
+    @SubscribeEvent
+    public void onItemFished(ItemFishedEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getEntity() == null || !event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+        if (event.getDrops().isEmpty()) {
+            return;
+        }
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.customGeneric("fishing"));
+        for (ItemStack drop : event.getDrops()) {
+            addItemTag(drop, tags);
+        }
+
+        recordAction(ActionType.USE_GATHER_TOOL, "fishing", tags);
+    }
 
     /**
      * 玩家破坏方块。
@@ -196,8 +340,7 @@ public class TickEventWatcher {
         tags.add(DetailTag.nativeSpecific(id));
 
         ActionRecord record = ActionRecord.of(ActionType.MINE_BLOCK, id, tags);
-        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-        logBufferAdd(record);
+        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
     }
 
     /**
@@ -221,8 +364,7 @@ public class TickEventWatcher {
         tags.add(DetailTag.nativeSpecific(id));
 
         ActionRecord record = ActionRecord.of(ActionType.PLACE_BLOCK, id, tags);
-        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-        logBufferAdd(record);
+        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
     }
 
     /**
@@ -249,15 +391,14 @@ public class TickEventWatcher {
         ActionType type = stack.getItem().isEdible() ? ActionType.EAT : ActionType.USE_ITEM;
 
         ActionRecord record = ActionRecord.of(type, id, tags);
-        AgentRuntime.getInstance().getMemory().getActionBuffer().add(record);
-        logBufferAdd(record);
+        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 群系变化检测（保留原有逻辑，同时写入 ActionBuffer）
+    // 群系变化检测（保留原有逻辑，同时写入近期动作缓冲）
     // ═══════════════════════════════════════════════════════════════
 
-    private void checkBiomeChange(Player player, Level level, ActionBuffer buffer) {
+    private void checkBiomeChange(Player player, Level level) {
         Holder<Biome> biomeHolder = level.getBiome(player.blockPosition());
         String currentBiome = biomeHolder.unwrapKey()
                 .map(key -> key.location().toString())
@@ -281,7 +422,7 @@ public class TickEventWatcher {
             lastKnownBiome = currentBiome;
             lastBiomeChangeLogTime = now;
 
-            // 写入 ActionBuffer
+            // 写入近期动作缓冲；同一条记录也会被归档到 ActionArchive
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.customGeneric("biome_change"));
             tags.add(DetailTag.nativeSpecific(currentBiome));
@@ -289,8 +430,7 @@ public class TickEventWatcher {
                 tags.add(DetailTag.nativeSpecific(lastKnownDim));
             }
             ActionRecord record = ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags);
-            buffer.add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
 
             // 原有的 LLM 触发逻辑（fire BiomeChangeTrigger）
             if (AgentSensor.getInstance().isRuntimeBusy())
@@ -300,7 +440,7 @@ public class TickEventWatcher {
         }
     }
 
-    private void checkDimensionChange(Player player, Level level, ActionBuffer buffer) {
+    private void checkDimensionChange(Player player, Level level) {
         String currentDim = level.dimension().location().toString();
 
         if (lastKnownDim == null) {
@@ -311,7 +451,7 @@ public class TickEventWatcher {
         if (!currentDim.equals(lastKnownDim)) {
             lastKnownDim = currentDim;
 
-            // 写入 ActionBuffer
+            // 写入近期动作缓冲；同一条记录也会被归档到 ActionArchive
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.customGeneric("dim_change"));
             tags.add(DetailTag.nativeSpecific(currentDim));
@@ -320,8 +460,7 @@ public class TickEventWatcher {
             }
 
             ActionRecord record = ActionRecord.of(ActionType.DIM_CHANGE, currentDim, tags);
-            buffer.add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
 
             // 维度变化时，距离概念已经错乱，重置旅行锚点
             anchorPos = player.blockPosition();
@@ -332,7 +471,7 @@ public class TickEventWatcher {
     // 锚点位移检测（旅行）
     // ═══════════════════════════════════════════════════════════════
 
-    private void checkTravel(Player player, Level level, ActionBuffer buffer) {
+    private void checkTravel(Player player, Level level) {
         BlockPos currentPos = player.blockPosition();
 
         if (anchorPos == null) {
@@ -362,8 +501,7 @@ public class TickEventWatcher {
             tags.add(DetailTag.nativeSpecific(dim));
 
             ActionRecord record = ActionRecord.of(ActionType.TRAVEL, direction, tags);
-            buffer.add(record);
-            logBufferAdd(record);
+            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
 
             // 重置锚点
             anchorPos = currentPos;
@@ -394,19 +532,110 @@ public class TickEventWatcher {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // ActionBuffer 调试日志
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * 将每次写入 ActionBuffer 的记录打印到 stdout，方便调试。
-     */
-    private void logBufferAdd(ActionRecord record) {
-        ActionBuffer buffer = AgentRuntime.getInstance().getMemory().getActionBuffer();
-        System.out.println("[ActionBuffer +] " + record.getType()
-                + " target=" + record.getTarget()
-                + " count=" + record.getCount()
-                + " tags=" + record.getDetailTags()
-                + " | buffer_size=" + buffer.size());
+    private boolean isEffectiveGatherToolUse(Player player, ItemStack stack, BlockState state) {
+        if (player == null || stack.isEmpty() || state == null || state.isAir()) {
+            return false;
+        }
+        float destroySpeed = stack.getDestroySpeed(state);
+        boolean correctTool = stack.isCorrectToolForDrops(state) || player.hasCorrectToolForDrops(state);
+        return correctTool || destroySpeed > 1.0f;
     }
+
+    private String blockId(BlockState state) {
+        ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        return blockId != null ? blockId.toString() : "unknown";
+    }
+
+    private String itemId(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return "unknown";
+        }
+        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        return itemId != null ? itemId.toString() : "unknown";
+    }
+
+    private void addItemTag(ItemStack stack, Set<DetailTag> tags) {
+        if (stack == null || stack.isEmpty() || tags == null) {
+            return;
+        }
+        String itemId = itemId(stack);
+        if (!"unknown".equals(itemId)) {
+            tags.add(DetailTag.nativeSpecific(itemId));
+        }
+    }
+
+    private void recordAction(ActionType type, String targetId, Set<DetailTag> tags) {
+        ActionRecord record = ActionRecord.of(type, targetId, tags);
+        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+    }
+
+    private void noteRecentPlayerDamage(UUID targetId, long now) {
+        if (targetId == null) {
+            return;
+        }
+        recentPlayerDamageByTarget.put(targetId, now);
+    }
+
+    private boolean wasRecentlyDamagedByPlayer(UUID targetId, long now) {
+        if (targetId == null) {
+            return false;
+        }
+        Long lastDamageTime = recentPlayerDamageByTarget.get(targetId);
+        if (lastDamageTime == null) {
+            return false;
+        }
+        return now - lastDamageTime <= RECENT_PLAYER_DAMAGE_WINDOW_MS;
+    }
+
+    private void pruneRecentPlayerDamage(long now) {
+        if (recentPlayerDamageByTarget.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<UUID, Long>> iterator = recentPlayerDamageByTarget.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Long> entry = iterator.next();
+            if (now - entry.getValue() > RECENT_PLAYER_DAMAGE_WINDOW_MS) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private String gatherToolStartKey(Level level, BlockPos pos, ItemStack stack) {
+        String dimension = level != null ? level.dimension().location().toString() : "unknown_dim";
+        String itemId = itemId(stack);
+        String blockPos = pos != null ? (pos.getX() + ":" + pos.getY() + ":" + pos.getZ()) : "unknown_pos";
+        return dimension + "|" + blockPos + "|" + itemId;
+    }
+
+    private boolean isGatherToolStartDebounced(String key, long now) {
+        if (key == null) {
+            return false;
+        }
+        Long lastTime = recentGatherToolStarts.get(key);
+        if (lastTime == null) {
+            return false;
+        }
+        return now - lastTime <= GATHER_TOOL_START_DEBOUNCE_MS;
+    }
+
+    private void noteGatherToolStart(String key, long now) {
+        if (key == null) {
+            return;
+        }
+        recentGatherToolStarts.put(key, now);
+    }
+
+    private void pruneRecentGatherToolStarts(long now) {
+        if (recentGatherToolStarts.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<String, Long>> iterator = recentGatherToolStarts.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Long> entry = iterator.next();
+            if (now - entry.getValue() > GATHER_TOOL_START_DEBOUNCE_MS) {
+                iterator.remove();
+            }
+        }
+    }
+
 }

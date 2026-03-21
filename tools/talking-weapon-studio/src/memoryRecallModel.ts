@@ -9,7 +9,7 @@ const RECENT_RECALL_CURVE_EXPONENT = 1.8;
 const MAX_INTERVAL_BONUS = 2.6;
 
 export const DEFAULT_MEMORY_RECALL_TUNING_FILE: MemoryRecallTuningFile = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   generatedAt: "",
   mainCandidatesPerCue: 6,
   sandboxCuesPerMemory: 6,
@@ -22,6 +22,9 @@ export const DEFAULT_MEMORY_RECALL_TUNING_FILE: MemoryRecallTuningFile = {
   tagPoolHalfLifeDays: 0.4,
   tagPoolDecayShape: 1.0,
   tagPoolDropThreshold: 0.035,
+  tagPoolReheatPulseGain: 1.85,
+  tagPoolReheatDecayPerHit: 0.55,
+  tagPoolReheatFloor: 0.72,
   fermentationHalfLifeDays: 1.2,
   fermentationDecayShape: 1.0,
   fermentationDropThreshold: 0.06,
@@ -42,7 +45,7 @@ export function clamp01(value: number): number {
 
 export function sanitizeMemoryRecallTuningFile(value: MemoryRecallTuningFile): MemoryRecallTuningFile {
   return {
-    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 3,
+    schemaVersion: value.schemaVersion > 0 ? value.schemaVersion : 4,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     mainCandidatesPerCue: Math.round(clampNumber(value.mainCandidatesPerCue, 1, 32)),
     sandboxCuesPerMemory: Math.round(clampNumber(value.sandboxCuesPerMemory, 1, 32)),
@@ -55,6 +58,9 @@ export function sanitizeMemoryRecallTuningFile(value: MemoryRecallTuningFile): M
     tagPoolHalfLifeDays: clampNumber(value.tagPoolHalfLifeDays, 0.1, 1),
     tagPoolDecayShape: clampNumber(value.tagPoolDecayShape, 0.25, 4),
     tagPoolDropThreshold: clampNumber(value.tagPoolDropThreshold, 0, 0.2),
+    tagPoolReheatPulseGain: clampNumber(value.tagPoolReheatPulseGain, 1, 3),
+    tagPoolReheatDecayPerHit: clampNumber(value.tagPoolReheatDecayPerHit, 0, 1),
+    tagPoolReheatFloor: clampNumber(value.tagPoolReheatFloor, 0.1, 1),
     fermentationHalfLifeDays: clampNumber(value.fermentationHalfLifeDays, 0.1, 2),
     fermentationDecayShape: clampNumber(value.fermentationDecayShape, 0.25, 4),
     fermentationDropThreshold: clampNumber(value.fermentationDropThreshold, 0, 0.2),
@@ -76,6 +82,44 @@ export function computeDecayFactor(deltaDays: number, halfLifeDays: number, deca
 
 export function computeTagPoolDecay(deltaDays: number, tuning: MemoryRecallTuningFile): number {
   return computeDecayFactor(deltaDays, tuning.tagPoolHalfLifeDays, tuning.tagPoolDecayShape);
+}
+
+export function computeTagReheatGainAfterTime(
+  currentGain: number,
+  deltaDays: number,
+  tuning: MemoryRecallTuningFile
+): number {
+  const floor = clampNumber(tuning.tagPoolReheatFloor, 0.1, 1);
+  const safeGain = Math.max(floor, currentGain);
+  const factor = computeTagPoolDecay(deltaDays, tuning);
+  return floor + (safeGain - floor) * factor;
+}
+
+export function computeTagReheatGainAfterHit(
+  appliedGain: number,
+  tuning: MemoryRecallTuningFile
+): number {
+  const floor = clampNumber(tuning.tagPoolReheatFloor, 0.1, 1);
+  const safeGain = Math.max(floor, appliedGain);
+  const keep = clampNumber(tuning.tagPoolReheatDecayPerHit, 0, 1);
+  return floor + (safeGain - floor) * keep;
+}
+
+export function buildTagReheatHitSamples(
+  hitCount: number,
+  tuning: MemoryRecallTuningFile
+): Array<{ x: number; y: number }> {
+  const safeHitCount = Math.max(1, Math.round(hitCount));
+  const pulse = clampNumber(tuning.tagPoolReheatPulseGain, 1, 3);
+  let storedGain = computeTagReheatGainAfterHit(pulse, tuning);
+  return Array.from({ length: safeHitCount }, (_, index) => {
+    const appliedGain = index === 0 ? pulse : storedGain;
+    storedGain = computeTagReheatGainAfterHit(appliedGain, tuning);
+    return {
+      x: index + 1,
+      y: appliedGain
+    };
+  });
 }
 
 export function computeFermentationDecay(deltaDays: number, tuning: MemoryRecallTuningFile): number {

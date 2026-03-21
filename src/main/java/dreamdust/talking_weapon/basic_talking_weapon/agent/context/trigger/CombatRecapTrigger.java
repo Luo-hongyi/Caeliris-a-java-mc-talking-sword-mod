@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 连击/恶战回顾触发器（骨架）。
  * <p>
- * 当 ActionBuffer 中 {@code KILL} 计数达到阈值时触发，
+ * 当 RecentActionBuffer 中 {@code KILL} 计数达到阈值时触发，
  * 让剑对刚才的激战发表感慨并形成记忆。
  * <p>
  * <b>当前阶段</b>：仅骨架。

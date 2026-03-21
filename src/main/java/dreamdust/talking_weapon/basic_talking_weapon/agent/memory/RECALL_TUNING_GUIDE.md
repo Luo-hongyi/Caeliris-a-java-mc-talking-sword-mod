@@ -227,10 +227,47 @@ finalScore = subjectiveScore + crosshairBonus
 同一个 `detail tag` 会把多个 `entryScore` 累加，最后：
 
 ```text
-injectedScore = accumulatedEntryScore * intervalBonus
+rawInjectedScore = accumulatedEntryScore
 ```
 
-### 3.5 Tag Pool 对发酵层的 cue 回灌
+### 3.5 Tag Reheat Gain
+
+在 `visibleContexts -> tag_pool` 注入时，还会再乘一层 `reheat gain`：
+
+```text
+appliedReheatGain =
+  LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN                                 if tag first enters pool
+  reheatFloor + (storedReheatGain - reheatFloor) * decayFactor         otherwise
+
+injectedScore = rawInjectedScore * intervalBonus * appliedReheatGain
+
+nextStoredReheatGain =
+  reheatFloor
+  + (appliedReheatGain - reheatFloor) * LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT
+```
+
+其中：
+
+```text
+reheatFloor = LTM_RECALL_TAG_POOL_REHEAT_FLOOR
+decayFactor = exp(- (deltaGameTime / TAG_POOL_HALF_LIFE_TICKS) ^ TAG_POOL_DECAY_SHAPE)
+```
+
+含义：
+
+- 第一次进入 `tag_pool` 的 tag，会拿到一次性的高脉冲 `pulse gain`
+- 同一个 tag 连续多轮反复命中时，`storedReheatGain` 会在每次命中后快速下降
+- `storedReheatGain` 的时间衰减当前**复用 tag_pool 自身的 decay 曲线**
+- 长时间不命中时，tag 会先因为分数衰减掉出 `tag_pool`
+- 一旦掉出，和它绑定的 `reheat gain` 状态也会一起消失；下次重新进入时会重新拿首见脉冲
+
+当前默认值：
+
+- `LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN = 1.85`
+- `LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT = 0.55`
+- `LTM_RECALL_TAG_POOL_REHEAT_FLOOR = 0.72`
+
+### 3.6 Tag Pool 对发酵层的 cue 回灌
 
 若某条发酵记忆的 `associativeTags` 命中当前 `tag_pool`：
 
@@ -700,6 +737,9 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
 - `LTM_RECALL_TAG_POOL_DECAY_SHAPE`
 - `LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
+- `LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN`
+- `LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT`
+- `LTM_RECALL_TAG_POOL_REHEAT_FLOOR`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
 - `LTM_RECALL_FERMENTATION_DECAY_SHAPE`
 - `LTM_RECALL_FERMENTATION_DROP_THRESHOLD`
@@ -713,6 +753,9 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 
 - `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS`
 - `LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
+- `LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN`
+- `LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT`
+- `LTM_RECALL_TAG_POOL_REHEAT_FLOOR`
 - `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS`
 - `LTM_RECALL_FERMENTATION_DROP_THRESHOLD`
 - `LTM_RECALL_INTERVAL_BONUS_SCALE`
@@ -766,6 +809,9 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 | `LTM_RECALL_TAG_POOL_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `tagPool decayFactor` |
 | `LTM_RECALL_TAG_POOL_DECAY_SHAPE` | 同上 | `deltaDays` | `tagPool decayFactor` |
 | `LTM_RECALL_TAG_POOL_DROP_THRESHOLD` | `drop if tagScore < threshold` | `tagScore` | `tag 是否保留在 pool 中` |
+| `LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN` | `appliedReheatGain = pulseGain` | `tag first enters pool` | `首见注入倍率` |
+| `LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT` | `nextStoredReheatGain = floor + (appliedGain - floor) * decayPerHit` | `appliedReheatGain` | `命中后的下一轮 reheat gain` |
+| `LTM_RECALL_TAG_POOL_REHEAT_FLOOR` | `reheatFloor + (gain - reheatFloor) * decayFactor` | `storedReheatGain` | `习惯化下限 / 最终再加热倍率` |
 | `LTM_RECALL_FERMENTATION_HALF_LIFE_DAYS` | `decayFactor = exp(- (deltaDays / halfLifeDays) ^ decayShape)` | `deltaDays` | `fermentation decayFactor` |
 | `LTM_RECALL_FERMENTATION_DECAY_SHAPE` | 同上 | `deltaDays` | `fermentation decayFactor` |
 | `LTM_RECALL_FERMENTATION_DROP_THRESHOLD` | `drop if fermentationScore < threshold` | `fermentationScore` | `记忆是否保留在发酵层中` |
@@ -796,6 +842,13 @@ fallbackEntryScore = LTM_RECALL_IMPLANTED_FALLBACK_ENTRY_SCORE
 - 降低 `sandbox_cues_per_memory`
 - 选择 `SEED_FIRST`
 - 降低弱相关 focus 的注意力权重
+
+### 想减少常见 tag 长期占满 tag pool
+
+- 提高 `LTM_RECALL_TAG_POOL_DROP_THRESHOLD`
+- 降低 `LTM_RECALL_TAG_POOL_REHEAT_FLOOR`
+- 降低 `LTM_RECALL_TAG_POOL_REHEAT_DECAY_PER_HIT`
+- 只在确实需要时，再提高 `LTM_RECALL_TAG_POOL_REHEAT_PULSE_GAIN`
 
 ### 想让旧记忆更耐久
 

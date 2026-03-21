@@ -3,10 +3,11 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * 线程安全的环形动作缓冲区。
+ * 线程安全的近期动作缓冲区。
  * <p>
  * 存储玩家的高频游戏动作（攻击、挖矿、旅行等），不直接触发 LLM。
  * 后台 Trigger / ReflectionTask 定期读取快照并消费。
@@ -14,7 +15,7 @@ import java.util.stream.Collectors;
  * <b>压缩策略</b>：{@link #add(ActionRecord)} 时，若缓冲尾部有可合并的记录
  * （同类型 + 同目标 + 5秒内），则递增计数而非插入新条目。
  */
-public final class ActionBuffer {
+public final class RecentActionBuffer {
 
     /** 动作有效期窗口 (毫秒)，超过此时间的记录将被自动清理 (默认 3 分钟) */
     private static final long TIME_WINDOW_MS = 180_000L;
@@ -22,7 +23,7 @@ public final class ActionBuffer {
     private final int capacity;
     private final ArrayDeque<ActionRecord> buffer;
 
-    public ActionBuffer(int capacity) {
+    public RecentActionBuffer(int capacity) {
         this.capacity = capacity;
         this.buffer = new ArrayDeque<>(capacity);
     }
@@ -46,7 +47,7 @@ public final class ActionBuffer {
     /**
      * 添加一条动作记录，自动尾部合并压缩。
      * <p>
-     * 如果尾部最后一条记录可以合并（{@link ActionRecord#canMergeWith}），
+     * 如果缓冲区内已存在同类型 + 同目标的记录，
      * 则仅递增计数；否则正常入队，超容量时淘汰最早的记录。
      */
     public synchronized void add(ActionRecord record) {
@@ -94,6 +95,27 @@ public final class ActionBuffer {
     }
 
     /**
+     * 消费所有满足条件的记录，并将其从缓冲区中移除。
+     * <p>
+     * 用于“prompt 先只吃稳定动作、保留新动作给后续专用分析器”的场景。
+     */
+    public synchronized List<ActionRecord> consumeMatching(Predicate<ActionRecord> predicate) {
+        evictStale();
+
+        List<ActionRecord> consumed = new ArrayList<>();
+        Iterator<ActionRecord> iterator = buffer.iterator();
+        while (iterator.hasNext()) {
+            ActionRecord record = iterator.next();
+            if (predicate.test(record)) {
+                consumed.add(record);
+                iterator.remove();
+            }
+        }
+
+        return Collections.unmodifiableList(consumed);
+    }
+
+    /**
      * 当前缓冲区大小。
      */
     public synchronized int size() {
@@ -124,7 +146,7 @@ public final class ActionBuffer {
      * 将当前缓冲区内的所有有效记录转移到目标缓冲区中，并清空当前缓冲区。
      * 用于阅后即焚（转移到已读池）。
      */
-    public synchronized void drainTo(ActionBuffer target) {
+    public synchronized void drainTo(RecentActionBuffer target) {
         evictStale();
         for (ActionRecord record : buffer) {
             target.add(record);
@@ -133,7 +155,7 @@ public final class ActionBuffer {
     }
 
     /**
-     * 将当前的 ActionBuffer 快照按 ActionType 的 PrimaryFocus 分组。
+     * 将当前的 RecentActionBuffer 快照按 ActionType 的 PrimaryFocus 分组。
      */
     public Map<FocusTag, List<ActionRecord>> groupRecordsByFocus(List<ActionRecord> records) {
         Map<FocusTag, List<ActionRecord>> grouped = new LinkedHashMap<>();

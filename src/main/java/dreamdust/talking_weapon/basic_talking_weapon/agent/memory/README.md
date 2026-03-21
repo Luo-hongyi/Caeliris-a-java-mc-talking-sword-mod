@@ -4,13 +4,16 @@
 
 另见：
 
+- [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
+- [PLAYER_INTENTS.md](PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
+- [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及 `RecentActionBuffer + ActionArchive` 的职责分工
 
 截至 `2026-03-16`，`agent.memory` 子系统的状态可以概括为：
 
-- `ActionBuffer`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
+- `RecentActionBuffer`、`ActionArchive`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
 - 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：先由 `visibleContexts` 注入跨轮维护的 `tag_pool`，再从 `tag_pool` 派生首层 cue，对长期记忆做联想式召回。
 - `LTMEntry` 已补入可持久化的游戏内语义时间锚点；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
@@ -19,19 +22,28 @@
 
 ## 记忆分层
 
-### 1. ActionBuffer
+### 1. RecentActionBuffer
 
-- 记录高频动作事件。
+- 记录 prompt 侧近期动作摘要。
 - 用于战斗、采集、旅行等底层行为的短窗口缓冲。
-- 只负责原始动作积累，不直接等于最终可召回记忆。
+- 保留 TTL、合并压缩、选择性消费语义。
 
-### 2. STMPool
+### 2. ActionArchive
+
+- 记录 watcher 观察到的原始动作事件流。
+- 不做 TTL 淘汰，不做同类压缩。
+- 为 player intent、episode 分割和后续 LTM 生成提供连续行为时间线。
+- 当前另外接了一个**临时测试钩子**：
+  - 在 `right_click` fire 时会额外写出一份 `ActionArchive` dump 日志
+  - 这个日志仅用于现阶段验证归档内容，后续需要删除
+
+### 3. STMPool
 
 - 聚合近期 `InteractionTurn` 与上下文条目。
 - 为后续的记忆总结、人格清算、LTM 生成提供原始材料。
-- 当前系统中，LTM 的“召回起点”来自 `LLMInteractionTask` 中已经进入 `visibleContexts` 的上下文，而不是直接从隐藏上下文或原始 ActionBuffer 起跳。
+- 当前系统中，LTM 的“召回起点”来自 `LLMInteractionTask` 中已经进入 `visibleContexts` 的上下文，而不是直接从隐藏上下文或原始动作记录起跳。
 
-### 3. LTMRecords
+### 4. LTMRecords
 
 - `AgentMemory` 中持有的长期记忆集合。
 - 包含两类来源：`IMPLANTED` 与 `SYNTHESIZED`。

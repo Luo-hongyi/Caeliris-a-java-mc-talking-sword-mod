@@ -18,6 +18,9 @@
     "tagPoolHalfLifeDays",
     "tagPoolDecayShape",
     "tagPoolDropThreshold",
+    "tagPoolReheatPulseGain",
+    "tagPoolReheatDecayPerHit",
+    "tagPoolReheatFloor",
     "fermentationHalfLifeDays",
     "fermentationDecayShape",
     "fermentationDropThreshold",
@@ -30,7 +33,7 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 3
+      "const": 4
     },
     "generatedAt": {
       "type": "string"
@@ -89,6 +92,21 @@
       "type": "number",
       "minimum": 0,
       "maximum": 0.2
+    },
+    "tagPoolReheatPulseGain": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "tagPoolReheatDecayPerHit": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "tagPoolReheatFloor": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 1
     },
     "fermentationHalfLifeDays": {
       "type": "number",
