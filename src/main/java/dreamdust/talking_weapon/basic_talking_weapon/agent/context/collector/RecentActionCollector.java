@@ -105,7 +105,7 @@ public class RecentActionCollector implements IContextCollector {
             case COMBAT, HAZARD -> ImportanceRegistry.getInstance().get("action:combat", 0.8f);
             case LABOR, BLOCK, TOOL, CREATION -> ImportanceRegistry.getInstance().get("action:labor", 0.4f);
             case STATUS, CONSUMABLE -> ImportanceRegistry.getInstance().get("action:status", 0.6f);
-            case MOVEMENT, LANDSCAPE -> ImportanceRegistry.getInstance().get("action:movement", 0.5f);
+            case EXPLORE, LANDSCAPE -> ImportanceRegistry.getInstance().get("action:explore", 0.5f);
             case SOCIAL, CREATURE -> ImportanceRegistry.getInstance().get("action:social", 0.7f);
             default -> ImportanceRegistry.getInstance().get("action:default", 0.3f);
         };
@@ -130,7 +130,7 @@ public class RecentActionCollector implements IContextCollector {
         return switch (primaryFocus) {
             case COMBAT, HAZARD -> prefix + "卷进了一阵战斗，";
             case LABOR, BLOCK, TOOL, CREATION -> prefix + "手上一直没闲着，";
-            case MOVEMENT, LANDSCAPE -> prefix + "还在外头奔走，";
+            case EXPLORE, LANDSCAPE -> prefix + "还在外头探索，";
             case SOCIAL, CREATURE -> prefix + "和周围的人事有些来往，";
             case STATUS, CONSUMABLE -> prefix + "先顾了一下自己，";
             default -> prefix;
@@ -155,6 +155,7 @@ public class RecentActionCollector implements IContextCollector {
             case USE_ITEM -> withCount("用了" + fallbackTarget(target, "手上的东西"), entry.getCount());
             case INTERACT_FUNCTION_BLOCK -> "在" + fallbackTarget(target, "某个工作台") + "前忙活了一阵";
             case CRAFT_ITEM -> withCount("做出了" + fallbackTarget(target, "些东西"), entry.getCount());
+            case OPEN_LOOT_CONTAINER -> withCount("发现并打开了一个藏着战利品的" + fallbackTarget(target, "容器"), entry.getCount(), null);
             case TRAVEL -> entry.getCount() > 1 ? "连着赶了几段路" : "赶了一段路";
             case IDLE -> entry.getCount() > 1 ? "断断续续发了几次呆" : "停下来发了一会儿呆";
             case BIOME_CHANGE -> "走进了" + fallbackTarget(target, "一片新地方");

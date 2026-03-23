@@ -117,7 +117,7 @@ public class SubconsciousBooster {
         try {
             switch (tag) {
                 case COMBAT: return TalkingWeaponConfig.WEIGHT_COMBAT.get();
-                case MOVEMENT: return TalkingWeaponConfig.WEIGHT_MOVEMENT.get();
+                case EXPLORE: return TalkingWeaponConfig.WEIGHT_EXPLORE.get();
                 case LABOR: return TalkingWeaponConfig.WEIGHT_LABOR.get();
                 case CREATION: return TalkingWeaponConfig.WEIGHT_CREATION.get();
                 case CREATURE: return TalkingWeaponConfig.WEIGHT_CREATURE.get();

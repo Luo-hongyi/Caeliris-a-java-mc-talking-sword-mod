@@ -258,7 +258,7 @@ public class PersonaEntry {
             for (String part : csv.split(",")) {
                 String trimmed = part.trim();
                 if (!trimmed.isEmpty()) {
-                    parsed.add(FocusTag.valueOf(trimmed.toUpperCase()));
+                    parsed.add(FocusTag.parse(trimmed));
                 }
             }
         }

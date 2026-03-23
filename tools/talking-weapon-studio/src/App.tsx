@@ -325,7 +325,7 @@ const IconAssetVersionContext = createContext("seed");
 
 const FOCUS_TAGS: FocusTag[] = [
   "COMBAT",
-  "MOVEMENT",
+  "EXPLORE",
   "LABOR",
   "CREATION",
   "CREATURE",
@@ -341,7 +341,7 @@ const FOCUS_TAGS: FocusTag[] = [
 
 const FOCUS_TAG_LABELS: Record<FocusTag, string> = {
   COMBAT: "战斗",
-  MOVEMENT: "移动",
+  EXPLORE: "探索",
   LABOR: "劳作",
   CREATION: "创造",
   CREATURE: "生物",
@@ -410,7 +410,7 @@ const EMPTY_LOCATION_DRAFT: LocationDraft = {
 
 const AGENT_STATE_WEIGHT_KEYS = [
   "combat",
-  "movement",
+  "explore",
   "labor",
   "creation",
   "creature",
@@ -503,7 +503,7 @@ const AGENT_STATE_RECALL_TUNING_FIELDS: Array<{
 
 const AGENT_STATE_WEIGHT_TO_FOCUS_TAG: Record<AgentStateWeightKey, FocusTag> = {
   combat: "COMBAT",
-  movement: "MOVEMENT",
+  explore: "EXPLORE",
   labor: "LABOR",
   creation: "CREATION",
   creature: "CREATURE",

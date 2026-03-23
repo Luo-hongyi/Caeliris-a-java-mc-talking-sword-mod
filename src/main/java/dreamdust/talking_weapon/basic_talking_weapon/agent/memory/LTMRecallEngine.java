@@ -1343,7 +1343,10 @@ public final class LTMRecallEngine {
                 continue;
             }
             try {
-                parsed.add(FocusTag.valueOf(raw.trim().toUpperCase()));
+                FocusTag parsedTag = FocusTag.parseOrNull(raw);
+                if (parsedTag != null) {
+                    parsed.add(parsedTag);
+                }
             } catch (IllegalArgumentException ignored) {
             }
         }

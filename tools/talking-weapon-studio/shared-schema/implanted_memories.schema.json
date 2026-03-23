@@ -38,7 +38,7 @@
       "type": "string",
       "enum": [
         "COMBAT",
-        "MOVEMENT",
+        "EXPLORE",
         "LABOR",
         "CREATION",
         "CREATURE",

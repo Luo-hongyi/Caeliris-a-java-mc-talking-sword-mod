@@ -110,7 +110,7 @@ public class NearbyPoiCollector implements IContextCollector {
 
     private FocusTag determineFocusTag(String poiName) {
         if (poiName.contains("bed")) return FocusTag.STATUS;
-        if (poiName.contains("nether_portal")) return FocusTag.MOVEMENT;
+        if (poiName.contains("nether_portal")) return FocusTag.EXPLORE;
 
         Set<String> workstations = Set.of(
             "barrel", "blast_furnace", "brewing_stand", "cartography_table",

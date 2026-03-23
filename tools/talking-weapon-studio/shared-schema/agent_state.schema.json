@@ -134,7 +134,7 @@
       "additionalProperties": false,
       "required": [
         "combat",
-        "movement",
+        "explore",
         "labor",
         "creation",
         "creature",
@@ -150,7 +150,7 @@
       ],
       "properties": {
         "combat": { "type": "number", "minimum": 0, "maximum": 10 },
-        "movement": { "type": "number", "minimum": 0, "maximum": 10 },
+        "explore": { "type": "number", "minimum": 0, "maximum": 10 },
         "labor": { "type": "number", "minimum": 0, "maximum": 10 },
         "creation": { "type": "number", "minimum": 0, "maximum": 10 },
         "creature": { "type": "number", "minimum": 0, "maximum": 10 },

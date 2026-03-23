@@ -96,7 +96,7 @@ public class ReflectionTask extends AgentTask {
                 if (synth.focus_tags != null) {
                     for (String fStr : synth.focus_tags) {
                         try {
-                            builder.focus(FocusTag.valueOf(fStr.toUpperCase()));
+                            builder.focus(FocusTag.parse(fStr));
                         } catch (Exception ignored) {}
                     }
                 }
@@ -189,7 +189,7 @@ public class ReflectionTask extends AgentTask {
         sb.append("  \"thinking\": \"(推理草稿：审视经历，决策好感度增减与生成要点)\",\n");
         sb.append("  \"ltm_synthesis\": {\n");
         sb.append("    \"description\": \"(对这段经历的凝练描述，作为你的主观回忆，建议 1-3 句话)\",\n");
-        sb.append("    \"focus_tags\": [\"(挑选几个相关的 FocusTag，比如 COMBAT, MOVEMENT)\"],\n");
+        sb.append("    \"focus_tags\": [\"(挑选几个相关的 FocusTag，比如 COMBAT, EXPLORE)\"],\n");
         sb.append("    \"detail_tags\": [\"(挑选最相关的 DetailTag，例如 native_specific:minecraft:creeper 或 custom_generic:combat_intense，可留空)\"],\n");
         sb.append("    \"importance\": (0.0到1.0的浮点数，代表这事在你心里的震撼和重要程度)\n");
         sb.append("  },\n");

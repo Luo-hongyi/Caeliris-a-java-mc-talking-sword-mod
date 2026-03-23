@@ -37,7 +37,7 @@
 | `LivingHurtEvent` (玩家攻击/被攻击) | `ATTACK` / `HURT_BY` |
 | `LivingDeathEvent` (击杀/死亡) | `KILL` / `DEATH` |
 | `BlockEvent.BreakEvent` | `MINE_BLOCK` |
-| `PlayerInteractEvent.RightClickBlock` + `PlayerContainerEvent.Open` | `INTERACT_FUNCTION_BLOCK`（两段式确认） |
+| `PlayerInteractEvent.RightClickBlock` + `PlayerContainerEvent.Open` | `INTERACT_FUNCTION_BLOCK` / `OPEN_LOOT_CONTAINER`（两段式确认） |
 | `PlayerEvent.ItemCraftedEvent` + `PlayerEvent.ItemSmeltedEvent` | `CRAFT_ITEM` |
 | `PlayerEvent.ItemPickupEvent` | `ACQUIRE_ITEM` |
 | `PlayerInteractEvent.EntityInteractSpecific` + `PlayerInteractEvent.EntityInteract` | `INTERACT_NPC` |

@@ -171,8 +171,8 @@ public final class AgentStateStorage {
 
     private static AgentStateFile normalized(AgentStateFile raw) {
         AgentStateFile file = raw != null ? raw : new AgentStateFile();
-        if (file.schemaVersion < 3) {
-            file.schemaVersion = 3;
+        if (file.schemaVersion < 4) {
+            file.schemaVersion = 4;
         }
         if (file.state == null) {
             file.state = new AgentRuntimeStateSection();
@@ -213,7 +213,7 @@ public final class AgentStateStorage {
         file.persona_state.player_profile = persona.getPlayerProfile();
 
         file.attention_weights.combat = TalkingWeaponConfig.WEIGHT_COMBAT.get();
-        file.attention_weights.movement = TalkingWeaponConfig.WEIGHT_MOVEMENT.get();
+        file.attention_weights.explore = TalkingWeaponConfig.WEIGHT_EXPLORE.get();
         file.attention_weights.labor = TalkingWeaponConfig.WEIGHT_LABOR.get();
         file.attention_weights.creation = TalkingWeaponConfig.WEIGHT_CREATION.get();
         file.attention_weights.creature = TalkingWeaponConfig.WEIGHT_CREATURE.get();
@@ -249,7 +249,7 @@ public final class AgentStateStorage {
         persona.setPlayerProfile(file.persona_state.player_profile);
 
         applyWeight(TalkingWeaponConfig.WEIGHT_COMBAT, file.attention_weights.combat);
-        applyWeight(TalkingWeaponConfig.WEIGHT_MOVEMENT, file.attention_weights.movement);
+        applyWeight(TalkingWeaponConfig.WEIGHT_EXPLORE, file.attention_weights.explore);
         applyWeight(TalkingWeaponConfig.WEIGHT_LABOR, file.attention_weights.labor);
         applyWeight(TalkingWeaponConfig.WEIGHT_CREATION, file.attention_weights.creation);
         applyWeight(TalkingWeaponConfig.WEIGHT_CREATURE, file.attention_weights.creature);
@@ -270,18 +270,11 @@ public final class AgentStateStorage {
     }
 
     private static FocusTag parseFocusTag(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return FocusTag.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+        return FocusTag.parseOrNull(raw);
     }
 
     public static final class AgentStateFile {
-        public int schemaVersion = 3;
+        public int schemaVersion = 4;
         public AgentRuntimeStateSection state = new AgentRuntimeStateSection();
         public AgentPersonaStateSection persona_state = new AgentPersonaStateSection();
         public AttentionWeightsSection attention_weights = new AttentionWeightsSection();
@@ -351,7 +344,7 @@ public final class AgentStateStorage {
 
     public static final class AttentionWeightsSection {
         public double combat = 1.0d;
-        public double movement = 1.0d;
+        public double explore = 1.0d;
         public double labor = 1.0d;
         public double creation = 1.0d;
         public double creature = 1.0d;

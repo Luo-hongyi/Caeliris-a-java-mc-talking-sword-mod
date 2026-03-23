@@ -77,7 +77,7 @@ function normalizeSeedLocationRegistry(
       note: typeof entry.note === "string" ? entry.note : "",
       focusTag:
         typeof entry.focusTag === "string" &&
-        ["COMBAT", "MOVEMENT", "LABOR", "CREATION", "CREATURE", "SOCIAL", "LANDSCAPE", "HAZARD", "STATUS", "CONSUMABLE", "BLOCK", "TOOL", "COMMON"].includes(entry.focusTag)
+        ["COMBAT", "EXPLORE", "LABOR", "CREATION", "CREATURE", "SOCIAL", "LANDSCAPE", "HAZARD", "STATUS", "CONSUMABLE", "BLOCK", "TOOL", "COMMON"].includes(entry.focusTag)
           ? (entry.focusTag as FocusTag)
           : "",
       detailTags

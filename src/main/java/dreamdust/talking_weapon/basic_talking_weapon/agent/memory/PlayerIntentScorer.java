@@ -26,9 +26,14 @@ public final class PlayerIntentScorer {
     private static final double BIOME_CHANGE_WEIGHT = 1.4;
     private static final double DIM_CHANGE_WEIGHT = 4.5;
 
-    private static final double ATTACK_WEIGHT = 1.8;
-    private static final double KILL_WEIGHT = 3.5;
-    private static final double HURT_BY_WEIGHT = 2.4;
+    private static final double EXPLORE_LOOT_CONTAINER_WEIGHT = 5.0;
+    private static final double EXPLORE_TRAVEL_SUPPORT = 1.0;
+    private static final double EXPLORE_BIOME_SUPPORT = 0.8;
+    private static final double EXPLORE_DIM_SUPPORT = 1.6;
+
+    private static final double ATTACK_WEIGHT = 2.2;
+    private static final double KILL_WEIGHT = 4.0;
+    private static final double HURT_BY_WEIGHT = 2.8;
     private static final double DEATH_WEIGHT = 5.0;
 
     private static final double BUILD_PLACE_BLOCK_WEIGHT = 2.3;
@@ -41,8 +46,10 @@ public final class PlayerIntentScorer {
 
     private static final double GATHER_RESULT_SYNERGY = 1.0;
     private static final double TRAVEL_CONTEXT_SYNERGY = 0.8;
-    private static final double COMBAT_OVERLAP_SYNERGY = 0.75;
-    private static final double COMBAT_STATIONARY_BONUS = 0.6;
+    private static final double EXPLORE_LOOT_TRAVEL_SYNERGY = 1.3;
+    private static final double EXPLORE_LOOT_COMBAT_SYNERGY = 0.8;
+    private static final double COMBAT_OVERLAP_SYNERGY = 1.0;
+    private static final double COMBAT_STATIONARY_BONUS = 0.8;
     private static final double BUILD_STATIONARY_BONUS = 0.6;
     private static final double CRAFT_CHAIN_SYNERGY = 1.2;
     private static final double SOCIAL_TRADE_SYNERGY = 1.2;
@@ -72,6 +79,7 @@ public final class PlayerIntentScorer {
 
         scoreGather(segment, acc, gatherCountByTarget);
         scoreTravel(countByType, acc);
+        scoreExplore(countByType, acc);
         scoreCombat(countByType, acc);
         scoreBuild(countByType, acc);
         scoreCraft(countByType, acc);
@@ -139,6 +147,37 @@ public final class PlayerIntentScorer {
         addTypeScore(acc, PlayerIntent.TRAVEL, countByType, ActionType.DIM_CHANGE, DIM_CHANGE_WEIGHT, "dimension shift");
     }
 
+    private static void scoreExplore(Map<ActionType, Integer> countByType, ScoreAccumulator acc) {
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.OPEN_LOOT_CONTAINER,
+                EXPLORE_LOOT_CONTAINER_WEIGHT,
+                "opened loot container");
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.TRAVEL,
+                EXPLORE_TRAVEL_SUPPORT,
+                "exploration travel support");
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.BIOME_CHANGE,
+                EXPLORE_BIOME_SUPPORT,
+                "exploration biome support");
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.DIM_CHANGE,
+                EXPLORE_DIM_SUPPORT,
+                "exploration dimension support");
+    }
+
     private static void scoreCombat(Map<ActionType, Integer> countByType, ScoreAccumulator acc) {
         addTypeScore(acc, PlayerIntent.COMBAT, countByType, ActionType.ATTACK, ATTACK_WEIGHT, "attack pressure");
         addTypeScore(acc, PlayerIntent.COMBAT, countByType, ActionType.KILL, KILL_WEIGHT, "kill confirmation");
@@ -170,9 +209,21 @@ public final class PlayerIntentScorer {
         int biomeChangeCount = countByType.getOrDefault(ActionType.BIOME_CHANGE, 0);
         int dimChangeCount = countByType.getOrDefault(ActionType.DIM_CHANGE, 0);
         int travelCount = countByType.getOrDefault(ActionType.TRAVEL, 0);
+        int lootContainerCount = countByType.getOrDefault(ActionType.OPEN_LOOT_CONTAINER, 0);
         if (travelCount > 0 && (biomeChangeCount > 0 || dimChangeCount > 0)) {
             double synergy = TRAVEL_CONTEXT_SYNERGY * ((biomeChangeCount > 0 ? 1.0 : 0.0) + (dimChangeCount > 0 ? 1.0 : 0.0));
             acc.add(PlayerIntent.TRAVEL, synergy, "travel context synergy");
+        }
+
+        if (lootContainerCount > 0 && (travelCount > 0 || biomeChangeCount > 0 || dimChangeCount > 0)) {
+            double travelSupportCount =
+                    (travelCount > 0 ? 1.0 : 0.0)
+                    + (biomeChangeCount > 0 ? 1.0 : 0.0)
+                    + (dimChangeCount > 0 ? 1.0 : 0.0);
+            acc.add(
+                    PlayerIntent.EXPLORE,
+                    EXPLORE_LOOT_TRAVEL_SYNERGY * travelSupportCount,
+                    "loot exploration synergy -> container + travel context");
         }
 
         int combatSignalTypes = presentTypeCount(
@@ -190,6 +241,13 @@ public final class PlayerIntentScorer {
         }
         if (combatSignalTypes > 0 && travelCount <= 0) {
             acc.add(PlayerIntent.COMBAT, COMBAT_STATIONARY_BONUS, "stationary combat bonus");
+        }
+        if (lootContainerCount > 0 && combatSignalTypes > 0) {
+            acc.add(
+                    PlayerIntent.EXPLORE,
+                    EXPLORE_LOOT_COMBAT_SYNERGY * combatSignalTypes,
+                    "loot exploration combat synergy -> %d combat signal types",
+                    combatSignalTypes);
         }
 
         int placeBlockCount = countByType.getOrDefault(ActionType.PLACE_BLOCK, 0);

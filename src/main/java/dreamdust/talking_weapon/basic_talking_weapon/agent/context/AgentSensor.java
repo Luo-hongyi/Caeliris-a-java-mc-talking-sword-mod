@@ -194,7 +194,12 @@ public class AgentSensor {
 
     /** 在 ActionBar 上显示一行文字（主线程安全） */
     private void showActionBar(Player player, String text) {
-        player.displayClientMessage(Component.literal(text), true);
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            if (player != null) {
+                player.displayClientMessage(Component.literal(text), true);
+            }
+        });
     }
 
     // ---- Configuration ----

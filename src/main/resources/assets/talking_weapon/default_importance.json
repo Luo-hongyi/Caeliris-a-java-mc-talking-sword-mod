@@ -21,7 +21,7 @@
   "action:combat": 0.8,
   "action:labor": 0.4,
   "action:status": 0.6,
-  "action:movement": 0.5,
+  "action:explore": 0.5,
   "action:social": 0.7,
   "action:default": 0.3,
 

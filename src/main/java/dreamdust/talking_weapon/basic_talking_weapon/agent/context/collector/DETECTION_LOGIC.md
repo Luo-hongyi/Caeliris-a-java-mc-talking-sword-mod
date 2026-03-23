@@ -298,7 +298,7 @@
 - 找到附近全部 POI 后，按最近距离去重保留
 - 焦点分类：
   - 含 `bed` -> `STATUS`
-  - 含 `nether_portal` -> `MOVEMENT`
+  - 含 `nether_portal` -> `EXPLORE`
   - 命中工作站集合 -> `CREATION`
   - 否则 -> `BLOCK`
 

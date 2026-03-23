@@ -1,9 +1,11 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag;
 
+import java.util.Locale;
+
 /**
  * 注意力元标签（Focus Tag）：Agent 认知雷达图的顶点。
  * <p>
- * 11 个扁平的一级类别，用于 LLM 计算注意力权重。
+ * 13 个扁平的一级类别，用于 LLM 计算注意力权重。
  * 每个 {@link TaggedContextEntry} 携带一个或多个 FocusTag，
  * 表示该条目属于哪些注意力领域。
  * <p>
@@ -17,8 +19,8 @@ public enum FocusTag {
     /** 战斗：攻击、受击、击杀等与伤害相关的行为 */
     COMBAT,
 
-    /** 移动与探索：跑图、飞行、骑乘、划船 */
-    MOVEMENT,
+    /** 探索与位移：跑图、飞行、骑乘、划船、深入未知区域 */
+    EXPLORE,
 
     /** 劳作与生存：挖矿、砍树、种田、钓鱼 */
     LABOR,
@@ -60,5 +62,25 @@ public enum FocusTag {
      * 通用上下文域。
      * 这是一个普通的、可调节的 FocusTag，不再隐式承担“准心强制加权”的职责。
      */
-    COMMON
+    COMMON;
+
+    public static FocusTag parse(String raw) {
+        FocusTag parsed = parseOrNull(raw);
+        if (parsed == null) {
+            throw new IllegalArgumentException("Unknown FocusTag: " + raw);
+        }
+        return parsed;
+    }
+
+    public static FocusTag parseOrNull(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        try {
+            return FocusTag.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
 }

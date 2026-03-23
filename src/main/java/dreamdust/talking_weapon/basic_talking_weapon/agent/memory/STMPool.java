@@ -99,6 +99,39 @@ public final class STMPool {
     }
 
     /**
+     * 返回某个时间点之前的 STM 切片视图，不修改池本身。
+     * <p>
+     * 当前用于为 episode 驱动的 LTM 生成预留按时间边界切片的能力。
+     */
+    public synchronized TimeSlice snapshotBefore(long exclusiveTimestamp) {
+        List<TaggedContextEntry> contextSlice = new ArrayList<>();
+        for (TaggedContextEntry entry : contextEntries) {
+            if (entry != null && entry.getTimestamp() < exclusiveTimestamp) {
+                contextSlice.add(entry);
+            }
+        }
+
+        List<InteractionTurn> turnSlice = new ArrayList<>();
+        for (InteractionTurn turn : interactionTurns) {
+            if (turn != null && turn.getTimestamp() < exclusiveTimestamp) {
+                turnSlice.add(turn);
+            }
+        }
+
+        return new TimeSlice(contextSlice, turnSlice);
+    }
+
+    /**
+     * 丢弃某个时间点之前的 STM 数据。
+     * <p>
+     * 第一版 episode split 暂不直接调用，后续 LTM 生成切片阶段再接入。
+     */
+    public synchronized void discardBefore(long exclusiveTimestamp) {
+        contextEntries.removeIf(entry -> entry != null && entry.getTimestamp() < exclusiveTimestamp);
+        interactionTurns.removeIf(turn -> turn != null && turn.getTimestamp() < exclusiveTimestamp);
+    }
+
+    /**
      * 上下文条目总数。
      */
     public synchronized int contextSize() {
@@ -208,5 +241,31 @@ public final class STMPool {
     public String toString() {
         return "STMPool{context=" + contextEntries.size()
                 + ", turns=" + interactionTurns.size() + "}";
+    }
+
+    public static final class TimeSlice {
+        private final List<TaggedContextEntry> contextEntries;
+        private final List<InteractionTurn> interactionTurns;
+
+        private TimeSlice(List<TaggedContextEntry> contextEntries, List<InteractionTurn> interactionTurns) {
+            this.contextEntries = contextEntries == null
+                    ? List.of()
+                    : Collections.unmodifiableList(new ArrayList<>(contextEntries));
+            this.interactionTurns = interactionTurns == null
+                    ? List.of()
+                    : Collections.unmodifiableList(new ArrayList<>(interactionTurns));
+        }
+
+        public List<TaggedContextEntry> getContextEntries() {
+            return contextEntries;
+        }
+
+        public List<InteractionTurn> getInteractionTurns() {
+            return interactionTurns;
+        }
+
+        public boolean isEmpty() {
+            return contextEntries.isEmpty() && interactionTurns.isEmpty();
+        }
     }
 }

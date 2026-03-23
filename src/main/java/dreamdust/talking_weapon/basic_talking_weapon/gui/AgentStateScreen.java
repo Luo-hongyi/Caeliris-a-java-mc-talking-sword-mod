@@ -55,7 +55,7 @@ public class AgentStateScreen extends Screen {
     private EditBox favorabilityBox;
 
     // 注意力权重编辑框
-    private EditBox wCombat, wMovement, wLabor, wCreation, wCreature, wSocial;
+    private EditBox wCombat, wExplore, wLabor, wCreation, wCreature, wSocial;
     private EditBox wLandscape, wHazard, wStatus, wConsumable, wBlock, wTool, wCommon;
     private boolean crosshairBonusEnabled;
 
@@ -165,8 +165,8 @@ public class AgentStateScreen extends Screen {
 
         wCombat = weightBox(TalkingWeaponConfig.WEIGHT_COMBAT.get());
         scrollList.addEntry(new BoxRow("COMBAT 战斗", left, rowWidth, wCombat));
-        wMovement = weightBox(TalkingWeaponConfig.WEIGHT_MOVEMENT.get());
-        scrollList.addEntry(new BoxRow("MOVEMENT 移动", left, rowWidth, wMovement));
+        wExplore = weightBox(TalkingWeaponConfig.WEIGHT_EXPLORE.get());
+        scrollList.addEntry(new BoxRow("EXPLORE 探索", left, rowWidth, wExplore));
         wLabor = weightBox(TalkingWeaponConfig.WEIGHT_LABOR.get());
         scrollList.addEntry(new BoxRow("LABOR 劳作", left, rowWidth, wLabor));
         wCreation = weightBox(TalkingWeaponConfig.WEIGHT_CREATION.get());
@@ -403,7 +403,7 @@ public class AgentStateScreen extends Screen {
 
         // 注意力权重→写入配置
         setWeight(TalkingWeaponConfig.WEIGHT_COMBAT, wCombat);
-        setWeight(TalkingWeaponConfig.WEIGHT_MOVEMENT, wMovement);
+        setWeight(TalkingWeaponConfig.WEIGHT_EXPLORE, wExplore);
         setWeight(TalkingWeaponConfig.WEIGHT_LABOR, wLabor);
         setWeight(TalkingWeaponConfig.WEIGHT_CREATION, wCreation);
         setWeight(TalkingWeaponConfig.WEIGHT_CREATURE, wCreature);

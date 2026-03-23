@@ -113,7 +113,7 @@ public final class LTMStorage {
                     if (raw.focus_tags != null) {
                         for (String fStr : raw.focus_tags) {
                             try {
-                                builder.focus(FocusTag.valueOf(fStr.toUpperCase()));
+                                builder.focus(FocusTag.parse(fStr));
                             } catch (Exception ignored) {}
                         }
                     }
@@ -301,7 +301,7 @@ public final class LTMStorage {
                 if (focusTag == null || focusTag.isBlank()) {
                     continue;
                 }
-                FocusTag.valueOf(focusTag.toUpperCase());
+                FocusTag.parse(focusTag);
             }
         }
         if (raw.semantic_time_tag != null && !raw.semantic_time_tag.isBlank()) {

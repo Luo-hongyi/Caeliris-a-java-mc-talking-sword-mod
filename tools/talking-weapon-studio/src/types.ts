@@ -1,6 +1,6 @@
 export type FocusTag =
   | "COMBAT"
-  | "MOVEMENT"
+  | "EXPLORE"
   | "LABOR"
   | "CREATION"
   | "CREATURE"
@@ -15,7 +15,7 @@ export type FocusTag =
 
 export type AgentStateWeightKey =
   | "combat"
-  | "movement"
+  | "explore"
   | "labor"
   | "creation"
   | "creature"

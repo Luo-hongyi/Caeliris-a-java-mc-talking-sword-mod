@@ -38,13 +38,16 @@ public enum ActionType {
     INTERACT_FUNCTION_BLOCK(FocusTag.CREATION, FocusTag.BLOCK),
     CRAFT_ITEM(FocusTag.CREATION),
 
+    // ── 探索域 ──
+    OPEN_LOOT_CONTAINER(FocusTag.EXPLORE, FocusTag.LANDSCAPE, FocusTag.BLOCK),
+
     // ── 移动域（高度概括的锚点位移） ──
-    TRAVEL(FocusTag.MOVEMENT, FocusTag.LANDSCAPE),
+    TRAVEL(FocusTag.EXPLORE, FocusTag.LANDSCAPE),
     IDLE(FocusTag.COMMON),
 
     // ── 环境变化域 ──
-    BIOME_CHANGE(FocusTag.LANDSCAPE, FocusTag.MOVEMENT),
-    DIM_CHANGE(FocusTag.LANDSCAPE, FocusTag.MOVEMENT),
+    BIOME_CHANGE(FocusTag.LANDSCAPE, FocusTag.EXPLORE),
+    DIM_CHANGE(FocusTag.LANDSCAPE, FocusTag.EXPLORE),
 
     // ── 社交域 ──
     TRADE(FocusTag.SOCIAL),

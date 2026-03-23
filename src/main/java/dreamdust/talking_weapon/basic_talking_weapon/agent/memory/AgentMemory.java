@@ -57,6 +57,14 @@ public class AgentMemory {
      */
     private final STMPool stmPool;
 
+    /**
+     * episode 断点即时 hotbar 提示的临时测试状态。
+     * <p>
+     * 仅用于当前调试阶段的去重与轻量节流，后续这套测试提示移除时可一并删除。
+     */
+    private long lastEpisodeBoundaryNotificationConfirmationTimestamp = -1L;
+    private long lastEpisodeBoundaryEvaluationWallClockMs = 0L;
+
     // ═══════════════════════════════════════════════════════════════
     // Layer 3: LTMRecords（长期记忆切片库）
     // ═══════════════════════════════════════════════════════════════
@@ -134,6 +142,23 @@ public class AgentMemory {
 
     public STMPool getSTMPool() {
         return stmPool;
+    }
+
+    public synchronized boolean shouldEvaluateEpisodeBoundaryNotification(long now, long minIntervalMs) {
+        if (now - lastEpisodeBoundaryEvaluationWallClockMs < Math.max(0L, minIntervalMs)) {
+            return false;
+        }
+        lastEpisodeBoundaryEvaluationWallClockMs = now;
+        return true;
+    }
+
+    public synchronized boolean markEpisodeBoundaryNotificationIfNew(long confirmationTimestamp) {
+        if (confirmationTimestamp <= 0L
+                || confirmationTimestamp <= lastEpisodeBoundaryNotificationConfirmationTimestamp) {
+            return false;
+        }
+        lastEpisodeBoundaryNotificationConfirmationTimestamp = confirmationTimestamp;
+        return true;
     }
 
     // ── LTMRecords ────────────────────────────────────────────

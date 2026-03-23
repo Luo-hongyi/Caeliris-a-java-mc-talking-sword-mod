@@ -69,7 +69,7 @@ public class BaseContextCollector implements IContextCollector {
                     String configuredFocus = resolvedLocation.getEntry().focusTag;
                     if (configuredFocus != null && !configuredFocus.isBlank()) {
                         try {
-                            locationFocus = FocusTag.valueOf(configuredFocus.trim());
+                            locationFocus = FocusTag.parse(configuredFocus.trim());
                         } catch (IllegalArgumentException ignored) {
                             locationFocus = FocusTag.LANDSCAPE;
                         }

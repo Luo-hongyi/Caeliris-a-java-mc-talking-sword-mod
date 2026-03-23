@@ -9,6 +9,7 @@
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
 - [PLAYER_INTENTS.md](PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
+- [EPISODE_SPLIT_DESIGN.md](EPISODE_SPLIT_DESIGN.md) - 长期记忆生成前的 episode 分割设计，包含分钟级 intent region、偏移确认与额外事件断点
 - [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及 `RecentActionBuffer + ActionArchive` 的职责分工
 - [LLM_FACING_ACTION_ARCHIVE.md](LLM_FACING_ACTION_ARCHIVE.md) - 面向 prompt / LTM 生成的动作档案整理层设计草案
 
@@ -40,12 +41,16 @@
   - 再在段内仅合并同类型且同目标的动作
 - 当前也已经有一层**派生 intent 分析视图**：
   - 读取固定时间窗 compaction 结果
-  - 对每个时间段独立计算 `GATHER / TRAVEL / COMBAT / BUILD / CRAFT / SOCIAL`
+  - 对每个时间段独立计算 `GATHER / TRAVEL / EXPLORE / COMBAT / BUILD / CRAFT / SOCIAL`
   - 输出主导 intent、次强 intent 和理由
 - 当前在 `right_click` fire 时会额外写出一份独立的 `ActionArchive` dump 日志：
   - 同时包含原始时间线
   - 固定时间窗 compaction 结果
   - 以及首版 intent 打分结果
+- 当前还临时挂了一条 **episode split 即时 hotbar 提示**：
+  - 当系统首次确认一个新的 episode 断点时，会立即在 hotbar 输出一条测试提示
+  - 提示文案会说明“新的断点已确认”，以及回溯切点大约在多久之前
+  - 这条提示仅用于当前调试 / 验证 delayed split 是否合理，后续应删除，不作为正式交互功能保留
 
 ### 3. STMPool
 

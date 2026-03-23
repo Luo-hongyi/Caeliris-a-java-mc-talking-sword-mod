@@ -122,7 +122,7 @@ public final class TalkingWeaponConfig {
 
         // —— 注意力偏好（测试版） ——
         public static final ForgeConfigSpec.DoubleValue WEIGHT_COMBAT;
-        public static final ForgeConfigSpec.DoubleValue WEIGHT_MOVEMENT;
+        public static final ForgeConfigSpec.DoubleValue WEIGHT_EXPLORE;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_LABOR;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_CREATION;
         public static final ForgeConfigSpec.DoubleValue WEIGHT_CREATURE;
@@ -286,7 +286,7 @@ public final class TalkingWeaponConfig {
                 builder.push("attention_weights");
                 builder.comment(" 注意力偏好权重设置 (仅在测试版开放，后续将绑定 Agent 性格)");
                 WEIGHT_COMBAT = builder.defineInRange("combat", 1.0, 0.0, 10.0);
-                WEIGHT_MOVEMENT = builder.defineInRange("movement", 1.0, 0.0, 10.0);
+                WEIGHT_EXPLORE = builder.defineInRange("explore", 1.0, 0.0, 10.0);
                 WEIGHT_LABOR = builder.defineInRange("labor", 1.0, 0.0, 10.0);
                 WEIGHT_CREATION = builder.defineInRange("creation", 1.0, 0.0, 10.0);
                 WEIGHT_CREATURE = builder.defineInRange("creature", 1.0, 0.0, 10.0);

@@ -9,6 +9,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 public enum PlayerIntent {
     GATHER,
     TRAVEL,
+    EXPLORE,
     COMBAT,
     BUILD,
     CRAFT,

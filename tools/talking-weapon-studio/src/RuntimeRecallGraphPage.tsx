@@ -55,7 +55,7 @@ const CHART_HEIGHT = 176;
 
 const FOCUS_TAG_LABELS: Record<FocusTag, string> = {
   COMBAT: "战斗",
-  MOVEMENT: "移动",
+  EXPLORE: "探索",
   LABOR: "劳作",
   CREATION: "创造",
   CREATURE: "生物",

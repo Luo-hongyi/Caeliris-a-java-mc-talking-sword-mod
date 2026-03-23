@@ -4,7 +4,7 @@
     {
       "id": "landscape-curiosity",
       "enabled": true,
-      "focus_tags": ["LANDSCAPE", "MOVEMENT"],
+      "focus_tags": ["LANDSCAPE", "EXPLORE"],
       "description": "对古老遗迹、异界风景与远行有强烈兴趣。",
       "always_recalled": true,
       "detail_tags": [

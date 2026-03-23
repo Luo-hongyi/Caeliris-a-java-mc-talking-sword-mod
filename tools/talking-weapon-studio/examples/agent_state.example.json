@@ -24,7 +24,7 @@
   },
   "attention_weights": {
     "combat": 1.1,
-    "movement": 0.9,
+    "explore": 0.9,
     "labor": 1.0,
     "creation": 1.35,
     "creature": 0.95,

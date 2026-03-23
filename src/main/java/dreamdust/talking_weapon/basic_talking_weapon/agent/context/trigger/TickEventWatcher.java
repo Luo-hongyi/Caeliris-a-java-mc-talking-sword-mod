@@ -4,11 +4,16 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentSplitPoint;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTimeline;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTracker;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -20,13 +25,17 @@ import net.minecraft.world.entity.npc.Npc;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
@@ -87,6 +96,13 @@ public class TickEventWatcher {
     /** 发呆动作阈值：超过该时长没有任何非 IDLE 动作，则补写一条 IDLE。 */
     private static final long IDLE_ACTION_THRESHOLD_MS = 120_000L;
 
+    /**
+     * episode split 即时 hotbar 提示的临时测试检测节流。
+     * <p>
+     * 目标是避免高频动作下每条 ActionRecord 都重跑完整 intent/episode 分析。
+     */
+    private static final long EPISODE_NOTIFICATION_EVALUATION_DEBOUNCE_MS = 1_000L;
+
     private int tickCounter = 0;
 
     // ── 群系与维度变化检测状态 ──
@@ -102,6 +118,9 @@ public class TickEventWatcher {
 
     // ── 功能方块交互候选状态 ──
     private PendingFunctionBlockInteraction pendingFunctionBlockInteraction = null;
+
+    // ── 战利品容器交互候选状态 ──
+    private PendingLootContainerInteraction pendingLootContainerInteraction = null;
 
     // ── NPC 交互防重状态 ──
     private final Map<UUID, Long> recentNpcInteractions = new LinkedHashMap<>();
@@ -314,9 +333,17 @@ public class TickEventWatcher {
             return;
         }
 
-        prunePendingFunctionBlockInteraction(System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        prunePendingFunctionBlockInteraction(now);
+        prunePendingLootContainerInteraction(now);
 
         BlockState state = event.getLevel().getBlockState(event.getPos());
+        PendingLootContainerInteraction lootContainerInteraction =
+                buildLootContainerInteraction(event.getLevel(), event.getPos(), state, now);
+        if (lootContainerInteraction != null) {
+            pendingLootContainerInteraction = lootContainerInteraction;
+        }
+
         if (!isFunctionBlockCandidate(event.getLevel(), event.getPos(), state)) {
             return;
         }
@@ -326,7 +353,7 @@ public class TickEventWatcher {
         tags.add(DetailTag.nativeSpecific(id));
         tags.add(DetailTag.customGeneric("function_block"));
 
-        pendingFunctionBlockInteraction = new PendingFunctionBlockInteraction(id, tags, System.currentTimeMillis());
+        pendingFunctionBlockInteraction = new PendingFunctionBlockInteraction(id, tags, now);
     }
 
     /**
@@ -344,19 +371,27 @@ public class TickEventWatcher {
 
         long now = System.currentTimeMillis();
         prunePendingFunctionBlockInteraction(now);
-        if (pendingFunctionBlockInteraction == null) {
-            return;
-        }
-        if (!isFunctionBlockMenu(event.getContainer())) {
-            pendingFunctionBlockInteraction = null;
-            return;
+        prunePendingLootContainerInteraction(now);
+
+        if (pendingLootContainerInteraction != null) {
+            if (isLootContainerMenu(event.getContainer())) {
+                recordAction(
+                        ActionType.OPEN_LOOT_CONTAINER,
+                        pendingLootContainerInteraction.blockId(),
+                        pendingLootContainerInteraction.tags());
+            }
+            pendingLootContainerInteraction = null;
         }
 
-        recordAction(
-                ActionType.INTERACT_FUNCTION_BLOCK,
-                pendingFunctionBlockInteraction.blockId(),
-                pendingFunctionBlockInteraction.tags());
-        pendingFunctionBlockInteraction = null;
+        if (pendingFunctionBlockInteraction != null) {
+            if (isFunctionBlockMenu(event.getContainer())) {
+                recordAction(
+                        ActionType.INTERACT_FUNCTION_BLOCK,
+                        pendingFunctionBlockInteraction.blockId(),
+                        pendingFunctionBlockInteraction.tags());
+            }
+            pendingFunctionBlockInteraction = null;
+        }
     }
 
     /**
@@ -815,6 +850,44 @@ public class TickEventWatcher {
         return state.getMenuProvider(level, pos) != null;
     }
 
+    private PendingLootContainerInteraction buildLootContainerInteraction(
+            Level level,
+            BlockPos pos,
+            BlockState state,
+            long now) {
+        if (level == null || pos == null || state == null || state.isAir()) {
+            return null;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        if (!(blockEntity instanceof RandomizableContainerBlockEntity lootContainer)) {
+            return null;
+        }
+
+        CompoundTag tag = lootContainer.saveWithoutMetadata();
+        if (!tag.contains(RandomizableContainerBlockEntity.LOOT_TABLE_TAG, 8)) {
+            return null;
+        }
+
+        String lootTableId = tag.getString(RandomizableContainerBlockEntity.LOOT_TABLE_TAG);
+        if (lootTableId == null || lootTableId.isBlank()) {
+            return null;
+        }
+
+        String blockId = blockId(state);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        if (!"unknown".equals(blockId)) {
+            tags.add(DetailTag.nativeSpecific(blockId));
+        }
+        tags.add(DetailTag.customGeneric("loot_container"));
+        tags.add(DetailTag.customGeneric("structure_loot"));
+        tags.add(DetailTag.customGeneric("exploration_reward"));
+        tags.add(DetailTag.customGeneric("treasure"));
+        tags.add(DetailTag.customSpecific("loot_table/" + lootTableId));
+
+        return new PendingLootContainerInteraction(blockId, tags, now);
+    }
+
     private boolean isFunctionBlockMenu(AbstractContainerMenu container) {
         if (container == null || container.getType() == null) {
             return false;
@@ -831,6 +904,10 @@ public class TickEventWatcher {
         }
 
         return !isStorageLikePath(path) && !"merchant".equals(path) && !"inventory".equals(path);
+    }
+
+    private boolean isLootContainerMenu(AbstractContainerMenu container) {
+        return container instanceof ChestMenu;
     }
 
     private boolean isStorageLikeId(String registryId) {
@@ -941,7 +1018,69 @@ public class TickEventWatcher {
         } else {
             lastNonIdleActionTimestampMs = now;
         }
-        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+        AgentMemory memory = AgentRuntime.getInstance().getMemory();
+        memory.recordObservedAction(record);
+        maybeNotifyEpisodeBoundary(memory, now);
+    }
+
+    private void maybeNotifyEpisodeBoundary(AgentMemory memory, long now) {
+        if (memory == null
+                || !memory.shouldEvaluateEpisodeBoundaryNotification(
+                        now, EPISODE_NOTIFICATION_EVALUATION_DEBOUNCE_MS)) {
+            return;
+        }
+
+        // 临时测试提示不应抢占正常 speech / trigger 输出；
+        // 若前台交互仍在进行，则等下一次空闲后再尝试提示。
+        if (AgentRuntime.getInstance().isBusy()) {
+            return;
+        }
+
+        EpisodeIntentTimeline timeline =
+                EpisodeIntentTracker.analyzeSegments(memory.getActionArchive().snapshotCompacted());
+        EpisodeIntentSplitPoint latestSplit = timeline.latestSplitPoint();
+        if (latestSplit == null
+                || latestSplit.confirmationTimestamp() <= 0L
+                || !memory.markEpisodeBoundaryNotificationIfNew(latestSplit.confirmationTimestamp())) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+
+        long splitAgeMs = Math.max(0L, now - latestSplit.splitTimestamp());
+        String text = "新的记忆断点已确认，回溯切点在" + formatElapsedSince(splitAgeMs) + "。";
+        mc.execute(() -> {
+            if (mc.player != null) {
+                mc.player.displayClientMessage(Component.literal(text), true);
+            }
+        });
+    }
+
+    private String formatElapsedSince(long elapsedMs) {
+        if (elapsedMs < 45_000L) {
+            return "刚刚";
+        }
+
+        long minutes = elapsedMs / 60_000L;
+        if (minutes < 60L) {
+            return "约" + minutes + "分钟前";
+        }
+
+        long hours = elapsedMs / 3_600_000L;
+        if (hours < 24L) {
+            return "约" + hours + "小时前";
+        }
+
+        long days = elapsedMs / 86_400_000L;
+        if (days < 30L) {
+            return "约" + days + "天前";
+        }
+
+        long months = Math.max(1L, days / 30L);
+        return "约" + months + "个月前";
     }
 
     private void noteRecentPlayerDamage(UUID targetId, long now) {
@@ -1012,8 +1151,23 @@ public class TickEventWatcher {
         }
     }
 
+    private void prunePendingLootContainerInteraction(long now) {
+        if (pendingLootContainerInteraction == null) {
+            return;
+        }
+        if (now - pendingLootContainerInteraction.timestampMs() > FUNCTION_BLOCK_INTERACTION_WINDOW_MS) {
+            pendingLootContainerInteraction = null;
+        }
+    }
+
     private record PendingFunctionBlockInteraction(String blockId, Set<DetailTag> tags, long timestampMs) {
         private PendingFunctionBlockInteraction {
+            tags = tags == null ? Collections.emptySet() : Collections.unmodifiableSet(new LinkedHashSet<>(tags));
+        }
+    }
+
+    private record PendingLootContainerInteraction(String blockId, Set<DetailTag> tags, long timestampMs) {
+        private PendingLootContainerInteraction {
             tags = tags == null ? Collections.emptySet() : Collections.unmodifiableSet(new LinkedHashSet<>(tags));
         }
     }
