@@ -45,6 +45,15 @@ public final class ActionArchive {
         return Collections.unmodifiableList(new ArrayList<>(records));
     }
 
+    /**
+     * 返回基于当前原始动作序列计算出的统一时间段压缩视图。
+     * <p>
+     * 该视图是派生结果，不会改写内部保存的原始动作时间线。
+     */
+    public synchronized List<ActionCompactedSegment> snapshotCompacted() {
+        return ActionArchiveCompactor.compact(new ArrayList<>(records));
+    }
+
     public synchronized int size() {
         return records.size();
     }

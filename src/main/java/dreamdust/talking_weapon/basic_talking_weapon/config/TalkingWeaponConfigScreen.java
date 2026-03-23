@@ -14,7 +14,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.NativeTagDescriptionSeeder;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
@@ -355,6 +357,34 @@ public class TalkingWeaponConfigScreen extends Screen {
         }).bounds(0, 0, 100, 20).build();
 
         configList.addEntry(new TwoButtonEntry(left, rowWidth, openPrompts, reloadPrompts));
+
+        // ── 标签描述管理 ──
+        configList.addEntry(new LabelEntry("§e▸ 标签描述管理 (tag_descriptions.json)"));
+        configList.addEntry(new LabelEntry("§7为 native 标签自动补全描述，避免提示词里直接暴露原始 tag id。"));
+
+        Button openTagDescriptions = Button.builder(Component.literal("打开描述文件"), btn -> {
+            Util.getPlatform().openUri(TagDescriptionDictionary.getConfigPath().toUri());
+        }).bounds(0, 0, 100, 20).build();
+
+        Button reloadTagDescriptions = Button.builder(Component.literal("§b热重载描述"), btn -> {
+            TagDescriptionDictionary.reload();
+            btn.setMessage(Component.literal("§a已完成重载"));
+        }).bounds(0, 0, 100, 20).build();
+
+        Button seedTagDescriptions = Button.builder(Component.literal("自动补全描述"), btn -> {
+            try {
+                NativeTagDescriptionSeeder.SeedResult result = NativeTagDescriptionSeeder.seedMissingNativeDescriptions();
+                if (result.addedCount > 0 || result.updatedCount > 0) {
+                    btn.setMessage(Component.literal("§a已补全 " + result.addedCount + " 项"));
+                } else {
+                    btn.setMessage(Component.literal("§7无需补全"));
+                }
+            } catch (Exception e) {
+                handleStudioActionError(btn, "seed native tag descriptions", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+
+        configList.addEntry(new ThreeButtonEntry(left, rowWidth, openTagDescriptions, reloadTagDescriptions, seedTagDescriptions));
 
         // ── 客观重要度管理 ──
         configList.addEntry(new LabelEntry("§e▸ 客观重要度配置 (importance.json)"));

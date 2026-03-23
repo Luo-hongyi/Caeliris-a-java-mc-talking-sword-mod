@@ -40,6 +40,7 @@ public enum ActionType {
 
     // ── 移动域（高度概括的锚点位移） ──
     TRAVEL(FocusTag.MOVEMENT, FocusTag.LANDSCAPE),
+    IDLE(FocusTag.COMMON),
 
     // ── 环境变化域 ──
     BIOME_CHANGE(FocusTag.LANDSCAPE, FocusTag.MOVEMENT),

@@ -71,10 +71,14 @@ public class AgentSensor {
         // 0. 开始日志会话
         AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
 
-        // 临时测试钩子：当前在 right_click fire 时额外写出一份 ActionArchive dump，
-        // 用于验证原始动作时间线。后续在 ActionArchive 链路稳定后应删除。
+        // 当前在 right_click fire 时额外写出一份独立的动作日志，
+        // 其中包含：
+        // 1. 原始 ActionArchive 时间线
+        // 2. fixed 60 秒 compaction
+        // 3. moving segment 及其 local intent
+        // 便于同时观察分析层与 prompt 近期感知层。
         if ("right_click".equals(trigger.getSourceName())) {
-            AgentLogger.logActionArchiveDump(runtime.getMemory().getActionArchive());
+            AgentLogger.logActionArchiveDump(runtime.getMemory());
         }
 
         // 1. 创建 Builder，设置基础元信息

@@ -10,10 +10,12 @@
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
 - [PLAYER_INTENTS.md](PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
 - [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及 `RecentActionBuffer + ActionArchive` 的职责分工
+- [LLM_FACING_ACTION_ARCHIVE.md](LLM_FACING_ACTION_ARCHIVE.md) - 面向 prompt / LTM 生成的动作档案整理层设计草案
 
 截至 `2026-03-16`，`agent.memory` 子系统的状态可以概括为：
 
 - `RecentActionBuffer`、`ActionArchive`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
+- `ActionArchive` 之上已经接入第一版 `PlayerIntentScorer`：它会对固定时间窗压缩结果做规则打分，输出每段的多意图分数、主导意图和理由，供 episode / LTM 设计阶段调试。
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
 - 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：先由 `visibleContexts` 注入跨轮维护的 `tag_pool`，再从 `tag_pool` 派生首层 cue，对长期记忆做联想式召回。
 - `LTMEntry` 已补入可持久化的游戏内语义时间锚点；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
@@ -33,9 +35,17 @@
 - 记录 watcher 观察到的原始动作事件流。
 - 不做 TTL 淘汰，不做同类压缩。
 - 为 player intent、episode 分割和后续 LTM 生成提供连续行为时间线。
-- 当前另外接了一个**临时测试钩子**：
-  - 在 `right_click` fire 时会额外写出一份 `ActionArchive` dump 日志
-  - 这个日志仅用于现阶段验证归档内容，后续需要删除
+- 当前在其上方额外挂了一层**派生压缩视图**：
+  - 先按固定时间窗切成时间段
+  - 再在段内仅合并同类型且同目标的动作
+- 当前也已经有一层**派生 intent 分析视图**：
+  - 读取固定时间窗 compaction 结果
+  - 对每个时间段独立计算 `GATHER / TRAVEL / COMBAT / BUILD / CRAFT / SOCIAL`
+  - 输出主导 intent、次强 intent 和理由
+- 当前在 `right_click` fire 时会额外写出一份独立的 `ActionArchive` dump 日志：
+  - 同时包含原始时间线
+  - 固定时间窗 compaction 结果
+  - 以及首版 intent 打分结果
 
 ### 3. STMPool
 
@@ -93,6 +103,11 @@
 - 新版 LTM 生成器
 - 对应的触发 / 调度时机
 - 与 persona / favorability 的低频结算协议
+- 一层真正面向 LLM 的动作档案整理层：
+  - 在 `ActionArchive` debug compaction 之上继续压缩
+  - 按重要度过滤低价值动作 / 片段
+  - 增加“这一段是否值得生成记忆”的 generation gate
+  - 并与后续 importance 重构统一设计，而不是额外再造一套孤立规则
 
 ## 维护原则
 

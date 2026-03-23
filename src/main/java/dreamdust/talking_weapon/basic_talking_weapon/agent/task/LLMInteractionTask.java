@@ -139,16 +139,18 @@ public class LLMInteractionTask extends AgentTask {
 
             // 触发器的事件指令（归因到触发源），应作为 system prompt 的 [Event] 段落注入，
             // 避免被模型误判为“玩家说的话”。
-            String triggerSrcForMsg = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
-            boolean isPlayerChat = "player_chat".equals(triggerSrcForMsg);
-
-            String eventInstruction = ctx.getExtras().getOrDefault("user_prompt",
+            String userMessage = firstNonBlank(
+                    ctx.getExtra("user_message"),
+                    "[OBSERVATION]");
+            String eventInstruction = firstNonBlank(
+                    ctx.getExtra("event_instruction"),
+                    ctx.getExtra("user_prompt"),
                     "请根据当前状态，以武器灵魂的身份发表一到两句话的简短评论。");
             String screenshotBase64 = ctx.getScreenshotBase64();
 
-            // user message 尽量只作为“观测载体”存在，避免污染玩家语气识别。
-            // 只有在 player_chat 场景下，才将其视为真实的玩家输入。
-            String userText = isPlayerChat ? eventInstruction : "[OBSERVATION]";
+            // user message 只承载本轮简短观测文本；事件约束统一进入 system prompt 的
+            // [Event Instructions] 段，避免把任务规则塞进 user role。
+            String userText = userMessage;
 
             List<LLMMessage> messages = new ArrayList<>();
             messages.add(LLMMessage.system(systemPrompt));
@@ -304,9 +306,11 @@ public class LLMInteractionTask extends AgentTask {
         }
 
         // 事件指令与当前任务（归因到触发源，而不是玩家发言）
-        String userPrompt = ctx.getExtra("user_prompt");
-        if (userPrompt != null && !userPrompt.isEmpty()) {
-            sb.append("[Event Instructions]\n").append(userPrompt).append("\n\n");
+        String eventInstruction = firstNonBlank(
+                ctx.getExtra("event_instruction"),
+                ctx.getExtra("user_prompt"));
+        if (eventInstruction != null && !eventInstruction.isEmpty()) {
+            sb.append("[Event Instructions]\n").append(eventInstruction).append("\n\n");
         }
 
         // ── 近期交互回合（STM） ──
@@ -483,7 +487,7 @@ public class LLMInteractionTask extends AgentTask {
                 }
                 AgentLogger.logDebug(recallLog.toString());
             }
-            StudioRuntimeRecallTraceFile.writeLatest(ctx, userPrompt, mergedVisible, state, recallResult);
+            StudioRuntimeRecallTraceFile.writeLatest(ctx, eventInstruction, mergedVisible, state, recallResult);
 
             // Agent 人格画像（直接传入筛选好的词条）
             String personaSnippet = persona.toPromptSnippet(personaResult.activeTraits);
@@ -585,6 +589,18 @@ public class LLMInteractionTask extends AgentTask {
             }
         }
         return translated;
+    }
+
+    private static String firstNonBlank(String... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static String describePromptMemoryTimeSemantic(LTMEntry ltm, TagDescriptionDictionary tagDict) {

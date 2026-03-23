@@ -246,7 +246,7 @@ public final class TalkingWeaponConfig {
                                 .comment("右键触发：启用思考模式（LLM 先思考再回复，思考内容仅保留在日志中）")
                                 .define("enableThinking", false);
                 RC_ENABLE_RECENT_ACTIONS = builder
-                                .comment("右键触发：启用近期动作流总览（从 RecentActionBuffer 中抽取内容，非常推荐开启）")
+                                .comment("右键触发：启用近期动作流总览（从 moving action buffer 中抽取近期阶段，非常推荐开启）")
                                 .define("enableRecentActions", true);
                 builder.pop(); // right_click
 

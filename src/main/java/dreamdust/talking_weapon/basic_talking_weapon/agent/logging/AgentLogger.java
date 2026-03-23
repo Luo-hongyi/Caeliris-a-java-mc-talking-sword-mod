@@ -15,7 +15,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -44,6 +46,8 @@ public final class AgentLogger {
     private static final String LOG_DIR = "talking_weapon_logs";
     private static final DateTimeFormatter FILE_TIME_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
     private static final DateTimeFormatter DISPLAY_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter CLOCK_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+    private static final DateTimeFormatter WINDOW_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     /** 当前触发会话的日志写入器（全局唯一，因运行时是单工作线程顺序执行） */
     private static final AtomicReference<LogSession> CURRENT_SESSION = new AtomicReference<>();
@@ -171,71 +175,362 @@ public final class AgentLogger {
     }
 
     /**
-     * 将整个 RecentActionBuffer 快照单独输出到一个日志文件中，方便调试。
-     * 文件名格式: recent_action_buffer_dump_<时间戳>.log
-     */
-    public static void logRecentActionBufferDump(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.RecentActionBuffer buffer) {
-        try {
-            Path dir = ensureLogDir();
-            String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
-            File file = dir.resolve("recent_action_buffer_dump_" + timestamp + ".log").toFile();
-            try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
-                w.println("╔══════════════════════════════════════════════════════════════╗");
-                w.println("║       TALKING WEAPON — RECENT ACTION BUFFER DUMP            ║");
-                w.println("╚══════════════════════════════════════════════════════════════╝");
-                w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
-                w.println("动作总数: " + buffer.size());
-                w.println();
-
-                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord> records = buffer
-                        .snapshot();
-                for (int i = 0; i < records.size(); i++) {
-                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
-                    w.println(String.format("[%03d] Type: %-15s Target: %-20s Count: %-3d Focus: %s Details: %s",
-                            i, r.getType(), r.getTarget(), r.getCount(),
-                            r.getType().getAllFocusTags(), r.getDetailTags()));
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * 将整个 ActionArchive 快照单独输出到一个日志文件中，方便验证原始动作时间线。
+     * 将当前动作相关视图单独输出到一个日志文件中。
      * <p>
-     * 当前仅作为 right_click fire 时的临时测试钩子，后续应删除。
+     * 日志当前会同时输出：
+     * <ol>
+     * <li>原始 ActionArchive 时间线</li>
+     * <li>fixed 60 秒 compaction 视图</li>
+     * <li>moving action buffer 当前 segment 视图</li>
+     * </ol>
      * 文件名格式: action_archive_dump_<时间戳>.log
      */
-    public static void logActionArchiveDump(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchive archive) {
+    public static void logActionArchiveDump(AgentMemory memory) {
         try {
             Path dir = ensureLogDir();
             String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
             File file = dir.resolve("action_archive_dump_" + timestamp + ".log").toFile();
             try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
                 w.println("╔══════════════════════════════════════════════════════════════╗");
-                w.println("║         TALKING WEAPON — ACTION ARCHIVE DUMP               ║");
+                w.println("║         TALKING WEAPON — ACTION ARCHIVE DUMP                ║");
                 w.println("╚══════════════════════════════════════════════════════════════╝");
                 w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
-                w.println("说明: 当前仅作为 right_click fire 时的临时测试日志，后续应删除");
+                if (memory == null) {
+                    w.println("AgentMemory: (null)");
+                    return;
+                }
+                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchive archive = memory.getActionArchive();
                 w.println("动作总数: " + archive.size());
                 w.println();
 
                 java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord> records = archive
                         .snapshot();
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment> fixedSegments =
+                        archive.snapshotCompacted();
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis> fixedIntentAnalyses =
+                        dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentScorer.analyze(fixedSegments);
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment> movingSegments =
+                        memory.getMovingActionBuffer().snapshotSegments();
+
+                w.println("──────────────────────────────────────────");
+                w.println("1. 原始动作时间线");
+                w.println("──────────────────────────────────────────");
                 for (int i = 0; i < records.size(); i++) {
                     dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
                     w.println(String.format(
-                            "[%04d] ts=%d Type: %-24s Target: %-24s Count: %-3d Focus: %s Details: %s",
-                            i, r.getTimestamp(), r.getType(), r.getTarget(), r.getCount(),
+                            "[%04d] %s | %-18s | target=%-28s | focus=%-24s | details=%s",
+                            i,
+                            formatClock(r.getTimestamp()),
+                            formatActionLabel(r.getType(), r.getCount()),
+                            formatTargetForLog(r.getTarget()),
                             r.getType().getAllFocusTags(), r.getDetailTags()));
                 }
+
+                w.println();
+                w.println("──────────────────────────────────────────");
+                w.println("2. Fixed Segment + Intent");
+                w.println("──────────────────────────────────────────");
+                w.println("固定窗口长度(ms): "
+                        + dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchiveCompactor.DEFAULT_FIXED_SEGMENT_MS);
+                w.println("fixed segments: " + fixedSegments.size());
+                w.println();
+
+                int fixedSectionCount = Math.max(fixedSegments.size(), fixedIntentAnalyses.size());
+                for (int i = 0; i < fixedSectionCount; i++) {
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment =
+                            i < fixedSegments.size() ? fixedSegments.get(i) : null;
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis =
+                            i < fixedIntentAnalyses.size() ? fixedIntentAnalyses.get(i) : null;
+
+                    writeFixedSegmentHeader(w, i, segment, analysis);
+                    if (segment != null) {
+                        writeFixedSegmentEntries(w, segment);
+                    }
+                    writeIntentAnalysis(w, analysis, "    ");
+                    w.println();
+                }
+
+                w.println("──────────────────────────────────────────");
+                w.println("3. Moving Prompt Window");
+                w.println("──────────────────────────────────────────");
+                w.println("说明: 该层服务 prompt / 近期感知；当前快照会把最近时间窗合并成一个 prompt window。");
+                w.println("prompt windows: " + movingSegments.size());
+                w.println();
+
+                for (int i = 0; i < movingSegments.size(); i++) {
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment =
+                            movingSegments.get(i);
+
+                    writeMovingSegmentHeader(w, i, segment);
+                    writeMovingSegmentEntries(w, segment);
+                    w.println();
+                }
+
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static void writeFixedSegmentHeader(
+            PrintWriter w,
+            int index,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis) {
+        long start = segment == null ? -1L : segment.getStartTimestamp();
+        long end = segment == null ? -1L : segment.getEndTimestamp();
+        int entryCount = segment == null ? 0 : segment.getEntries().size();
+        String intentSummary = formatIntentHeadline(analysis);
+        w.println(String.format(
+                "[FIX %03d] %s | raw=%d..%d | entries=%d | %s",
+                index,
+                formatWindow(start, end),
+                segment == null ? -1 : segment.getRawStartIndex(),
+                segment == null ? -1 : segment.getRawEndIndex(),
+                entryCount,
+                intentSummary));
+        if (segment != null) {
+            w.println("    summary: " + summarizeCompactedEntries(segment.getEntries()));
+        }
+    }
+
+    private static void writeFixedSegmentEntries(
+            PrintWriter w,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment) {
+        if (segment == null || segment.getEntries().isEmpty()) {
+            w.println("    entries: (empty)");
+            return;
+        }
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry entry : segment.getEntries()) {
+            w.println(String.format(
+                    "    - %-18s | target=%-28s | %s -> %s | raw=%d..%d | details=%s",
+                    formatActionLabel(entry.getType(), entry.getCount()),
+                    formatTargetForLog(entry.getTarget()),
+                    formatClock(entry.getFirstTimestamp()),
+                    formatClock(entry.getLastTimestamp()),
+                    entry.getRawStartIndex(),
+                    entry.getRawEndIndex(),
+                    entry.getDetailTags()));
+        }
+    }
+
+    private static void writeMovingSegmentHeader(
+            PrintWriter w,
+            int index,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment) {
+        String open = segment != null && segment.isOpen() ? " [OPEN]" : "";
+        long start = segment == null ? -1L : segment.getStartTimestamp();
+        long end = segment == null ? -1L : segment.getEndTimestamp();
+        int entryCount = segment == null ? 0 : segment.getEntries().size();
+
+        w.println(String.format(
+                "[MOV-WIN %03d]%s %s | entries=%d",
+                index,
+                open,
+                formatWindow(start, end),
+                entryCount));
+        if (segment != null) {
+            w.println("    summary: " + summarizeMovingEntries(segment.getEntries()));
+        }
+    }
+
+    private static void writeMovingSegmentEntries(
+            PrintWriter w,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment) {
+        if (segment == null || segment.getEntries().isEmpty()) {
+            w.println("    entries: (empty)");
+            return;
+        }
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry entry : segment.getEntries()) {
+            String foldedSuffix = entry.isFolded()
+                    ? " | folded=" + formatTargetList(entry.getFoldedTargets())
+                    : "";
+            w.println(String.format(
+                    "    - %-18s | target=%-28s | %s -> %s%s | details=%s",
+                    formatActionLabel(entry.getType(), entry.getCount()),
+                    formatTargetForLog(entry.getTarget()),
+                    formatClock(entry.getFirstTimestamp()),
+                    formatClock(entry.getLastTimestamp()),
+                    foldedSuffix,
+                    entry.getDetailTags()));
+        }
+    }
+
+    private static void writeIntentAnalysis(
+            PrintWriter w,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis,
+            String indent) {
+        if (analysis == null || !analysis.hasSignal()) {
+            w.println(indent + "intent: (no signal)");
+            return;
+        }
+        w.println(indent + "intent: " + formatIntentHeadline(analysis));
+
+        StringBuilder scoreLine = new StringBuilder(indent + "scores: ");
+        boolean first = true;
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent intent : analysis.getRankedIntents()) {
+            double score = analysis.getScore(intent);
+            if (score <= 0.0) {
+                continue;
+            }
+            if (!first) {
+                scoreLine.append(" | ");
+            }
+            scoreLine.append(intent.name()).append('=').append(String.format("%.2f", score));
+            first = false;
+        }
+        if (first) {
+            scoreLine.append("(no signal)");
+        }
+        w.println(scoreLine);
+
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent intent : analysis.getRankedIntents()) {
+            double score = analysis.getScore(intent);
+            if (score <= 0.0) {
+                continue;
+            }
+            w.println(indent + intent.name() + " reasons:");
+            for (String reason : analysis.getReasons(intent)) {
+                w.println(indent + "  - " + reason);
+            }
+        }
+    }
+
+    private static String formatIntentHeadline(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis) {
+        if (analysis == null || !analysis.hasSignal()) {
+            return "intent=(none)";
+        }
+        String dominant = analysis.getDominantIntent() == null
+                ? "(none)"
+                : analysis.getDominantIntent().name();
+        String runnerUp = analysis.getRunnerUpIntent() == null
+                ? "(none)"
+                : analysis.getRunnerUpIntent().name();
+        String ambiguous = analysis.isAmbiguous() ? " [AMBIGUOUS]" : "";
+        return String.format(
+                "dominant=%s %.2f | runner_up=%s %.2f%s",
+                dominant,
+                analysis.getDominantScore(),
+                runnerUp,
+                analysis.getRunnerUpScore(),
+                ambiguous);
+    }
+
+    private static String summarizeCompactedEntries(
+            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return "(empty)";
+        }
+        List<String> summary = new ArrayList<>();
+        int limit = Math.min(4, entries.size());
+        for (int i = 0; i < limit; i++) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry entry = entries.get(i);
+            summary.add(compactEntryLabel(entry.getType(), entry.getCount(), entry.getTarget()));
+        }
+        if (entries.size() > limit) {
+            summary.add("+" + (entries.size() - limit) + " more");
+        }
+        return String.join(" | ", summary);
+    }
+
+    private static String summarizeMovingEntries(
+            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return "(empty)";
+        }
+        List<String> summary = new ArrayList<>();
+        int limit = Math.min(4, entries.size());
+        for (int i = 0; i < limit; i++) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry entry = entries.get(i);
+            summary.add(compactEntryLabel(entry.getType(), entry.getCount(), entry.getTarget()));
+        }
+        if (entries.size() > limit) {
+            summary.add("+" + (entries.size() - limit) + " more");
+        }
+        return String.join(" | ", summary);
+    }
+
+    private static String compactEntryLabel(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType type,
+            int count,
+            String target) {
+        String label = formatActionLabel(type, count);
+        String targetLabel = formatTargetShort(target);
+        if (targetLabel.isBlank()) {
+            return label;
+        }
+        return label + " -> " + targetLabel;
+    }
+
+    private static String formatActionLabel(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType type,
+            int count) {
+        String name = type == null ? "UNKNOWN" : type.name();
+        return count > 1 ? name + " x" + count : name;
+    }
+
+    private static String formatTargetForLog(String rawTarget) {
+        if (rawTarget == null || rawTarget.isBlank()) {
+            return "(none)";
+        }
+        String shortTarget = formatTargetShort(rawTarget);
+        if (shortTarget.equals(rawTarget)) {
+            return rawTarget;
+        }
+        return shortTarget + " [" + rawTarget + "]";
+    }
+
+    private static String formatTargetShort(String rawTarget) {
+        if (rawTarget == null || rawTarget.isBlank() || "unknown".equals(rawTarget)) {
+            return "";
+        }
+        if (rawTarget.startsWith("(") && rawTarget.contains(")→(")) {
+            return "route";
+        }
+        if ("idle".equals(rawTarget)) {
+            return "idle";
+        }
+
+        String normalized = rawTarget;
+        int namespaceSeparator = normalized.indexOf(':');
+        if (namespaceSeparator >= 0 && namespaceSeparator + 1 < normalized.length()) {
+            normalized = normalized.substring(namespaceSeparator + 1);
+        }
+        normalized = normalized.replace('/', ' ');
+        normalized = normalized.replace('_', ' ');
+        return normalized.trim();
+    }
+
+    private static String formatTargetList(List<String> targets) {
+        if (targets == null || targets.isEmpty()) {
+            return "(none)";
+        }
+        List<String> formatted = new ArrayList<>();
+        for (String target : targets) {
+            String shortTarget = formatTargetShort(target);
+            if (!shortTarget.isBlank()) {
+                formatted.add(shortTarget);
+            }
+        }
+        return formatted.isEmpty() ? "(none)" : String.join(", ", formatted);
+    }
+
+    private static String formatClock(long timestampMs) {
+        if (timestampMs < 0L) {
+            return "(unknown)";
+        }
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestampMs), ZoneId.systemDefault())
+                .format(CLOCK_TIME_FMT);
+    }
+
+    private static String formatWindow(long startMs, long endMs) {
+        if (startMs < 0L || endMs < 0L) {
+            return "(unknown)";
+        }
+        LocalDateTime start = LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), ZoneId.systemDefault());
+        LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochMilli(endMs), ZoneId.systemDefault());
+        return start.format(WINDOW_TIME_FMT) + " -> " + end.format(WINDOW_TIME_FMT);
     }
 
     /**

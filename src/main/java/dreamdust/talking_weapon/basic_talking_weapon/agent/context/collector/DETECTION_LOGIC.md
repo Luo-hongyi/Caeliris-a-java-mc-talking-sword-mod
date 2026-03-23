@@ -364,22 +364,15 @@
 
 ### 输入
 
-- `AgentRuntime.getInstance().getMemory().getRecentActionBuffer()`
+- `AgentRuntime.getInstance().getMemory().getMovingActionBuffer()`
 
 ### 判定逻辑
 
-- 如果 `RecentActionBuffer` 为空，则不输出
-- 每次读取后会选择性消费 prompt 已接入的动作
-  - 即“近期摘要阅后即焚”，避免同一批动作被重复感知
-  - 原始动作副本仍保留在 `ActionArchive`
-- 先按 Primary Focus 分组，再对每组生成一条总结
-- 重要度按 Focus 分类：
-  - `COMBAT / HAZARD` -> combat importance
-  - `LABOR` -> labor importance
-  - `STATUS / CONSUMABLE` -> status importance
-  - `MOVEMENT` -> movement importance
-  - `SOCIAL` -> social importance
-  - 其他 -> default importance
+- 如果 `MovingActionBuffer` 为空，则不输出
+- 读取最近几个 moving segments 的 folded prompt 视图
+- 对每个 segment 生成一条更自然的“刚刚经历了什么”描述
+- 保留该 segment 内所有动作带来的 `FocusTag` / `DetailTag`
+- 重要度按该段出现的焦点类型取最高值，并对更早的段做轻微衰减
 - 每组会合并：
   - 全部 FocusTag
   - 全部 DetailTag

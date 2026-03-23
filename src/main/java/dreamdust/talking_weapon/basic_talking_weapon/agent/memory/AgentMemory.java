@@ -12,12 +12,13 @@ import java.util.UUID;
  * Agent 记忆系统：三池架构。
  * <ol>
  * <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
- * <li><b>RecentActionBuffer</b> — prompt 侧近期动作缓冲</li>
+ * <li><b>RecentActionBuffer</b> — 旧 prompt 侧近期动作缓冲</li>
+ * <li><b>MovingActionBuffer</b> — 新 prompt / 近期感知层的 moving segment 缓冲</li>
  * <li><b>ActionArchive</b> — 面向 intent / LTM 的原始动作记录流</li>
  * <li><b>LTMRecords</b> — 剑视角的深度记忆切片列表 / 偏好设定</li>
  * </ol>
  * <p>
- * 线程安全说明：RecentActionBuffer / ActionArchive 自身线程安全；ltmRecords
+ * 线程安全说明：RecentActionBuffer / MovingActionBuffer / ActionArchive 自身线程安全；ltmRecords
  * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
@@ -33,6 +34,12 @@ public class AgentMemory {
     // ═══════════════════════════════════════════════════════════════
 
     private final RecentActionBuffer recentActionBuffer;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 1.1: MovingActionBuffer（新 prompt moving segment 缓冲）
+    // ═══════════════════════════════════════════════════════════════
+
+    private final MovingActionBuffer movingActionBuffer;
 
     // ═══════════════════════════════════════════════════════════════
     // Layer 1.2: ActionArchive（原始动作归档）
@@ -63,6 +70,7 @@ public class AgentMemory {
     public AgentMemory() {
         this.identity = "";
         this.recentActionBuffer = new RecentActionBuffer(64);
+        this.movingActionBuffer = new MovingActionBuffer();
         this.actionArchive = new ActionArchive(4096);
         this.stmPool = new STMPool();
         this.ltmRecords = new java.util.ArrayList<>();
@@ -96,6 +104,10 @@ public class AgentMemory {
         return recentActionBuffer;
     }
 
+    public MovingActionBuffer getMovingActionBuffer() {
+        return movingActionBuffer;
+    }
+
     public ActionArchive getActionArchive() {
         return actionArchive;
     }
@@ -116,6 +128,7 @@ public class AgentMemory {
             return;
         }
         actionArchive.add(record);
+        movingActionBuffer.add(record.copy());
         recentActionBuffer.add(record.copy());
     }
 
@@ -243,6 +256,7 @@ public class AgentMemory {
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
                 + ", recentActionBuffer=" + recentActionBuffer.size()
+                + ", movingActionBuffer=" + movingActionBuffer.segmentCount()
                 + ", actionArchive=" + actionArchive.size()
                 + ", stmPool=" + stmPool
                 + ", ltmRecords=" + ltmRecords.size()

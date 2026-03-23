@@ -9,12 +9,21 @@ import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.npc.AbstractVillager;
+import net.minecraft.world.entity.npc.Npc;
+import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -24,15 +33,19 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.player.FillBucketEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.entity.player.TradeWithVillagerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -65,8 +78,14 @@ public class TickEventWatcher {
     /** 玩家伤害归因窗口：在此时间内死亡的目标，视为可归因到玩家主导击杀 */
     private static final long RECENT_PLAYER_DAMAGE_WINDOW_MS = 15_000L;
 
-    /** 采集型 START 防抖窗口：避免同一方块上的重复启动在短时间内连记多次 */
-    private static final long GATHER_TOOL_START_DEBOUNCE_MS = 600L;
+    /** 功能方块交互候选窗口：先看到右键候选，再等待容器真正打开 */
+    private static final long FUNCTION_BLOCK_INTERACTION_WINDOW_MS = 1_500L;
+
+    /** NPC 交互短窗口防重：避免同一次右键在多个实体交互事件中重复入档 */
+    private static final long NPC_INTERACTION_DEBOUNCE_MS = 800L;
+
+    /** 发呆动作阈值：超过该时长没有任何非 IDLE 动作，则补写一条 IDLE。 */
+    private static final long IDLE_ACTION_THRESHOLD_MS = 120_000L;
 
     private int tickCounter = 0;
 
@@ -81,8 +100,15 @@ public class TickEventWatcher {
     // ── 战斗归因状态 ──
     private final Map<UUID, Long> recentPlayerDamageByTarget = new LinkedHashMap<>();
 
-    // ── 采集启动防抖状态 ──
-    private final Map<String, Long> recentGatherToolStarts = new LinkedHashMap<>();
+    // ── 功能方块交互候选状态 ──
+    private PendingFunctionBlockInteraction pendingFunctionBlockInteraction = null;
+
+    // ── NPC 交互防重状态 ──
+    private final Map<UUID, Long> recentNpcInteractions = new LinkedHashMap<>();
+
+    // ── 发呆检测状态 ──
+    private long lastNonIdleActionTimestampMs = -1L;
+    private long lastIdleActionTimestampMs = -1L;
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
@@ -98,13 +124,16 @@ public class TickEventWatcher {
 
         long now = System.currentTimeMillis();
         pruneRecentPlayerDamage(now);
-        pruneRecentGatherToolStarts(now);
+        pruneRecentNpcInteractions(now);
 
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
         Level level = mc.level;
         if (player == null || level == null)
             return;
+        if (lastNonIdleActionTimestampMs < 0L) {
+            lastNonIdleActionTimestampMs = now;
+        }
 
         // ── 维度变化检测 ──
         checkDimensionChange(player, level);
@@ -116,6 +145,9 @@ public class TickEventWatcher {
 
         // ── 锚点位移检测（旅行） ──
         checkTravel(player, level);
+
+        // ── 发呆检测 ──
+        checkIdle(now);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -146,8 +178,7 @@ public class TickEventWatcher {
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(hurt, tags);
-            ActionRecord record = ActionRecord.of(ActionType.ATTACK, targetId, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.ATTACK, targetId, tags));
         }
         // 玩家被攻击
         else if (hurt.getUUID().equals(playerUUID)) {
@@ -156,8 +187,7 @@ public class TickEventWatcher {
                     : "unknown";
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(sourceId));
-            ActionRecord record = ActionRecord.of(ActionType.HURT_BY, sourceId, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.HURT_BY, sourceId, tags));
         }
     }
 
@@ -184,75 +214,20 @@ public class TickEventWatcher {
             Set<DetailTag> tags = new LinkedHashSet<>();
             tags.add(DetailTag.nativeSpecific(targetId));
             addTraitTags(dead, tags);
-            ActionRecord record = ActionRecord.of(ActionType.KILL, targetId, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.KILL, targetId, tags));
         }
         // 玩家自己死亡
         else if (dead.getUUID().equals(playerUUID)) {
             String sourceId = event.getSource().getEntity() != null
                     ? entityId((LivingEntity) event.getSource().getEntity())
                     : "unknown";
-            ActionRecord record = ActionRecord.of(ActionType.DEATH, sourceId);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.DEATH, sourceId));
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
     // 资源事件
     // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * 玩家开始对一个方块进行有效采集。
-     */
-    @SubscribeEvent
-    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
-            return;
-        }
-        if (event.getSide() != LogicalSide.SERVER) {
-            return;
-        }
-        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
-            return;
-        }
-        if (event.getAction() != PlayerInteractEvent.LeftClickBlock.Action.START) {
-            return;
-        }
-
-        ItemStack stack = event.getItemStack();
-        if (stack.isEmpty()) {
-            return;
-        }
-
-        BlockState state = event.getLevel().getBlockState(event.getPos());
-        if (state.isAir()) {
-            return;
-        }
-        if (!isEffectiveGatherToolUse(event.getEntity(), stack, state)) {
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        pruneRecentGatherToolStarts(now);
-        String gatherStartKey = gatherToolStartKey(event.getLevel(), event.getPos(), stack);
-        if (isGatherToolStartDebounced(gatherStartKey, now)) {
-            return;
-        }
-        noteGatherToolStart(gatherStartKey, now);
-
-        String blockId = blockId(state);
-        Set<DetailTag> tags = new LinkedHashSet<>();
-        tags.add(DetailTag.nativeSpecific(blockId));
-        addItemTag(stack, tags);
-        if (stack.isCorrectToolForDrops(state) || event.getEntity().hasCorrectToolForDrops(state)) {
-            tags.add(DetailTag.customGeneric("correct_tool"));
-        } else {
-            tags.add(DetailTag.customGeneric("effective_tool"));
-        }
-
-        recordAction(ActionType.USE_GATHER_TOOL, blockId, tags);
-    }
 
     /**
      * 玩家使用空桶尝试获取流体。
@@ -320,6 +295,197 @@ public class TickEventWatcher {
     }
 
     /**
+     * 玩家右键一个可能的功能方块时，先登记一个短时候选；
+     * 只有后续真正打开了对应容器，才记录 INTERACT_FUNCTION_BLOCK。
+     */
+    @SubscribeEvent
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getLevel().isClientSide()) {
+            return;
+        }
+        if (event.getHand() != InteractionHand.MAIN_HAND) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        prunePendingFunctionBlockInteraction(System.currentTimeMillis());
+
+        BlockState state = event.getLevel().getBlockState(event.getPos());
+        if (!isFunctionBlockCandidate(event.getLevel(), event.getPos(), state)) {
+            return;
+        }
+
+        String id = blockId(state);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.nativeSpecific(id));
+        tags.add(DetailTag.customGeneric("function_block"));
+
+        pendingFunctionBlockInteraction = new PendingFunctionBlockInteraction(id, tags, System.currentTimeMillis());
+    }
+
+    /**
+     * 容器真正打开后，回填成功的功能方块交互记录，避免把“点到了但没打开”记成生产行为。
+     */
+    @SubscribeEvent
+    public void onContainerOpen(PlayerContainerEvent.Open event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        prunePendingFunctionBlockInteraction(now);
+        if (pendingFunctionBlockInteraction == null) {
+            return;
+        }
+        if (!isFunctionBlockMenu(event.getContainer())) {
+            pendingFunctionBlockInteraction = null;
+            return;
+        }
+
+        recordAction(
+                ActionType.INTERACT_FUNCTION_BLOCK,
+                pendingFunctionBlockInteraction.blockId(),
+                pendingFunctionBlockInteraction.tags());
+        pendingFunctionBlockInteraction = null;
+    }
+
+    /**
+     * 玩家完成一次 crafting 产出。
+     */
+    @SubscribeEvent
+    public void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        ItemStack output = event.getCrafting();
+        if (output == null || output.isEmpty()) {
+            return;
+        }
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        addItemTag(output, tags);
+        tags.add(DetailTag.customGeneric("crafted_output"));
+        tags.add(DetailTag.customGeneric("crafting_recipe"));
+
+        recordAction(ActionType.CRAFT_ITEM, itemId(output), tags);
+    }
+
+    /**
+     * 玩家完成一次 furnace-family smelting / blasting / smoking 产出。
+     */
+    @SubscribeEvent
+    public void onItemSmelted(PlayerEvent.ItemSmeltedEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        ItemStack output = event.getSmelting();
+        if (output == null || output.isEmpty()) {
+            return;
+        }
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        addItemTag(output, tags);
+        tags.add(DetailTag.customGeneric("crafted_output"));
+        tags.add(DetailTag.customGeneric("smelted_output"));
+
+        recordAction(ActionType.CRAFT_ITEM, itemId(output), tags);
+    }
+
+    /**
+     * 玩家真正拾取了地面物品。
+     */
+    @SubscribeEvent
+    public void onItemPickup(PlayerEvent.ItemPickupEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        ItemStack stack = event.getStack();
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        recordAcquireItem(stack, "picked_up_item");
+    }
+
+    /**
+     * 玩家与 NPC 的精确部位交互。
+     */
+    @SubscribeEvent
+    public void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
+        recordNpcInteraction(event.getEntity(), event.getHand(), event.getTarget());
+    }
+
+    /**
+     * 玩家与 NPC 的一般交互。
+     */
+    @SubscribeEvent
+    public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        recordNpcInteraction(event.getEntity(), event.getHand(), event.getTarget());
+    }
+
+    /**
+     * 玩家真正完成了一笔村民交易。
+     */
+    @SubscribeEvent
+    public void onTradeWithVillager(TradeWithVillagerEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        if (!event.getEntity().getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+
+        AbstractVillager villager = event.getAbstractVillager();
+        String villagerId = entityId(villager);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.nativeSpecific(villagerId));
+        tags.add(DetailTag.customGeneric("trade_completed"));
+        tags.add(DetailTag.customGeneric("merchant_trade"));
+        addNpcTags(villager, tags);
+        addItemTag(event.getMerchantOffer().getResult(), tags);
+
+        recordAction(ActionType.TRADE, villagerId, tags);
+    }
+
+    /**
      * 玩家破坏方块。
      */
     @SubscribeEvent
@@ -328,6 +494,8 @@ public class TickEventWatcher {
         if (mc.player == null)
             return;
         if (event.getPlayer() == null)
+            return;
+        if (!(event.getLevel() instanceof ServerLevel serverLevel))
             return;
         if (!event.getPlayer().getUUID().equals(mc.player.getUUID()))
             return;
@@ -339,8 +507,30 @@ public class TickEventWatcher {
         Set<DetailTag> tags = new LinkedHashSet<>();
         tags.add(DetailTag.nativeSpecific(id));
 
-        ActionRecord record = ActionRecord.of(ActionType.MINE_BLOCK, id, tags);
-        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+        emitObservedAction(ActionRecord.of(ActionType.MINE_BLOCK, id, tags));
+
+        ItemStack stack = event.getPlayer().getMainHandItem();
+        if (stack.isEmpty()) {
+            return;
+        }
+        if (!isEffectiveGatherToolUse(event.getPlayer(), stack, state)) {
+            return;
+        }
+        if (!hasHarvestDrops(serverLevel, event.getPos(), state, event.getPlayer(), stack)) {
+            return;
+        }
+
+        Set<DetailTag> gatherTags = new LinkedHashSet<>();
+        gatherTags.add(DetailTag.nativeSpecific(id));
+        addItemTag(stack, gatherTags);
+        gatherTags.add(DetailTag.customGeneric("harvest_drop"));
+        if (stack.isCorrectToolForDrops(state) || event.getPlayer().hasCorrectToolForDrops(state)) {
+            gatherTags.add(DetailTag.customGeneric("correct_tool"));
+        } else {
+            gatherTags.add(DetailTag.customGeneric("effective_tool"));
+        }
+
+        recordAction(ActionType.USE_GATHER_TOOL, id, gatherTags);
     }
 
     /**
@@ -363,8 +553,7 @@ public class TickEventWatcher {
         Set<DetailTag> tags = new LinkedHashSet<>();
         tags.add(DetailTag.nativeSpecific(id));
 
-        ActionRecord record = ActionRecord.of(ActionType.PLACE_BLOCK, id, tags);
-        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+        emitObservedAction(ActionRecord.of(ActionType.PLACE_BLOCK, id, tags));
     }
 
     /**
@@ -390,8 +579,7 @@ public class TickEventWatcher {
         // 判断是否为食物
         ActionType type = stack.getItem().isEdible() ? ActionType.EAT : ActionType.USE_ITEM;
 
-        ActionRecord record = ActionRecord.of(type, id, tags);
-        AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+        emitObservedAction(ActionRecord.of(type, id, tags));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -429,8 +617,7 @@ public class TickEventWatcher {
             if (lastKnownDim != null) {
                 tags.add(DetailTag.nativeSpecific(lastKnownDim));
             }
-            ActionRecord record = ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.BIOME_CHANGE, currentBiome, tags));
 
             // 原有的 LLM 触发逻辑（fire BiomeChangeTrigger）
             if (AgentSensor.getInstance().isRuntimeBusy())
@@ -459,8 +646,7 @@ public class TickEventWatcher {
                 tags.add(DetailTag.nativeSpecific(lastKnownBiome));
             }
 
-            ActionRecord record = ActionRecord.of(ActionType.DIM_CHANGE, currentDim, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.DIM_CHANGE, currentDim, tags));
 
             // 维度变化时，距离概念已经错乱，重置旅行锚点
             anchorPos = player.blockPosition();
@@ -500,12 +686,28 @@ public class TickEventWatcher {
             String dim = player.level().dimension().location().toString();
             tags.add(DetailTag.nativeSpecific(dim));
 
-            ActionRecord record = ActionRecord.of(ActionType.TRAVEL, direction, tags);
-            AgentRuntime.getInstance().getMemory().recordObservedAction(record);
+            emitObservedAction(ActionRecord.of(ActionType.TRAVEL, direction, tags));
 
             // 重置锚点
             anchorPos = currentPos;
         }
+    }
+
+    private void checkIdle(long now) {
+        if (lastNonIdleActionTimestampMs < 0L) {
+            lastNonIdleActionTimestampMs = now;
+            return;
+        }
+        if (now - lastNonIdleActionTimestampMs < IDLE_ACTION_THRESHOLD_MS) {
+            return;
+        }
+        if (lastIdleActionTimestampMs >= 0L && now - lastIdleActionTimestampMs < IDLE_ACTION_THRESHOLD_MS) {
+            return;
+        }
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.customGeneric("idle"));
+        emitObservedAction(ActionRecord.of(ActionType.IDLE, "idle", tags));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -541,9 +743,133 @@ public class TickEventWatcher {
         return correctTool || destroySpeed > 1.0f;
     }
 
+    private void recordNpcInteraction(Player player, InteractionHand hand, Entity target) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || player == null || target == null) {
+            return;
+        }
+        if (player.level().isClientSide()) {
+            return;
+        }
+        if (hand != InteractionHand.MAIN_HAND) {
+            return;
+        }
+        if (!player.getUUID().equals(mc.player.getUUID())) {
+            return;
+        }
+        if (!isNpcTarget(target)) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        pruneRecentNpcInteractions(now);
+        if (isNpcInteractionDebounced(target.getUUID(), now)) {
+            return;
+        }
+        noteNpcInteraction(target.getUUID(), now);
+
+        String npcId = entityId(target);
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        tags.add(DetailTag.nativeSpecific(npcId));
+        tags.add(DetailTag.customGeneric("npc_interaction"));
+        addNpcTags(target, tags);
+
+        recordAction(ActionType.INTERACT_NPC, npcId, tags);
+    }
+
+    private boolean hasHarvestDrops(ServerLevel level, BlockPos pos, BlockState state, Player player, ItemStack stack) {
+        if (level == null || pos == null || state == null || state.isAir()) {
+            return false;
+        }
+
+        List<ItemStack> drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), player, stack);
+        if (drops.isEmpty()) {
+            return false;
+        }
+
+        for (ItemStack drop : drops) {
+            if (drop != null && !drop.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isNpcTarget(Entity target) {
+        return target instanceof Npc;
+    }
+
+    private boolean isFunctionBlockCandidate(Level level, BlockPos pos, BlockState state) {
+        if (level == null || pos == null || state == null || state.isAir()) {
+            return false;
+        }
+
+        String blockId = blockId(state);
+        if ("unknown".equals(blockId)) {
+            return false;
+        }
+        if (isStorageLikeId(blockId)) {
+            return false;
+        }
+
+        return state.getMenuProvider(level, pos) != null;
+    }
+
+    private boolean isFunctionBlockMenu(AbstractContainerMenu container) {
+        if (container == null || container.getType() == null) {
+            return false;
+        }
+
+        ResourceLocation menuTypeId = ForgeRegistries.MENU_TYPES.getKey(container.getType());
+        if (menuTypeId == null) {
+            return true;
+        }
+
+        String path = menuTypeId.getPath();
+        if (path == null || path.isBlank()) {
+            return true;
+        }
+
+        return !isStorageLikePath(path) && !"merchant".equals(path) && !"inventory".equals(path);
+    }
+
+    private boolean isStorageLikeId(String registryId) {
+        if (registryId == null || registryId.isBlank()) {
+            return false;
+        }
+        int separator = registryId.indexOf(':');
+        String path = separator >= 0 ? registryId.substring(separator + 1) : registryId;
+        return isStorageLikePath(path);
+    }
+
+    private boolean isStorageLikePath(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        return path.contains("chest")
+                || path.contains("barrel")
+                || path.contains("shulker")
+                || path.contains("hopper")
+                || path.contains("dispenser")
+                || path.contains("dropper")
+                || path.contains("crate")
+                || path.contains("drawer")
+                || path.contains("cabinet")
+                || path.contains("locker")
+                || path.contains("bin");
+    }
+
     private String blockId(BlockState state) {
         ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
         return blockId != null ? blockId.toString() : "unknown";
+    }
+
+    private String entityId(Entity entity) {
+        if (entity == null) {
+            return "unknown";
+        }
+        ResourceLocation rl = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+        return rl != null ? rl.toString() : "unknown";
     }
 
     private String itemId(ItemStack stack) {
@@ -564,8 +890,57 @@ public class TickEventWatcher {
         }
     }
 
+    private void addNpcTags(Entity entity, Set<DetailTag> tags) {
+        if (entity == null || tags == null) {
+            return;
+        }
+
+        tags.add(DetailTag.customGeneric("npc"));
+        if (entity instanceof AbstractVillager) {
+            tags.add(DetailTag.customGeneric("merchant_npc"));
+        }
+        if (entity instanceof Villager villager) {
+            ResourceLocation professionId = BuiltInRegistries.VILLAGER_PROFESSION
+                    .getKey(villager.getVillagerData().getProfession());
+            if (professionId != null) {
+                tags.add(DetailTag.customSpecific("villager_profession/" + professionId));
+            }
+        }
+    }
+
+    private void recordAcquireItem(ItemStack stack, String... sourceTags) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        Set<DetailTag> tags = new LinkedHashSet<>();
+        addItemTag(stack, tags);
+        tags.add(DetailTag.customGeneric("acquired_item"));
+        if (sourceTags != null) {
+            for (String sourceTag : sourceTags) {
+                if (sourceTag != null && !sourceTag.isBlank()) {
+                    tags.add(DetailTag.customGeneric(sourceTag));
+                }
+            }
+        }
+
+        recordAction(ActionType.ACQUIRE_ITEM, itemId(stack), tags);
+    }
+
     private void recordAction(ActionType type, String targetId, Set<DetailTag> tags) {
-        ActionRecord record = ActionRecord.of(type, targetId, tags);
+        emitObservedAction(ActionRecord.of(type, targetId, tags));
+    }
+
+    private void emitObservedAction(ActionRecord record) {
+        if (record == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (record.getType() == ActionType.IDLE) {
+            lastIdleActionTimestampMs = now;
+        } else {
+            lastNonIdleActionTimestampMs = now;
+        }
         AgentRuntime.getInstance().getMemory().recordObservedAction(record);
     }
 
@@ -600,41 +975,46 @@ public class TickEventWatcher {
         }
     }
 
-    private String gatherToolStartKey(Level level, BlockPos pos, ItemStack stack) {
-        String dimension = level != null ? level.dimension().location().toString() : "unknown_dim";
-        String itemId = itemId(stack);
-        String blockPos = pos != null ? (pos.getX() + ":" + pos.getY() + ":" + pos.getZ()) : "unknown_pos";
-        return dimension + "|" + blockPos + "|" + itemId;
-    }
-
-    private boolean isGatherToolStartDebounced(String key, long now) {
-        if (key == null) {
+    private boolean isNpcInteractionDebounced(UUID targetId, long now) {
+        if (targetId == null) {
             return false;
         }
-        Long lastTime = recentGatherToolStarts.get(key);
-        if (lastTime == null) {
-            return false;
-        }
-        return now - lastTime <= GATHER_TOOL_START_DEBOUNCE_MS;
+        Long lastTime = recentNpcInteractions.get(targetId);
+        return lastTime != null && now - lastTime <= NPC_INTERACTION_DEBOUNCE_MS;
     }
 
-    private void noteGatherToolStart(String key, long now) {
-        if (key == null) {
+    private void noteNpcInteraction(UUID targetId, long now) {
+        if (targetId == null) {
             return;
         }
-        recentGatherToolStarts.put(key, now);
+        recentNpcInteractions.put(targetId, now);
     }
 
-    private void pruneRecentGatherToolStarts(long now) {
-        if (recentGatherToolStarts.isEmpty()) {
+    private void pruneRecentNpcInteractions(long now) {
+        if (recentNpcInteractions.isEmpty()) {
             return;
         }
-        Iterator<Map.Entry<String, Long>> iterator = recentGatherToolStarts.entrySet().iterator();
+        Iterator<Map.Entry<UUID, Long>> iterator = recentNpcInteractions.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<String, Long> entry = iterator.next();
-            if (now - entry.getValue() > GATHER_TOOL_START_DEBOUNCE_MS) {
+            Map.Entry<UUID, Long> entry = iterator.next();
+            if (now - entry.getValue() > NPC_INTERACTION_DEBOUNCE_MS) {
                 iterator.remove();
             }
+        }
+    }
+
+    private void prunePendingFunctionBlockInteraction(long now) {
+        if (pendingFunctionBlockInteraction == null) {
+            return;
+        }
+        if (now - pendingFunctionBlockInteraction.timestampMs() > FUNCTION_BLOCK_INTERACTION_WINDOW_MS) {
+            pendingFunctionBlockInteraction = null;
+        }
+    }
+
+    private record PendingFunctionBlockInteraction(String blockId, Set<DetailTag> tags, long timestampMs) {
+        private PendingFunctionBlockInteraction {
+            tags = tags == null ? Collections.emptySet() : Collections.unmodifiableSet(new LinkedHashSet<>(tags));
         }
     }
 

@@ -37,6 +37,11 @@
 | `LivingHurtEvent` (玩家攻击/被攻击) | `ATTACK` / `HURT_BY` |
 | `LivingDeathEvent` (击杀/死亡) | `KILL` / `DEATH` |
 | `BlockEvent.BreakEvent` | `MINE_BLOCK` |
+| `PlayerInteractEvent.RightClickBlock` + `PlayerContainerEvent.Open` | `INTERACT_FUNCTION_BLOCK`（两段式确认） |
+| `PlayerEvent.ItemCraftedEvent` + `PlayerEvent.ItemSmeltedEvent` | `CRAFT_ITEM` |
+| `PlayerEvent.ItemPickupEvent` | `ACQUIRE_ITEM` |
+| `PlayerInteractEvent.EntityInteractSpecific` + `PlayerInteractEvent.EntityInteract` | `INTERACT_NPC` |
+| `TradeWithVillagerEvent` | `TRADE` |
 | `LivingEntityUseItemEvent.Finish` | `EAT` / `USE_ITEM` |
 | Tick 采样：锚点位移 | `TRAVEL`（距锚点 >200 格） |
 | Tick 采样：群系差分 | `BIOME_CHANGE` + fire BiomeChangeTrigger |
