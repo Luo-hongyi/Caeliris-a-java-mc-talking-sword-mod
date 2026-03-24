@@ -15,6 +15,7 @@ import java.util.*;
  * <li><b>associativeOnly</b> — 是否为仅用于联想的隐式标签（默认 false，若为 true 则不在 Prompt
  * 显示，除非匹配性格/记忆）</li>
  * <li><b>crosshairTarget</b> — 是否为玩家当前准心直接指向的目标，用于独立的注意力加分开关</li>
+ * <li><b>memoryEligible</b> — 是否允许写入 STM 并参与后续 episode / LTM 融合</li>
  * </ul>
  * <p>
  * 不可变对象，通过 {@link Builder} 构建。
@@ -28,6 +29,7 @@ public final class TaggedContextEntry {
     private final long timestamp;
     private final boolean associativeOnly;
     private final boolean crosshairTarget;
+    private final boolean memoryEligible;
 
     private TaggedContextEntry(Builder builder) {
         this.focusTags = builder.focusTags.isEmpty()
@@ -39,6 +41,7 @@ public final class TaggedContextEntry {
         this.timestamp = builder.timestamp;
         this.associativeOnly = builder.associativeOnly;
         this.crosshairTarget = builder.crosshairTarget;
+        this.memoryEligible = builder.memoryEligible;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -80,6 +83,11 @@ public final class TaggedContextEntry {
         return crosshairTarget;
     }
 
+    /** 检查该条目是否允许进入 STM / episode / LTM 的后续记忆链路 */
+    public boolean isMemoryEligible() {
+        return memoryEligible;
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 便捷查询
     // ═══════════════════════════════════════════════════════════════
@@ -118,6 +126,7 @@ public final class TaggedContextEntry {
                 + ", details=" + detailTags
                 + ", importance=" + baseImportance
                 + ", crosshairTarget=" + crosshairTarget
+                + ", memoryEligible=" + memoryEligible
                 + ", desc=\"" + (description.length() > 50
                         ? description.substring(0, 50) + "..."
                         : description)
@@ -140,6 +149,7 @@ public final class TaggedContextEntry {
         private long timestamp = System.currentTimeMillis();
         private boolean associativeOnly = false;
         private boolean crosshairTarget = false;
+        private boolean memoryEligible = true;
 
         private Builder() {
         }
@@ -192,6 +202,12 @@ public final class TaggedContextEntry {
             return this;
         }
 
+        /** 设置该条目是否允许进入 STM / episode 记忆链 */
+        public Builder memoryEligible(boolean memoryEligible) {
+            this.memoryEligible = memoryEligible;
+            return this;
+        }
+
         public TaggedContextEntry build() {
             return new TaggedContextEntry(this);
         }
@@ -206,6 +222,7 @@ public final class TaggedContextEntry {
         b.timestamp(this.timestamp);
         b.associativeOnly(this.associativeOnly);
         b.crosshairTarget(this.crosshairTarget);
+        b.memoryEligible(this.memoryEligible);
         return b;
     }
 }

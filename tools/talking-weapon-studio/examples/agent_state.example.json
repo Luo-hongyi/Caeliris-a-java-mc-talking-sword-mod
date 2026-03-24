@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "state": {
     "primary_emotion": "NEUTRAL",
     "emotion_intensity": 12,
@@ -12,7 +12,8 @@
     "recall_tuning": {
       "main_candidates_per_cue": 1,
       "sandbox_cues_per_memory": 2,
-      "conscious_memory_cap": 3
+      "conscious_memory_cap": 3,
+      "retention_memory_cap": 6
     },
     "implanted_memory_safety_net": false,
     "current_desire_tag": "CREATION",
@@ -35,6 +36,7 @@
     "consumable": 0.85,
     "block": 1.0,
     "tool": 1.15,
-    "common": 1.0
+    "common": 1.0,
+    "crosshair_bonus_enabled": true
   }
 }

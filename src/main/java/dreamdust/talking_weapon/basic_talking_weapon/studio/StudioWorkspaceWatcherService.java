@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <li>personas.json</li>
  * <li>implanted_memories.json</li>
  * <li>location_registry.json</li>
+ * <li>episode_tuning.json</li>
  * </ul>
  * 其余参考文件（manifest、icons、snapshot）不参与反向热重载。
  */
@@ -40,7 +41,9 @@ public final class StudioWorkspaceWatcherService implements AutoCloseable {
             "personas.json",
             "implanted_memories.json",
             "agent_state.json",
-            "location_registry.json");
+            "location_registry.json",
+            StudioActionTimelineTuningFile.FILENAME,
+            StudioEpisodeTuningFile.FILENAME);
 
     private static volatile StudioWorkspaceWatcherService INSTANCE;
 

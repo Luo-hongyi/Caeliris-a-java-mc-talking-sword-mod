@@ -1,5 +1,12 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimelineStore;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionArchive;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentUpdate;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -9,16 +16,16 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Agent 记忆系统：三池架构。
+ * Agent 记忆系统。
  * <ol>
  * <li><b>Identity</b> — 人格身份 (system prompt)，永久不变</li>
- * <li><b>RecentActionBuffer</b> — 旧 prompt 侧近期动作缓冲</li>
- * <li><b>MovingActionBuffer</b> — 新 prompt / 近期感知层的 moving segment 缓冲</li>
- * <li><b>ActionArchive</b> — 面向 intent / LTM 的原始动作记录流</li>
+ * <li><b>MovingActionBuffer</b> — prompt / 近期感知层的 moving segment 缓冲</li>
+ * <li><b>ActionArchive</b> — 面向 intent / episode / LTM 的原始动作记录流</li>
+ * <li><b>STMPool</b> — 当前纪元的短期记忆聚合池</li>
  * <li><b>LTMRecords</b> — 剑视角的深度记忆切片列表 / 偏好设定</li>
  * </ol>
  * <p>
- * 线程安全说明：RecentActionBuffer / MovingActionBuffer / ActionArchive 自身线程安全；ltmRecords
+ * 线程安全说明：MovingActionBuffer / ActionArchive 自身线程安全；ltmRecords
  * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
@@ -30,19 +37,13 @@ public class AgentMemory {
     private String identity;
 
     // ═══════════════════════════════════════════════════════════════
-    // Layer 1: RecentActionBuffer（prompt 近期动作）
-    // ═══════════════════════════════════════════════════════════════
-
-    private final RecentActionBuffer recentActionBuffer;
-
-    // ═══════════════════════════════════════════════════════════════
-    // Layer 1.1: MovingActionBuffer（新 prompt moving segment 缓冲）
+    // Layer 1: MovingActionBuffer（prompt moving segment 缓冲）
     // ═══════════════════════════════════════════════════════════════
 
     private final MovingActionBuffer movingActionBuffer;
 
     // ═══════════════════════════════════════════════════════════════
-    // Layer 1.2: ActionArchive（原始动作归档）
+    // Layer 1.1: ActionArchive（原始动作归档）
     // ═══════════════════════════════════════════════════════════════
 
     private final ActionArchive actionArchive;
@@ -57,13 +58,18 @@ public class AgentMemory {
      */
     private final STMPool stmPool;
 
+    // ═══════════════════════════════════════════════════════════════
+    // Layer 1.6: EpisodeTimelineStore（episode 正式状态中心）
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * episode 断点即时 hotbar 提示的临时测试状态。
+     * episode 正式材料中心：
+     * 持有 fixed segments / pending marks / split points 的最近一次分析结果。
      * <p>
-     * 仅用于当前调试阶段的去重与轻量节流，后续这套测试提示移除时可一并删除。
+     * 当前先作为统一状态中心接入；
+     * 后续 segment 级 STM 合并与持久化也应优先挂在这里。
      */
-    private long lastEpisodeBoundaryNotificationConfirmationTimestamp = -1L;
-    private long lastEpisodeBoundaryEvaluationWallClockMs = 0L;
+    private final EpisodeTimelineStore episodeTimelineStore;
 
     // ═══════════════════════════════════════════════════════════════
     // Layer 3: LTMRecords（长期记忆切片库）
@@ -77,10 +83,10 @@ public class AgentMemory {
 
     public AgentMemory() {
         this.identity = "";
-        this.recentActionBuffer = new RecentActionBuffer(64);
         this.movingActionBuffer = new MovingActionBuffer();
         this.actionArchive = new ActionArchive(4096);
         this.stmPool = new STMPool();
+        this.episodeTimelineStore = new EpisodeTimelineStore();
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
         this.recentRecallSuppressionTable = new LinkedHashMap<>();
@@ -106,11 +112,7 @@ public class AgentMemory {
         this.identity = identity;
     }
 
-    // ── RecentActionBuffer / ActionArchive ──────────────────────
-
-    public RecentActionBuffer getRecentActionBuffer() {
-        return recentActionBuffer;
-    }
+    // ── MovingActionBuffer / ActionArchive ──────────────────────
 
     public MovingActionBuffer getMovingActionBuffer() {
         return movingActionBuffer;
@@ -121,44 +123,36 @@ public class AgentMemory {
     }
 
     /**
-     * 兼容旧调用链的别名。新代码应改用 {@link #getRecentActionBuffer()}。
-     */
-    @Deprecated
-    public RecentActionBuffer getActionBuffer() {
-        return recentActionBuffer;
-    }
-
-    /**
      * 将同一条观察到的动作同时写入“prompt 近期缓冲”和“长期分析归档”。
      */
     public void recordObservedAction(ActionRecord record) {
         if (record == null) {
             return;
         }
-        actionArchive.add(record);
+        FixedSegmentUpdate fixedSegmentUpdate = actionArchive.add(record);
+        applyFixedSegmentUpdate(fixedSegmentUpdate);
         movingActionBuffer.add(record.copy());
-        recentActionBuffer.add(record.copy());
+    }
+
+    private void applyFixedSegmentUpdate(FixedSegmentUpdate update) {
+        if (update == null || !update.hasChanges()) {
+            return;
+        }
+        if (update.replaceAll()) {
+            episodeTimelineStore.replaceFixedSegments(update.segments());
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(this);
+            return;
+        }
+        episodeTimelineStore.appendFixedSegments(update.segments());
+        StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(this);
     }
 
     public STMPool getSTMPool() {
         return stmPool;
     }
 
-    public synchronized boolean shouldEvaluateEpisodeBoundaryNotification(long now, long minIntervalMs) {
-        if (now - lastEpisodeBoundaryEvaluationWallClockMs < Math.max(0L, minIntervalMs)) {
-            return false;
-        }
-        lastEpisodeBoundaryEvaluationWallClockMs = now;
-        return true;
-    }
-
-    public synchronized boolean markEpisodeBoundaryNotificationIfNew(long confirmationTimestamp) {
-        if (confirmationTimestamp <= 0L
-                || confirmationTimestamp <= lastEpisodeBoundaryNotificationConfirmationTimestamp) {
-            return false;
-        }
-        lastEpisodeBoundaryNotificationConfirmationTimestamp = confirmationTimestamp;
-        return true;
+    public EpisodeTimelineStore getEpisodeTimelineStore() {
+        return episodeTimelineStore;
     }
 
     // ── LTMRecords ────────────────────────────────────────────
@@ -280,7 +274,6 @@ public class AgentMemory {
     @Override
     public String toString() {
         return "AgentMemory{identity=" + (identity.length() > 30 ? identity.substring(0, 30) + "..." : identity)
-                + ", recentActionBuffer=" + recentActionBuffer.size()
                 + ", movingActionBuffer=" + movingActionBuffer.segmentCount()
                 + ", actionArchive=" + actionArchive.size()
                 + ", stmPool=" + stmPool

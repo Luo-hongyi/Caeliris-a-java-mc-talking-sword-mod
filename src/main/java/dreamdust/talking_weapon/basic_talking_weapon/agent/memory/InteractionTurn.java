@@ -1,5 +1,8 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.CollectedContextSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,11 +31,15 @@ public final class InteractionTurn {
     /** 本回合触发过的动作类型摘要（如 speech / inner_monologue / favorability_update） */
     private final List<String> actionTypes;
 
+    /** 本回合真正进入模型视野的 visible contexts（仅保留 memory-eligible 条目） */
+    private final List<TaggedContextEntry> visibleContexts;
+
     /** 回合发生时间戳 */
     private final long timestamp;
 
     public InteractionTurn(String triggerSource, String userPrompt, String userScreenshotBase64,
-            List<AgentOutputRecord> agentActions, List<String> actionTypes) {
+            List<AgentOutputRecord> agentActions, List<String> actionTypes,
+            List<TaggedContextEntry> visibleContexts) {
         this.triggerSource = triggerSource;
         this.userPrompt = userPrompt;
         this.userScreenshotBase64 = userScreenshotBase64;
@@ -40,6 +47,8 @@ public final class InteractionTurn {
                 : Collections.unmodifiableList(new ArrayList<>(agentActions));
         this.actionTypes = actionTypes == null ? Collections.emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(actionTypes));
+        this.visibleContexts = Collections.unmodifiableList(
+                new ArrayList<>(CollectedContextSnapshot.memoryEligibleEntries(visibleContexts)));
         this.timestamp = System.currentTimeMillis();
     }
 
@@ -48,6 +57,7 @@ public final class InteractionTurn {
     public String getUserScreenshotBase64() { return userScreenshotBase64; }
     public List<AgentOutputRecord> getAgentActions() { return agentActions; }
     public List<String> getActionTypes() { return actionTypes; }
+    public List<TaggedContextEntry> getVisibleContexts() { return visibleContexts; }
     public long getTimestamp() { return timestamp; }
 
     /** 是否有图像输入 */

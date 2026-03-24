@@ -1,5 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.config;
 
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioActionTimelineTuningFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioEpisodeTuningFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioMemoryRecallTuningFile;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -470,6 +472,8 @@ public final class TalkingWeaponConfig {
                 }
 
                 syncRecallParametersFromWorkspace();
+                syncActionTimelineParametersFromWorkspace();
+                syncEpisodeParametersFromWorkspace();
         }
 
         private static String sanitizeWeaponName(String value) {
@@ -491,6 +495,28 @@ public final class TalkingWeaponConfig {
                         System.err.println("[TalkingWeapon] Failed to sync recall parameters from workspace: " + t);
                 } finally {
                         syncingRecallParametersFromWorkspace = false;
+                }
+        }
+
+        private static void syncActionTimelineParametersFromWorkspace() {
+                try {
+                        boolean loaded = StudioActionTimelineTuningFile.applyWorkspaceValuesToRuntime();
+                        if (!loaded) {
+                                StudioActionTimelineTuningFile.ensureWorkspaceFileExists();
+                        }
+                } catch (Throwable t) {
+                        System.err.println("[TalkingWeapon] Failed to sync action timeline parameters from workspace: " + t);
+                }
+        }
+
+        private static void syncEpisodeParametersFromWorkspace() {
+                try {
+                        boolean loaded = StudioEpisodeTuningFile.applyWorkspaceValuesToRuntime();
+                        if (!loaded) {
+                                StudioEpisodeTuningFile.ensureWorkspaceFileExists();
+                        }
+                } catch (Throwable t) {
+                        System.err.println("[TalkingWeapon] Failed to sync episode parameters from workspace: " + t);
                 }
         }
 }

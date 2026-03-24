@@ -120,6 +120,17 @@ export interface MemoryRecallTuningFile {
   desiredFocusBonusScale: number;
 }
 
+export interface ActionTimelineTuningFile {
+  schemaVersion: number;
+  generatedAt: string;
+  fixedSegmentSeconds: number;
+  movingWindowSeconds: number;
+  registeredLocationLeaveExtraBlocks: number;
+  majorStructureEnterRadiusBlocks: number;
+  majorStructureExitRadiusBlocks: number;
+  majorStructureWhitelist: string[];
+}
+
 export interface AgentStateFile {
   schemaVersion: number;
   state: {
@@ -326,4 +337,62 @@ export interface RuntimeRecallTraceFile {
   recalledMemories: RuntimeRecalledMemoryEntry[];
   runtimeState: RuntimeRecallRuntimeState;
   timings: RuntimeRecallTimings;
+}
+
+export interface RuntimeActionTimelineEntry {
+  type: string;
+  target: string;
+  count: number;
+  firstTimestamp: number;
+  lastTimestamp: number;
+  rawStartIndex: number;
+  rawEndIndex: number;
+  detailTags: string[];
+  folded: boolean;
+  foldedTargets: string[];
+}
+
+export interface RuntimeActionTimelineIntentCarrier {
+  headline: string;
+  summary: string;
+  dominantIntent: string;
+  dominantScore: number;
+  runnerUpIntent: string;
+  runnerUpScore: number;
+  ambiguous: boolean;
+  scores: Record<string, number>;
+  reasons: Record<string, string[]>;
+}
+
+export interface RuntimeActionTimelineFixedSegment extends RuntimeActionTimelineIntentCarrier {
+  index: number;
+  startTimestamp: number;
+  endTimestamp: number;
+  rawStartIndex: number;
+  rawEndIndex: number;
+  observedActionTypes: string[];
+  boundaryActions: string[];
+  entries: RuntimeActionTimelineEntry[];
+}
+
+export interface RuntimeActionTimelineMovingWindow extends RuntimeActionTimelineIntentCarrier {
+  startTimestamp: number;
+  endTimestamp: number;
+  open: boolean;
+  entries: RuntimeActionTimelineEntry[];
+}
+
+export interface RuntimeActionTimelineFile {
+  schemaVersion: number;
+  generatedAt: string;
+  fixedSegmentSeconds: number;
+  movingWindowSeconds: number;
+  registeredLocationLeaveExtraBlocks: number;
+  majorStructureEnterRadiusBlocks: number;
+  majorStructureExitRadiusBlocks: number;
+  majorStructureWhitelist: string[];
+  rawActionCount: number;
+  fixedSegmentCount: number;
+  fixedSegments: RuntimeActionTimelineFixedSegment[];
+  movingWindow: RuntimeActionTimelineMovingWindow;
 }

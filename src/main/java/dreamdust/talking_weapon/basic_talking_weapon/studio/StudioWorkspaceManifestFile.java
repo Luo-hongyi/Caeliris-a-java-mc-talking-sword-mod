@@ -41,8 +41,12 @@ public final class StudioWorkspaceManifestFile {
             "snapshot",
             "runtimeTagView",
             "runtimeInteractions",
+            "runtimeActionTimeline",
+            "runtimeEpisodeTimeline",
             "runtimeRecallTrace",
+            "actionTimelineTuning",
             "memoryRecallTuning",
+            "episodeTuning",
             "importance",
             "prompts",
             "customTags",
@@ -55,7 +59,9 @@ public final class StudioWorkspaceManifestFile {
             "iconsDirectory");
 
     public static final List<String> EDITABLE_VERSION_KEYS = List.of(
+            "actionTimelineTuning",
             "memoryRecallTuning",
+            "episodeTuning",
             "importance",
             "prompts",
             "customTags",

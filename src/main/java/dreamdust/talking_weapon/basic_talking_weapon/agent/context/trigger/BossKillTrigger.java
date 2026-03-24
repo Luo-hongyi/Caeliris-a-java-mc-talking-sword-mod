@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Boss 击杀触发器（骨架）。
  * <p>
- * 当 RecentActionBuffer 中检测到 Boss 级别实体被击杀时触发，
+ * 后续会改为从动作时间线中读取 Boss 级击杀事件并触发，
  * 让剑对重大战斗形成深刻记忆。
  * <p>
  * <b>当前阶段</b>：仅骨架。

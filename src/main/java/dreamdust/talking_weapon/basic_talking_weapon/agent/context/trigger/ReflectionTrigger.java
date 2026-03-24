@@ -11,7 +11,7 @@ import java.util.List;
  * 定时反思触发器（旧版过渡骨架）。
  * <p>
  * 由 {@code TickEventWatcher} 在距上次反思超过 N 分钟时创建并 fire。
- * 将 RecentActionBuffer 快照和近期对话打包发给 LLM 做深度沉思，
+ * 后续应改为将 episode 切片、动作时间线摘要和近期对话打包发给 LLM 做深度沉思，
  * 最终生成一条
  * {@link dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry}。
  * <p>

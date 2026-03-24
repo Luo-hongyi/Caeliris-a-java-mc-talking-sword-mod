@@ -5,11 +5,11 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionBuffer;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
@@ -75,7 +75,8 @@ public class RecentActionCollector implements IContextCollector {
         TaggedContextEntry.Builder entryBuilder = TaggedContextEntry.builder()
                 .description(description)
                 .importance(importance)
-                .timestamp(actionEntry.getLastTimestamp());
+                .timestamp(actionEntry.getLastTimestamp())
+                .memoryEligible(false);
 
         for (FocusTag focusTag : actionEntry.getType().getAllFocusTags()) {
             entryBuilder.focus(focusTag);
@@ -156,6 +157,10 @@ public class RecentActionCollector implements IContextCollector {
             case INTERACT_FUNCTION_BLOCK -> "在" + fallbackTarget(target, "某个工作台") + "前忙活了一阵";
             case CRAFT_ITEM -> withCount("做出了" + fallbackTarget(target, "些东西"), entry.getCount());
             case OPEN_LOOT_CONTAINER -> withCount("发现并打开了一个藏着战利品的" + fallbackTarget(target, "容器"), entry.getCount(), null);
+            case ENTER_REGISTERED_LOCATION -> "走进了已登记地点" + fallbackTarget(target, "某个落脚点");
+            case LEAVE_REGISTERED_LOCATION -> "离开了已登记地点" + fallbackTarget(target, "原先的落脚点");
+            case ENTER_MAJOR_STRUCTURE -> "进入了重要结构" + fallbackTarget(target, "某处大型遗迹");
+            case EXIT_MAJOR_STRUCTURE -> "离开了重要结构" + fallbackTarget(target, "刚才探索的区域");
             case TRAVEL -> entry.getCount() > 1 ? "连着赶了几段路" : "赶了一段路";
             case IDLE -> entry.getCount() > 1 ? "断断续续发了几次呆" : "停下来发了一会儿呆";
             case BIOME_CHANGE -> "走进了" + fallbackTarget(target, "一片新地方");
@@ -227,9 +232,6 @@ public class RecentActionCollector implements IContextCollector {
     private String humanizeTarget(String target) {
         if (target == null || target.isBlank() || "unknown".equals(target)) {
             return "";
-        }
-        if (MovingActionSegment.FOLDED_BLOCK_TARGET.equals(target)) {
-            return "各种方块";
         }
         if (target.startsWith("(") && target.contains(")→(")) {
             return "一大段路";

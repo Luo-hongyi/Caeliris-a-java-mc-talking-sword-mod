@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.studio;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 
@@ -31,7 +32,7 @@ public final class StudioRuntimeRecentInteractionsFile {
 
     public static final String FILENAME = "studio_runtime_recent_interactions.json";
     public static final String VERSION_KEY = "runtimeInteractions";
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private static final int MAX_ENTRIES = 96;
 
     private StudioRuntimeRecentInteractionsFile() {
@@ -116,6 +117,7 @@ public final class StudioRuntimeRecentInteractionsFile {
         public String userPrompt = "";
         public boolean hasImage;
         public List<String> actionTypes = new ArrayList<>();
+        public List<RuntimeInteractionVisibleContextEntry> visibleContexts = new ArrayList<>();
         public List<RuntimeInteractionOutputEntry> outputs = new ArrayList<>();
 
         static RuntimeInteractionEntry fromTurn(InteractionTurn turn) {
@@ -125,6 +127,15 @@ public final class StudioRuntimeRecentInteractionsFile {
             entry.userPrompt = turn.getUserPrompt() != null ? turn.getUserPrompt() : "";
             entry.hasImage = turn.hasImage();
             entry.actionTypes = new ArrayList<>(turn.getActionTypes() != null ? turn.getActionTypes() : Collections.emptyList());
+            for (TaggedContextEntry visibleContext : turn.getVisibleContexts()) {
+                if (visibleContext == null) {
+                    continue;
+                }
+                RuntimeInteractionVisibleContextEntry visibleEntry = new RuntimeInteractionVisibleContextEntry();
+                visibleEntry.description = visibleContext.getDescription() != null ? visibleContext.getDescription() : "";
+                visibleEntry.timestamp = visibleContext.getTimestamp();
+                entry.visibleContexts.add(visibleEntry);
+            }
             for (AgentOutputRecord output : turn.getAgentActions()) {
                 if (output == null) {
                     continue;
@@ -151,16 +162,36 @@ public final class StudioRuntimeRecentInteractionsFile {
             if (actionTypes == null) {
                 actionTypes = new ArrayList<>();
             }
+            if (visibleContexts == null) {
+                visibleContexts = new ArrayList<>();
+            }
             if (outputs == null) {
                 outputs = new ArrayList<>();
             }
             actionTypes.removeIf(type -> type == null || type.isBlank());
+            for (RuntimeInteractionVisibleContextEntry visibleContext : visibleContexts) {
+                if (visibleContext != null) {
+                    visibleContext.normalize();
+                }
+            }
+            visibleContexts.removeIf(visibleContext -> visibleContext == null);
             for (RuntimeInteractionOutputEntry output : outputs) {
                 if (output != null) {
                     output.normalize();
                 }
             }
             outputs.removeIf(output -> output == null);
+        }
+    }
+
+    public static final class RuntimeInteractionVisibleContextEntry {
+        public String description = "";
+        public long timestamp;
+
+        private void normalize() {
+            if (description == null) {
+                description = "";
+            }
         }
     }
 

@@ -11,9 +11,9 @@
     "attention_weights"
   ],
   "properties": {
-        "schemaVersion": {
+    "schemaVersion": {
       "type": "integer",
-      "minimum": 3
+      "minimum": 4
     },
     "state": {
       "type": "object",

@@ -10,12 +10,13 @@
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
 - [PLAYER_INTENTS.md](PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
 - [EPISODE_SPLIT_DESIGN.md](EPISODE_SPLIT_DESIGN.md) - 长期记忆生成前的 episode 分割设计，包含分钟级 intent region、偏移确认与额外事件断点
-- [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及 `RecentActionBuffer + ActionArchive` 的职责分工
+- [EPISODE_MARK_REASON_RULES.md](EPISODE_MARK_REASON_RULES.md) - 按 reason 拆开的 episode mark / confirm / cover 规则表
+- [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及动作时间线层的职责分工
 - [LLM_FACING_ACTION_ARCHIVE.md](LLM_FACING_ACTION_ARCHIVE.md) - 面向 prompt / LTM 生成的动作档案整理层设计草案
 
 截至 `2026-03-16`，`agent.memory` 子系统的状态可以概括为：
 
-- `RecentActionBuffer`、`ActionArchive`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
+- `MovingActionBuffer`、`ActionArchive`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
 - `ActionArchive` 之上已经接入第一版 `PlayerIntentScorer`：它会对固定时间窗压缩结果做规则打分，输出每段的多意图分数、主导意图和理由，供 episode / LTM 设计阶段调试。
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
 - 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：先由 `visibleContexts` 注入跨轮维护的 `tag_pool`，再从 `tag_pool` 派生首层 cue，对长期记忆做联想式召回。
@@ -25,11 +26,11 @@
 
 ## 记忆分层
 
-### 1. RecentActionBuffer
+### 1. MovingActionBuffer
 
 - 记录 prompt 侧近期动作摘要。
-- 用于战斗、采集、旅行等底层行为的短窗口缓冲。
-- 保留 TTL、合并压缩、选择性消费语义。
+- 维护 moving segment 与 prompt window 的压缩视图。
+- 仅服务 prompt / 近期感知，不参与 episode 断点与最终 LTM 切片。
 
 ### 2. ActionArchive
 
@@ -47,10 +48,20 @@
   - 同时包含原始时间线
   - 固定时间窗 compaction 结果
   - 以及首版 intent 打分结果
-- 当前还临时挂了一条 **episode split 即时 hotbar 提示**：
-  - 当系统首次确认一个新的 episode 断点时，会立即在 hotbar 输出一条测试提示
-  - 提示文案会说明“新的断点已确认”，以及回溯切点大约在多久之前
-  - 这条提示仅用于当前调试 / 验证 delayed split 是否合理，后续应删除，不作为正式交互功能保留
+
+### 2.1 Episode v2 runtime 观察
+
+- 当前正式 episode 链路只维护：
+  - `segments`
+  - `pending marks`
+  - `split points`
+  - `regions`
+- `pending mark` 与最终 `split point` 的位置保持一致。
+- splitters 当前使用统一的 `mark -> delay confirm -> confirm 后清理周围 pending` 模型。
+- 当前可在 Studio workspace 中查看：
+  - `studio_runtime_episode_timeline.json`
+  - `episode_tuning.json`
+- 旧的 episode hotbar 调试提示已经不再作为运行时设计的一部分；若文档或旧讨论里仍提到它，应视为历史方案。
 
 ### 3. STMPool
 

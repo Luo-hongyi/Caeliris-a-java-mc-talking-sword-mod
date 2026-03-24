@@ -54,7 +54,9 @@ public final class StudioWorkspacePublisher {
         Path workspaceLocations = requireWorkspaceFile(workspaceRoot, "location_registry.json");
         Path workspaceImportance = requireWorkspaceFile(workspaceRoot, "importance.json");
         Path workspacePrompts = requireWorkspaceFile(workspaceRoot, "prompts.json");
+        Path workspaceActionTimelineTuning = workspaceRoot.resolve(StudioActionTimelineTuningFile.FILENAME);
         Path workspaceRecallTuning = workspaceRoot.resolve(StudioMemoryRecallTuningFile.FILENAME);
+        Path workspaceEpisodeTuning = workspaceRoot.resolve(StudioEpisodeTuningFile.FILENAME);
 
         try {
             List<CustomTagRegistry.CustomTagEntry> customTags = CustomTagRegistry.readEntries(workspaceCustomTags);
@@ -69,8 +71,20 @@ public final class StudioWorkspacePublisher {
             int locationCount = LocationRegistry.readEntries(workspaceLocations).size();
             ImportanceRegistry.readEntries(workspaceImportance);
             PromptRegistry.readEntries(workspacePrompts);
+            if (Files.isRegularFile(workspaceActionTimelineTuning)) {
+                StudioActionTimelineTuningFile.applyToRuntime(StudioActionTimelineTuningFile.readOrEmpty());
+            } else {
+                StudioActionTimelineTuningFile.ensureWorkspaceFileExists();
+            }
             if (Files.isRegularFile(workspaceRecallTuning)) {
                 StudioMemoryRecallTuningFile.applyToRuntime(StudioMemoryRecallTuningFile.readOrEmpty());
+            } else {
+                StudioMemoryRecallTuningFile.ensureWorkspaceFileExists();
+            }
+            if (Files.isRegularFile(workspaceEpisodeTuning)) {
+                StudioEpisodeTuningFile.applyToRuntime(StudioEpisodeTuningFile.readOrEmpty());
+            } else {
+                StudioEpisodeTuningFile.ensureWorkspaceFileExists();
             }
 
             List<String> publishedFiles = new ArrayList<>();
@@ -83,8 +97,14 @@ public final class StudioWorkspacePublisher {
             publishedFiles.add(workspaceLocations.getFileName().toString());
             publishedFiles.add(workspaceImportance.getFileName().toString());
             publishedFiles.add(workspacePrompts.getFileName().toString());
+            if (Files.isRegularFile(workspaceActionTimelineTuning)) {
+                publishedFiles.add(workspaceActionTimelineTuning.getFileName().toString());
+            }
             if (Files.isRegularFile(workspaceRecallTuning)) {
                 publishedFiles.add(workspaceRecallTuning.getFileName().toString());
+            }
+            if (Files.isRegularFile(workspaceEpisodeTuning)) {
+                publishedFiles.add(workspaceEpisodeTuning.getFileName().toString());
             }
 
             acknowledgeWorkspaceManifest();
@@ -98,6 +118,8 @@ public final class StudioWorkspacePublisher {
             LocationRegistry.reload();
             ImportanceRegistry.reload();
             PromptRegistry.reload();
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
 
             return new PublishResult(workspaceRoot, publishedFiles, customTags.size(), descriptionCount, relationCount,
                     personaCount, memoryCount, locationCount);

@@ -6,6 +6,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.PersonaMatcher;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.SubconsciousBooster;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.VisibleContextSelector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
@@ -251,7 +252,8 @@ public class LLMInteractionTask extends AgentTask {
                     eventInstruction,
                     screenshotBase64,
                     records,
-                    new java.util.ArrayList<>(actionTypes));
+                    new java.util.ArrayList<>(actionTypes),
+                    new java.util.ArrayList<>(this.visibleContexts));
             stmPool.pushInteractionTurn(turn);
             StudioRuntimeRecentInteractionsFile.recordTurn(turn);
 
@@ -410,7 +412,11 @@ public class LLMInteractionTask extends AgentTask {
             LocationRegistry locationReg = LocationRegistry.getInstance();
 
             // ── Phase 1: 潜意识直通 (0~2 条绕过 Top-K) ──
-            List<TaggedContextEntry> subconsciousPicks = SubconsciousBooster.pick(rawEntries, state.getConcentration());
+            VisibleContextSelector.Selection visibleSelection = VisibleContextSelector.select(
+                    rawEntries,
+                    ctx.getTriggerSource(),
+                    state.getConcentration());
+            List<TaggedContextEntry> subconsciousPicks = visibleSelection.subconsciousPicks();
             if (!subconsciousPicks.isEmpty()) {
                 StringBuilder scLog = new StringBuilder("[潜意识直通] 抽取了 " + subconsciousPicks.size() + " 条直通条目:\n");
                 for (TaggedContextEntry sc : subconsciousPicks) {
@@ -422,28 +428,7 @@ public class LLMInteractionTask extends AgentTask {
             }
 
             // ── Phase 2: Top-K 截断 (在原始未扰动的列表上执行) ──
-            int topK = TalkingWeaponConfig.TOP_K_RIGHT_CLICK.get();
-            String source = ctx.getTriggerSource();
-            if ("biome_change".equals(source)) {
-                topK = TalkingWeaponConfig.TOP_K_BIOME_CHANGE.get();
-            } else if ("player_chat".equals(source)) {
-                topK = TalkingWeaponConfig.TOP_K_CHAT.get();
-            }
-
-            List<TaggedContextEntry> promptEligibleEntries = new ArrayList<>();
-            for (TaggedContextEntry entry : rawEntries) {
-                if (!entry.isAssociativeOnly()) {
-                    promptEligibleEntries.add(entry);
-                }
-            }
-
-            List<TaggedContextEntry> filteredEntries = AttentionFilter.filterAndTopN(promptEligibleEntries, topK,
-                    TalkingWeaponConfig.NOISE_THRESHOLD.get().floatValue(), state.getConcentration());
-
-            // ── Phase 3: 合并去重 (Top-K + 潜意识直通) ──
-            java.util.LinkedHashSet<TaggedContextEntry> visibleSet = new java.util.LinkedHashSet<>(filteredEntries);
-            visibleSet.addAll(subconsciousPicks);
-            List<TaggedContextEntry> mergedVisible = new ArrayList<>(visibleSet);
+            List<TaggedContextEntry> mergedVisible = visibleSelection.visibleContexts();
 
             // 记录最终可见层，供动作结算追踪使用
             this.visibleContexts.clear();

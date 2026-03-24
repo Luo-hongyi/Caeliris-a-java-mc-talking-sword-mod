@@ -1,6 +1,5 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context;
 
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.IAgentTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
@@ -86,41 +85,16 @@ public class AgentSensor {
         Player p = mc.player;
         Level level = mc.level;
 
-        AgentContext.Builder builder = AgentContext.builder()
-                .timestamp(System.currentTimeMillis())
-                .triggerSource(trigger.getSourceName());
-
-        // 2. 按顺序执行触发器声明的所有采集器
-        for (IContextCollector collector : trigger.getCollectors()) {
-            try {
-                collector.collect(builder, p, level);
-            } catch (Throwable t) {
-                // 单个采集器失败不阻塞整体流程（包括 Error 级别异常）
-                System.err.println("[TalkingWeapon] Collector '" + collector.getName() + "' failed: " + t);
-                t.printStackTrace();
-            }
-        }
+        AgentContext.Builder builder = AgentContextCollectionRunner.collectIntoBuilder(
+                trigger.getSourceName(),
+                trigger.getCollectors(),
+                p,
+                level);
 
         // 3. 将触发器的两段式 prompt 写入 extras
         builder.extra("user_message", trigger.getUserMessage());
         builder.extra("event_instruction", trigger.getEventInstruction());
         builder.extra("enabled_actions", String.join(",", trigger.getEnabledActions()));
-
-        // 3.5 注入 AgentState 中的渴望为 TaggedContextEntry
-        dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState state = runtime.getState();
-        if (state.getCurrentDesireTag() != null) {
-            String desc = state.getDesireDescription();
-            if (desc == null || desc.isBlank()) {
-                desc = "内心的渴望...";
-            }
-            builder.addTaggedEntry(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry
-                    .builder()
-                    .focus(state.getCurrentDesireTag())
-                    .detail(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag.CUSTOM_GENERIC, "desire")
-                    .description("当前渴望: " + desc)
-                    .importance(0.8f) // 较高权重
-                    .build());
-        }
 
         AgentContext context = builder.build();
 

@@ -26,7 +26,7 @@
 - **Trigger / Collector 策略模式**：触发器声明所需采集器列表，采集器按需动态组合
 - **Per-Trigger 独立配置**：每种触发器独立配置自己的采集器开关和专属 User Prompt
 - **感知系统增强**：进入新群系、穿越维度或完成长距离旅行时自动感知并发表评论
-- **三层动作流**：`MovingActionBuffer` 负责 prompt 侧近期阶段摘要，`ActionArchive` 保留原始动作时间线，`RecentActionBuffer` 暂作 legacy 兼容层
+- **双层动作流**：`MovingActionBuffer` 负责 prompt 侧近期阶段摘要，`ActionArchive` 保留原始动作时间线
 - **环境自适应摘要**：建造复杂房子时自动对 5 种以上方块动作进行聚类折叠，保护上下文长度
 - **Action Bar 显示**：回复显示在快捷栏上方，自动换行，不干扰聊天记录
 - **多厂商支持**：支持 OpenAI / Qwen / DeepSeek(无视觉) / Custom（通过 OpenAI 兼容接口）
@@ -56,7 +56,7 @@ agent/
 │       ├── BiomeChangeTrigger.java   — 群系变化触发（含 3 分钟平滑防抖/节流）
 │       ├── DimensionChangeTrigger.java — 维度切换触发（支持跨维度坐标重置）
 │       ├── TravelTrigger.java        — 长距离位移触发（默认横向 200 格或纵向 50 格）
-│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → MovingActionBuffer + RecentActionBuffer + ActionArchive + 群系/维度/旅行检测）
+│       ├── TickEventWatcher.java     — 统一事件感知器（Forge Events → MovingActionBuffer + ActionArchive + 群系/维度/旅行检测）
 │       ├── CombatRecapTrigger.java   — 连杀回顾触发器（骨架）
 │       ├── BossKillTrigger.java      — Boss击杀触发器（骨架）
 │       └── README.md                — 触发器开发指南
@@ -67,8 +67,7 @@ agent/
 │   ├── InteractionTurn.java         — 完整的单轮回合（含 TriggerSource、User Prompt 与产生的 Output 列表）
 │   ├── STMPool.java                 — 短期记忆聚合池：收集本纪元的全局 Context Entries + Interaction回合
 │   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
-│   ├── ActionRecord.java            — 极轻量动作记录（TTL 刷新 + 全缓冲区扫描合并）
-│   ├── RecentActionBuffer.java      — 旧 prompt 近期动作缓冲区（保留作兼容层）
+│   ├── ActionRecord.java            — 极轻量动作记录
 │   ├── MovingActionBuffer.java      — 当前 prompt 近期动作阶段缓冲（moving segment + folded prompt view）
 │   ├── ActionArchive.java           — 原始动作归档层（无 TTL、无压缩，供 intent/LTM 使用）
 │   ├── LTMEntry.java                — 长期记忆切片（基于Tag检索，含重要度和清晰度衰减）

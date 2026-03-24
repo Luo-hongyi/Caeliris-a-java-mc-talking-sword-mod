@@ -7,6 +7,10 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResp
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
 import java.io.File;
@@ -199,26 +203,24 @@ public final class AgentLogger {
                     w.println("AgentMemory: (null)");
                     return;
                 }
-                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchive archive = memory.getActionArchive();
+                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionArchive archive = memory.getActionArchive();
                 w.println("动作总数: " + archive.size());
                 w.println();
 
-                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord> records = archive
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord> records = archive
                         .snapshot();
-                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment> fixedSegments =
-                        archive.snapshotCompacted();
-                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis> fixedIntentAnalyses =
-                        dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentScorer.analyze(fixedSegments);
-                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTimeline episodeTimeline =
-                        dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTracker.analyze(fixedIntentAnalyses);
-                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment> movingSegments =
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment> fixedSegments =
+                        archive.snapshotFixedSegments();
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals> fixedIntentAnalyses =
+                        fixedSegments.stream().map(AgentLogger::intentSignalsOf).toList();
+                java.util.List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment> movingSegments =
                         memory.getMovingActionBuffer().snapshotSegments();
 
                 w.println("──────────────────────────────────────────");
                 w.println("1. 原始动作时间线");
                 w.println("──────────────────────────────────────────");
                 for (int i = 0; i < records.size(); i++) {
-                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord r = records.get(i);
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord r = records.get(i);
                     w.println(String.format(
                             "[%04d] %s | %-18s | target=%-28s | focus=%-24s | details=%s",
                             i,
@@ -233,15 +235,15 @@ public final class AgentLogger {
                 w.println("2. Fixed Segment + Intent");
                 w.println("──────────────────────────────────────────");
                 w.println("固定窗口长度(ms): "
-                        + dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionArchiveCompactor.DEFAULT_FIXED_SEGMENT_MS);
+                        + dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionTimelineRuntimeSettings.getFixedSegmentMs());
                 w.println("fixed segments: " + fixedSegments.size());
                 w.println();
 
                 int fixedSectionCount = Math.max(fixedSegments.size(), fixedIntentAnalyses.size());
                 for (int i = 0; i < fixedSectionCount; i++) {
-                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment =
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment segment =
                             i < fixedSegments.size() ? fixedSegments.get(i) : null;
-                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis =
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals analysis =
                             i < fixedIntentAnalyses.size() ? fixedIntentAnalyses.get(i) : null;
 
                     writeFixedSegmentHeader(w, i, segment, analysis);
@@ -253,12 +255,6 @@ public final class AgentLogger {
                 }
 
                 w.println("──────────────────────────────────────────");
-                w.println("2.5 Episode Regions");
-                w.println("──────────────────────────────────────────");
-                writeEpisodeTimeline(w, episodeTimeline);
-                w.println();
-
-                w.println("──────────────────────────────────────────");
                 w.println("3. Moving Prompt Window");
                 w.println("──────────────────────────────────────────");
                 w.println("说明: 该层服务 prompt / 近期感知；当前快照会把最近时间窗合并成一个 prompt window。");
@@ -266,7 +262,7 @@ public final class AgentLogger {
                 w.println();
 
                 for (int i = 0; i < movingSegments.size(); i++) {
-                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment =
+                    dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment segment =
                             movingSegments.get(i);
 
                     writeMovingSegmentHeader(w, i, segment);
@@ -283,8 +279,8 @@ public final class AgentLogger {
     private static void writeFixedSegmentHeader(
             PrintWriter w,
             int index,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment segment,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals analysis) {
         long start = segment == null ? -1L : segment.getStartTimestamp();
         long end = segment == null ? -1L : segment.getEndTimestamp();
         int entryCount = segment == null ? 0 : segment.getEntries().size();
@@ -298,18 +294,18 @@ public final class AgentLogger {
                 entryCount,
                 intentSummary));
         if (segment != null) {
-            w.println("    summary: " + summarizeCompactedEntries(segment.getEntries()));
+            w.println("    summary: " + summarizeFixedEntries(segment.getEntries()));
         }
     }
 
     private static void writeFixedSegmentEntries(
             PrintWriter w,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedSegment segment) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment segment) {
         if (segment == null || segment.getEntries().isEmpty()) {
             w.println("    entries: (empty)");
             return;
         }
-        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry entry : segment.getEntries()) {
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry entry : segment.getEntries()) {
             w.println(String.format(
                     "    - %-18s | target=%-28s | %s -> %s | raw=%d..%d | details=%s",
                     formatActionLabel(entry.getType(), entry.getCount()),
@@ -325,7 +321,7 @@ public final class AgentLogger {
     private static void writeMovingSegmentHeader(
             PrintWriter w,
             int index,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment segment) {
         String open = segment != null && segment.isOpen() ? " [OPEN]" : "";
         long start = segment == null ? -1L : segment.getStartTimestamp();
         long end = segment == null ? -1L : segment.getEndTimestamp();
@@ -344,12 +340,12 @@ public final class AgentLogger {
 
     private static void writeMovingSegmentEntries(
             PrintWriter w,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegment segment) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment segment) {
         if (segment == null || segment.getEntries().isEmpty()) {
             w.println("    entries: (empty)");
             return;
         }
-        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry entry : segment.getEntries()) {
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry entry : segment.getEntries()) {
             String foldedSuffix = entry.isFolded()
                     ? " | folded=" + formatTargetList(entry.getFoldedTargets())
                     : "";
@@ -366,7 +362,7 @@ public final class AgentLogger {
 
     private static void writeIntentAnalysis(
             PrintWriter w,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals analysis,
             String indent) {
         if (analysis == null || !analysis.hasSignal()) {
             w.println(indent + "intent: (no signal)");
@@ -404,96 +400,8 @@ public final class AgentLogger {
         }
     }
 
-    private static void writeEpisodeTimeline(
-            PrintWriter w,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTimeline timeline) {
-        if (timeline == null) {
-            w.println("episode timeline: (null)");
-            return;
-        }
-
-        w.println("regions: " + timeline.regions().size()
-                + " | split points: " + timeline.splitPoints().size()
-                + " | source segments: " + timeline.sourceSegmentCount());
-
-        for (int i = 0; i < timeline.regions().size(); i++) {
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentRegion region =
-                    timeline.regions().get(i);
-            writeEpisodeRegionHeader(w, i, region);
-            writeEpisodeRegionScores(w, region);
-        }
-
-        if (timeline.splitPoints().isEmpty()) {
-            w.println("splits: (none)");
-            return;
-        }
-
-        w.println("splits:");
-        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentSplitPoint splitPoint : timeline.splitPoints()) {
-            w.println(String.format(
-                    "  - [%03d] %s | split_at=%s | confirm_at=%s | confirm_seg=%d | prev=%s/%s -> next=%s/%s",
-                    splitPoint.splitSegmentIndex(),
-                    splitPoint.reason(),
-                    formatClock(splitPoint.splitTimestamp()),
-                    formatClock(splitPoint.confirmationTimestamp()),
-                    splitPoint.confirmationSegmentIndex(),
-                    splitPoint.previousPrimaryIntent(),
-                    splitPoint.previousSecondaryIntent(),
-                    splitPoint.nextPrimaryIntent(),
-                    splitPoint.nextSecondaryIntent()));
-        }
-    }
-
-    private static void writeEpisodeRegionHeader(
-            PrintWriter w,
-            int index,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentRegion region) {
-        if (region == null) {
-            w.println(String.format("[EP %03d] (null)", index));
-            return;
-        }
-        w.println(String.format(
-                "[EP %03d] %s | seg=%d..%d | count=%d | primary=%s %.2f | secondary=%s %.2f",
-                index,
-                formatWindow(region.startTimestamp(), region.endTimestamp()),
-                region.startSegmentIndex(),
-                region.endSegmentIndex(),
-                region.segmentCount(),
-                region.primaryIntent(),
-                region.primaryScore(),
-                region.secondaryIntent(),
-                region.secondaryScore()));
-    }
-
-    private static void writeEpisodeRegionScores(
-            PrintWriter w,
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentRegion region) {
-        if (region == null || !region.hasSignal()) {
-            w.println("    scores: (no signal)");
-            return;
-        }
-        StringBuilder builder = new StringBuilder("    scores: ");
-        boolean first = true;
-        for (dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent intent :
-                dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent.values()) {
-            double score = region.getScore(intent);
-            if (score <= 0.0) {
-                continue;
-            }
-            if (!first) {
-                builder.append(" | ");
-            }
-            builder.append(intent.name()).append('=').append(String.format("%.2f", score));
-            first = false;
-        }
-        if (first) {
-            builder.append("(no signal)");
-        }
-        w.println(builder);
-    }
-
     private static String formatIntentHeadline(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntentSegmentAnalysis analysis) {
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals analysis) {
         if (analysis == null || !analysis.hasSignal()) {
             return "intent=(none)";
         }
@@ -513,15 +421,23 @@ public final class AgentLogger {
                 ambiguous);
     }
 
-    private static String summarizeCompactedEntries(
-            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry> entries) {
+    private static dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals intentSignalsOf(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment segment) {
+        if (segment == null || segment.getSplitterSignals() == null) {
+            return dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals.empty();
+        }
+        return segment.getSplitterSignals().getIntentSignals();
+    }
+
+    private static String summarizeFixedEntries(
+            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry> entries) {
         if (entries == null || entries.isEmpty()) {
             return "(empty)";
         }
         List<String> summary = new ArrayList<>();
         int limit = Math.min(4, entries.size());
         for (int i = 0; i < limit; i++) {
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionCompactedEntry entry = entries.get(i);
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry entry = entries.get(i);
             summary.add(compactEntryLabel(entry.getType(), entry.getCount(), entry.getTarget()));
         }
         if (entries.size() > limit) {
@@ -531,14 +447,14 @@ public final class AgentLogger {
     }
 
     private static String summarizeMovingEntries(
-            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry> entries) {
+            List<dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry> entries) {
         if (entries == null || entries.isEmpty()) {
             return "(empty)";
         }
         List<String> summary = new ArrayList<>();
         int limit = Math.min(4, entries.size());
         for (int i = 0; i < limit; i++) {
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MovingActionSegmentEntry entry = entries.get(i);
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry entry = entries.get(i);
             summary.add(compactEntryLabel(entry.getType(), entry.getCount(), entry.getTarget()));
         }
         if (entries.size() > limit) {
@@ -548,7 +464,7 @@ public final class AgentLogger {
     }
 
     private static String compactEntryLabel(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType type,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType type,
             int count,
             String target) {
         String label = formatActionLabel(type, count);
@@ -560,7 +476,7 @@ public final class AgentLogger {
     }
 
     private static String formatActionLabel(
-            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType type,
+            dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType type,
             int count) {
         String name = type == null ? "UNKNOWN" : type.name();
         return count > 1 ? name + " x" + count : name;
@@ -627,6 +543,69 @@ public final class AgentLogger {
         LocalDateTime start = LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), ZoneId.systemDefault());
         LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochMilli(endMs), ZoneId.systemDefault());
         return start.format(WINDOW_TIME_FMT) + " -> " + end.format(WINDOW_TIME_FMT);
+    }
+
+    private static void writeEpisodePendingMarks(PrintWriter w, List<EpisodePendingMark> pendingMarks, String indent) {
+        w.println(indent + "pending marks:");
+        if (pendingMarks == null || pendingMarks.isEmpty()) {
+            w.println(indent + "  (空)");
+            return;
+        }
+        for (EpisodePendingMark mark : pendingMarks) {
+            if (mark == null) {
+                continue;
+            }
+            w.println(indent + "  - reason=" + (mark.reason() == null ? "(none)" : mark.reason().name())
+                    + " | split@" + mark.splitSegmentIndex()
+                    + " | detected@" + mark.detectedAtSegmentIndex()
+                    + " | confirm@" + mark.confirmAtSegmentIndex()
+                    + " | owner=" + mark.ownerSplitterId()
+                    + (mark.highPriority() ? " | HIGH" : "")
+                    + " | cover=" + mark.coverBeforeSegments() + "/" + mark.coverAfterSegments());
+        }
+    }
+
+    private static void writeEpisodeSplitPoints(PrintWriter w, List<EpisodeSplitPoint> splitPoints, String indent) {
+        w.println(indent + "split points:");
+        if (splitPoints == null || splitPoints.isEmpty()) {
+            w.println(indent + "  (空)");
+            return;
+        }
+        for (EpisodeSplitPoint splitPoint : splitPoints) {
+            if (splitPoint == null) {
+                continue;
+            }
+            w.println(indent + "  - reason=" + (splitPoint.reason() == null ? "(none)" : splitPoint.reason().name())
+                    + " | split@" + splitPoint.splitSegmentIndex()
+                    + " | confirm@" + splitPoint.confirmationSegmentIndex()
+                    + " | prev=" + safeIntentName(splitPoint.previousPrimaryIntent())
+                    + " / " + safeIntentName(splitPoint.previousSecondaryIntent())
+                    + " | next=" + safeIntentName(splitPoint.nextPrimaryIntent())
+                    + " / " + safeIntentName(splitPoint.nextSecondaryIntent()));
+        }
+    }
+
+    private static void writeEpisodeRegions(PrintWriter w, List<EpisodeRegion> regions, String indent) {
+        w.println(indent + "regions:");
+        if (regions == null || regions.isEmpty()) {
+            w.println(indent + "  (空)");
+            return;
+        }
+        for (EpisodeRegion region : regions) {
+            if (region == null) {
+                continue;
+            }
+            w.println(indent + "  - [" + region.startSegmentIndex() + ".." + region.endSegmentIndex() + "]"
+                    + " | segments=" + region.segmentCount()
+                    + " | primary=" + safeIntentName(region.primaryIntent())
+                    + " " + String.format("%.2f", region.primaryScore())
+                    + " | secondary=" + safeIntentName(region.secondaryIntent())
+                    + " " + String.format("%.2f", region.secondaryScore()));
+        }
+    }
+
+    private static String safeIntentName(Enum<?> intent) {
+        return intent == null ? "(none)" : intent.name();
     }
 
     /**
@@ -708,6 +687,17 @@ public final class AgentLogger {
                 }
             }
         }
+        w.println();
+
+        EpisodeTimeline episodeTimeline = memory.getEpisodeTimelineStore().snapshot();
+        w.println("  Episode Timeline:");
+        w.println("    segments=" + episodeTimeline.segmentCount()
+                + " | pending=" + episodeTimeline.pendingMarks().size()
+                + " | splitPoints=" + episodeTimeline.splitPoints().size()
+                + " | regions=" + episodeTimeline.regions().size());
+        writeEpisodePendingMarks(w, episodeTimeline.pendingMarks(), "    ");
+        writeEpisodeSplitPoints(w, episodeTimeline.splitPoints(), "    ");
+        writeEpisodeRegions(w, episodeTimeline.regions(), "    ");
         w.println();
     }
 

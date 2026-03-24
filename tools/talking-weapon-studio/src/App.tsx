@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { buildTagRecords, studioSeedData } from "./data";
 import { DEFAULT_MEMORY_RECALL_TUNING_FILE, sanitizeMemoryRecallTuningFile } from "./memoryRecallModel";
+import { RuntimeActionTimelinePage } from "./RuntimeActionTimelinePage";
 import { RuntimeRecallGraphPage } from "./RuntimeRecallGraphPage";
 import {
   describeWorkspaceAccessMode,
@@ -21,6 +22,7 @@ import {
 } from "./workspaceBridge";
 import { pingGameBridge, publishWorkspaceToGame } from "./gameBridge";
 import {
+  ActionTimelineTuningFile,
   AgentStateRecallTuning,
   AgentStateFile,
   AgentStateWeightKey,
@@ -35,6 +37,7 @@ import {
   NativeCatalogEntry,
   PersonaEntry,
   PromptRegistryFile,
+  RuntimeActionTimelineFile,
   RuntimeRecallTraceFile,
   RuntimeRecentInteractionsFile,
   TagRecord
@@ -51,6 +54,7 @@ type PageId =
   | "state"
   | "thoughts"
   | "interactions"
+  | "playerActions"
   | "recallGraph"
   | "locations";
 type CustomTagKind = Extract<DetailTagKind, "custom_specific" | "custom_generic">;
@@ -213,6 +217,7 @@ type SchemaVersions = {
   personas: number;
   implantedMemories: number;
   agentState: number;
+  actionTimelineTuning: number;
   recallTuning: number;
   nativeCatalogSnapshot: number;
 };
@@ -238,7 +243,9 @@ type WorkspaceDebugInfo = {
 type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
   runtimeInteractions?: RuntimeRecentInteractionsFile | null;
+  runtimeActionTimeline?: RuntimeActionTimelineFile | null;
   runtimeRecallTrace?: RuntimeRecallTraceFile | null;
+  actionTimelineTuning?: ActionTimelineTuningFile | null;
   importance?: ImportanceRegistryFile | null;
   prompts?: PromptRegistryFile | null;
   customTags?: CustomTagsFile | null;
@@ -257,7 +264,9 @@ type WorkspaceManifestVersions = {
   snapshot: string;
   runtimeTagView: string;
   runtimeInteractions: string;
+  runtimeActionTimeline: string;
   runtimeRecallTrace: string;
+  actionTimelineTuning: string;
   memoryRecallTuning: string;
   importance: string;
   prompts: string;
@@ -339,6 +348,17 @@ const FOCUS_TAGS: FocusTag[] = [
   "COMMON"
 ];
 
+function normalizeFocusTagValue(raw: unknown): FocusTag | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const normalized = raw.trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+  return FOCUS_TAGS.includes(normalized as FocusTag) ? (normalized as FocusTag) : null;
+}
+
 const FOCUS_TAG_LABELS: Record<FocusTag, string> = {
   COMBAT: "战斗",
   EXPLORE: "探索",
@@ -364,6 +384,7 @@ const pages: Array<{ id: PageId; label: string; blurb: string }> = [
   { id: "prompts", label: "Prompts", blurb: "编辑 prompts.json，把触发提示词与系统文案接入共享 workspace。" },
   { id: "thoughts", label: "Thoughts", blurb: "查看每次 inner monologue 的完整记录，而不只看最近一次。" },
   { id: "interactions", label: "Turns", blurb: "按回合查看触发记录、说话输出与 action 列表。" },
+  { id: "playerActions", label: "Player Actions", blurb: "查看 moving window、fixed segments、边界动作与 player-action 调参。" },
   { id: "recallGraph", label: "Recall Graph", blurb: "展示最近一次记忆联想的思维导图、触发 tags 与 trace。" },
   { id: "persona", label: "Persona", blurb: "按 focus 管理人格偏好描述与其 detail tags。" },
   { id: "memory", label: "Memory", blurb: "编辑植入记忆、独立时间语义与标签。" },
@@ -592,6 +613,50 @@ function createEmptyRuntimeRecallTraceFile(): RuntimeRecallTraceFile {
   };
 }
 
+function createEmptyActionTimelineTuningFile(): ActionTimelineTuningFile {
+  return {
+    schemaVersion: 3,
+    generatedAt: "",
+    fixedSegmentSeconds: 60,
+    movingWindowSeconds: 180,
+    registeredLocationLeaveExtraBlocks: 32,
+    majorStructureEnterRadiusBlocks: 24,
+    majorStructureExitRadiusBlocks: 48,
+    majorStructureWhitelist: []
+  };
+}
+
+function createEmptyRuntimeActionTimelineFile(): RuntimeActionTimelineFile {
+  return {
+    schemaVersion: 3,
+    generatedAt: "",
+    fixedSegmentSeconds: 60,
+    movingWindowSeconds: 180,
+    registeredLocationLeaveExtraBlocks: 32,
+    majorStructureEnterRadiusBlocks: 24,
+    majorStructureExitRadiusBlocks: 48,
+    majorStructureWhitelist: [],
+    rawActionCount: 0,
+    fixedSegmentCount: 0,
+    fixedSegments: [],
+    movingWindow: {
+      headline: "",
+      summary: "",
+      dominantIntent: "",
+      dominantScore: 0,
+      runnerUpIntent: "",
+      runnerUpScore: 0,
+      ambiguous: false,
+      scores: {},
+      reasons: {},
+      startTimestamp: 0,
+      endTimestamp: 0,
+      open: false,
+      entries: []
+    }
+  };
+}
+
 function createEmptyMemoryRecallTuningFile(): MemoryRecallTuningFile {
   return {
     ...DEFAULT_MEMORY_RECALL_TUNING_FILE
@@ -658,31 +723,6 @@ function isImplantedMemoryEntryArray(value: unknown): value is ImplantedMemoryEn
         typeof entry.description === "string"
     )
   );
-}
-
-function isAgentStateWorkspaceFile(value: unknown): value is AgentStateWorkspaceFile {
-  if (!isRecord(value) || !isRecord(value.state) || !isRecord(value.persona_state) || !isRecord(value.attention_weights)) {
-    return false;
-  }
-
-  const state = value.state;
-  const weights = value.attention_weights;
-  if (
-    typeof state.recall_preset !== "string" ||
-    !isRecord(state.recall_tuning) ||
-    typeof state.recall_tuning.main_candidates_per_cue !== "number" ||
-    typeof state.recall_tuning.sandbox_cues_per_memory !== "number" ||
-    typeof state.recall_tuning.conscious_memory_cap !== "number" ||
-    typeof state.implanted_memory_safety_net !== "boolean"
-  ) {
-    return false;
-  }
-
-  if ("association_mode" in state || "custom_recall" in state) {
-    return false;
-  }
-
-  return AGENT_STATE_WEIGHT_KEYS.every((key) => typeof weights[key] === "number");
 }
 
 function normalizePromptRegistryFile(value: unknown): PromptRegistryFile | null {
@@ -799,7 +839,7 @@ function normalizePersonasFile(value: unknown): PersonasFile | null {
     return null;
   }
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 4,
     personas: value.personas.map((entry) => ({
       ...entry,
       focus_tags: normalizePersonaFocusTags(entry.focus_tags, entry.associated_focus)
@@ -824,45 +864,50 @@ function normalizeImplantedMemoriesFile(value: unknown): ImplantedMemoriesFile |
 }
 
 function normalizeAgentStateWorkspaceFile(value: unknown): AgentStateWorkspaceFile | null {
-  if (!isAgentStateWorkspaceFile(value)) {
+  if (!isRecord(value) || !isRecord(value.state) || !isRecord(value.persona_state) || !isRecord(value.attention_weights)) {
     return null;
   }
 
-  const currentDesireTag =
-    typeof value.state.current_desire_tag === "string" && FOCUS_TAGS.includes(value.state.current_desire_tag as FocusTag)
-      ? (value.state.current_desire_tag as FocusTag)
-      : null;
+  const state = value.state;
+  const personaState = value.persona_state;
+  const attentionWeights = value.attention_weights;
+
+  if ("association_mode" in state || "custom_recall" in state) {
+    return null;
+  }
+
+  const currentDesireTag = normalizeFocusTagValue(state.current_desire_tag);
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? Math.max(value.schemaVersion, 4) : 4,
     state: {
-      primary_emotion: typeof value.state.primary_emotion === "string" ? value.state.primary_emotion : "NEUTRAL",
-      emotion_intensity: typeof value.state.emotion_intensity === "number" ? value.state.emotion_intensity : 0,
-      familiarity: typeof value.state.familiarity === "number" ? value.state.familiarity : 0,
-      player_address: typeof value.state.player_address === "string" ? value.state.player_address : "主人",
-      concentration: typeof value.state.concentration === "number" ? value.state.concentration : 0.5,
-      wandering_mind: typeof value.state.wandering_mind === "number" ? value.state.wandering_mind : 0.1,
-      nostalgia: typeof value.state.nostalgia === "number" ? value.state.nostalgia : 0.5,
-      recall_preset: typeof value.state.recall_preset === "string" ? value.state.recall_preset : "HYBRID",
-      recall_tuning: normalizeAgentStateRecallTuning(value.state.recall_tuning),
+      primary_emotion: typeof state.primary_emotion === "string" ? state.primary_emotion : "NEUTRAL",
+      emotion_intensity: typeof state.emotion_intensity === "number" ? state.emotion_intensity : 0,
+      familiarity: typeof state.familiarity === "number" ? state.familiarity : 0,
+      player_address: typeof state.player_address === "string" ? state.player_address : "主人",
+      concentration: typeof state.concentration === "number" ? state.concentration : 0.5,
+      wandering_mind: typeof state.wandering_mind === "number" ? state.wandering_mind : 0.1,
+      nostalgia: typeof state.nostalgia === "number" ? state.nostalgia : 0.5,
+      recall_preset: typeof state.recall_preset === "string" ? state.recall_preset : "HYBRID",
+      recall_tuning: normalizeAgentStateRecallTuning(state.recall_tuning),
       implanted_memory_safety_net:
-        typeof value.state.implanted_memory_safety_net === "boolean"
-          ? value.state.implanted_memory_safety_net
+        typeof state.implanted_memory_safety_net === "boolean"
+          ? state.implanted_memory_safety_net
           : false,
       current_desire_tag: currentDesireTag,
-      desire_description: typeof value.state.desire_description === "string" ? value.state.desire_description : ""
+      desire_description: typeof state.desire_description === "string" ? state.desire_description : ""
     },
     persona_state: {
-      favorability: typeof value.persona_state.favorability === "number" ? value.persona_state.favorability : 0,
-      player_profile: typeof value.persona_state.player_profile === "string" ? value.persona_state.player_profile : ""
+      favorability: typeof personaState.favorability === "number" ? personaState.favorability : 0,
+      player_profile: typeof personaState.player_profile === "string" ? personaState.player_profile : ""
     },
     attention_weights: {
       ...(Object.fromEntries(
-        AGENT_STATE_WEIGHT_KEYS.map((key) => [key, typeof value.attention_weights[key] === "number" ? value.attention_weights[key] : 1])
+        AGENT_STATE_WEIGHT_KEYS.map((key) => [key, typeof attentionWeights[key] === "number" ? attentionWeights[key] : 1])
       ) as Record<AgentStateWeightKey, number>),
       crosshair_bonus_enabled:
-        typeof value.attention_weights.crosshair_bonus_enabled === "boolean"
-          ? value.attention_weights.crosshair_bonus_enabled
+        typeof attentionWeights.crosshair_bonus_enabled === "boolean"
+          ? attentionWeights.crosshair_bonus_enabled
           : true
     }
   };
@@ -890,10 +935,7 @@ function normalizeLocationRegistryData(value: unknown): Record<string, LocationR
             ? detailTagsSource.split(",").map((tag) => tag.trim()).filter(Boolean)
             : [];
 
-      const focusTag =
-        typeof entry.focusTag === "string" && entry.focusTag.trim() && FOCUS_TAGS.includes(entry.focusTag as FocusTag)
-          ? (entry.focusTag as FocusTag)
-          : "";
+      const focusTag = normalizeFocusTagValue(entry.focusTag) ?? "";
 
       return [
         name.trim().toLowerCase(),
@@ -924,6 +966,203 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeActionTimelineTuningFile(value: unknown): ActionTimelineTuningFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const majorStructureEnterRadiusBlocks =
+    typeof value.majorStructureEnterRadiusBlocks === "number"
+      ? Math.round(clampNumber(value.majorStructureEnterRadiusBlocks, 0, 256))
+      : 24;
+  const rawWhitelist = Array.from(new Set(stringArrayOf(value.majorStructureWhitelist)));
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    fixedSegmentSeconds:
+      typeof value.fixedSegmentSeconds === "number"
+        ? Math.round(clampNumber(value.fixedSegmentSeconds, 10, 300))
+        : 60,
+    movingWindowSeconds:
+      typeof value.movingWindowSeconds === "number"
+        ? Math.round(clampNumber(value.movingWindowSeconds, 30, 480))
+        : 180,
+    registeredLocationLeaveExtraBlocks:
+      typeof value.registeredLocationLeaveExtraBlocks === "number"
+        ? Math.round(clampNumber(value.registeredLocationLeaveExtraBlocks, 0, 256))
+        : 32,
+    majorStructureEnterRadiusBlocks,
+    majorStructureExitRadiusBlocks:
+      typeof value.majorStructureExitRadiusBlocks === "number"
+        ? Math.round(clampNumber(value.majorStructureExitRadiusBlocks, majorStructureEnterRadiusBlocks, 256))
+        : Math.max(48, majorStructureEnterRadiusBlocks),
+    majorStructureWhitelist: rawWhitelist
+  };
+}
+
+function normalizeRuntimeActionTimelineScores(value: unknown): Record<string, number> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => typeof entry === "number")
+  ) as Record<string, number>;
+}
+
+function normalizeRuntimeActionTimelineReasons(value: unknown): Record<string, string[]> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, stringArrayOf(entry)])
+  );
+}
+
+function normalizeRuntimeActionTimelineEntry(value: unknown): RuntimeActionTimelineFile["fixedSegments"][number]["entries"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    type: typeof value.type === "string" ? value.type : "",
+    target: typeof value.target === "string" ? value.target : "",
+    count: typeof value.count === "number" ? value.count : 0,
+    firstTimestamp: typeof value.firstTimestamp === "number" ? value.firstTimestamp : 0,
+    lastTimestamp: typeof value.lastTimestamp === "number" ? value.lastTimestamp : 0,
+    rawStartIndex: typeof value.rawStartIndex === "number" ? value.rawStartIndex : -1,
+    rawEndIndex: typeof value.rawEndIndex === "number" ? value.rawEndIndex : -1,
+    detailTags: stringArrayOf(value.detailTags),
+    folded: value.folded === true,
+    foldedTargets: stringArrayOf(value.foldedTargets)
+  };
+}
+
+function normalizeRuntimeActionTimelineIntentCarrier(value: unknown): {
+  headline: string;
+  summary: string;
+  dominantIntent: string;
+  dominantScore: number;
+  runnerUpIntent: string;
+  runnerUpScore: number;
+  ambiguous: boolean;
+  scores: Record<string, number>;
+  reasons: Record<string, string[]>;
+} {
+  if (!isRecord(value)) {
+    return {
+      headline: "",
+      summary: "",
+      dominantIntent: "",
+      dominantScore: 0,
+      runnerUpIntent: "",
+      runnerUpScore: 0,
+      ambiguous: false,
+      scores: {},
+      reasons: {}
+    };
+  }
+
+  return {
+    headline: typeof value.headline === "string" ? value.headline : "",
+    summary: typeof value.summary === "string" ? value.summary : "",
+    dominantIntent: typeof value.dominantIntent === "string" ? value.dominantIntent : "",
+    dominantScore: typeof value.dominantScore === "number" ? value.dominantScore : 0,
+    runnerUpIntent: typeof value.runnerUpIntent === "string" ? value.runnerUpIntent : "",
+    runnerUpScore: typeof value.runnerUpScore === "number" ? value.runnerUpScore : 0,
+    ambiguous: value.ambiguous === true,
+    scores: normalizeRuntimeActionTimelineScores(value.scores),
+    reasons: normalizeRuntimeActionTimelineReasons(value.reasons)
+  };
+}
+
+function normalizeRuntimeActionTimelineFixedSegment(value: unknown): RuntimeActionTimelineFile["fixedSegments"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const carrier = normalizeRuntimeActionTimelineIntentCarrier(value);
+  return {
+    ...carrier,
+    index: typeof value.index === "number" ? value.index : -1,
+    startTimestamp: typeof value.startTimestamp === "number" ? value.startTimestamp : 0,
+    endTimestamp: typeof value.endTimestamp === "number" ? value.endTimestamp : 0,
+    rawStartIndex: typeof value.rawStartIndex === "number" ? value.rawStartIndex : -1,
+    rawEndIndex: typeof value.rawEndIndex === "number" ? value.rawEndIndex : -1,
+    observedActionTypes: stringArrayOf(value.observedActionTypes),
+    boundaryActions: stringArrayOf(value.boundaryActions),
+    entries: Array.isArray(value.entries)
+      ? value.entries
+          .map((entry) => normalizeRuntimeActionTimelineEntry(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : []
+  };
+}
+
+function normalizeRuntimeActionTimelineMovingWindow(value: unknown): RuntimeActionTimelineFile["movingWindow"] {
+  const fallback = createEmptyRuntimeActionTimelineFile().movingWindow;
+  if (!isRecord(value)) {
+    return fallback;
+  }
+
+  const carrier = normalizeRuntimeActionTimelineIntentCarrier(value);
+  return {
+    ...carrier,
+    startTimestamp: typeof value.startTimestamp === "number" ? value.startTimestamp : 0,
+    endTimestamp: typeof value.endTimestamp === "number" ? value.endTimestamp : 0,
+    open: value.open === true,
+    entries: Array.isArray(value.entries)
+      ? value.entries
+          .map((entry) => normalizeRuntimeActionTimelineEntry(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : []
+  };
+}
+
+function normalizeRuntimeActionTimelineFile(value: unknown): RuntimeActionTimelineFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const majorStructureEnterRadiusBlocks =
+    typeof value.majorStructureEnterRadiusBlocks === "number"
+      ? Math.round(clampNumber(value.majorStructureEnterRadiusBlocks, 0, 256))
+      : 24;
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    fixedSegmentSeconds:
+      typeof value.fixedSegmentSeconds === "number"
+        ? Math.round(clampNumber(value.fixedSegmentSeconds, 10, 300))
+        : 60,
+    movingWindowSeconds:
+      typeof value.movingWindowSeconds === "number"
+        ? Math.round(clampNumber(value.movingWindowSeconds, 30, 480))
+        : 180,
+    registeredLocationLeaveExtraBlocks:
+      typeof value.registeredLocationLeaveExtraBlocks === "number"
+        ? Math.round(clampNumber(value.registeredLocationLeaveExtraBlocks, 0, 256))
+        : 32,
+    majorStructureEnterRadiusBlocks,
+    majorStructureExitRadiusBlocks:
+      typeof value.majorStructureExitRadiusBlocks === "number"
+        ? Math.round(clampNumber(value.majorStructureExitRadiusBlocks, majorStructureEnterRadiusBlocks, 256))
+        : Math.max(48, majorStructureEnterRadiusBlocks),
+    majorStructureWhitelist: Array.from(new Set(stringArrayOf(value.majorStructureWhitelist))),
+    rawActionCount: typeof value.rawActionCount === "number" ? value.rawActionCount : 0,
+    fixedSegmentCount: typeof value.fixedSegmentCount === "number" ? value.fixedSegmentCount : 0,
+    fixedSegments: Array.isArray(value.fixedSegments)
+      ? value.fixedSegments
+          .map((segment) => normalizeRuntimeActionTimelineFixedSegment(segment))
+          .filter((segment): segment is NonNullable<typeof segment> => segment !== null)
+      : [],
+    movingWindow: normalizeRuntimeActionTimelineMovingWindow(value.movingWindow)
+  };
+}
+
 function normalizeAgentStateRecallTuning(value: unknown): AgentStateRecallTuning {
   const source = isRecord(value) ? value : {};
 
@@ -948,13 +1187,10 @@ function normalizeAgentStateRecallTuning(value: unknown): AgentStateRecallTuning
 }
 
 function sanitizeAgentStateFile(file: AgentStateWorkspaceFile): AgentStateWorkspaceFile {
-  const currentDesireTag =
-    file.state.current_desire_tag && FOCUS_TAGS.includes(file.state.current_desire_tag)
-      ? file.state.current_desire_tag
-      : null;
+  const currentDesireTag = normalizeFocusTagValue(file.state.current_desire_tag);
 
   return {
-    schemaVersion: file.schemaVersion > 0 ? file.schemaVersion : 3,
+    schemaVersion: file.schemaVersion > 0 ? Math.max(file.schemaVersion, 4) : 4,
     state: {
       primary_emotion:
         typeof file.state.primary_emotion === "string" && file.state.primary_emotion.trim()
@@ -1349,7 +1585,9 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     snapshot: "missing",
     runtimeTagView: "missing",
     runtimeInteractions: "missing",
+    runtimeActionTimeline: "missing",
     runtimeRecallTrace: "missing",
+    actionTimelineTuning: "missing",
     memoryRecallTuning: "missing",
     importance: "missing",
     prompts: "missing",
@@ -1383,8 +1621,12 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
       runtimeTagView: typeof rawVersions.runtimeTagView === "string" ? rawVersions.runtimeTagView : "missing",
       runtimeInteractions:
         typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
+      runtimeActionTimeline:
+        typeof rawVersions.runtimeActionTimeline === "string" ? rawVersions.runtimeActionTimeline : "missing",
       runtimeRecallTrace:
         typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
+      actionTimelineTuning:
+        typeof rawVersions.actionTimelineTuning === "string" ? rawVersions.actionTimelineTuning : "missing",
       memoryRecallTuning:
         typeof rawVersions.memoryRecallTuning === "string" ? rawVersions.memoryRecallTuning : "missing",
       importance: typeof rawVersions.importance === "string" ? rawVersions.importance : "missing",
@@ -1419,6 +1661,24 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.runtimeInteractions = value as RuntimeRecentInteractionsFile;
     },
     describe: (value) => `turns ${(value as RuntimeRecentInteractionsFile).entries.length} 条`
+  },
+  {
+    filename: "studio_runtime_action_timeline.json",
+    versionKey: "runtimeActionTimeline",
+    normalize: normalizeRuntimeActionTimelineFile,
+    assign: (importedData, value) => {
+      importedData.runtimeActionTimeline = value as RuntimeActionTimelineFile;
+    },
+    describe: (value) => `timeline ${(value as RuntimeActionTimelineFile).fixedSegments.length} 个 fixed segments`
+  },
+  {
+    filename: "action_timeline_tuning.json",
+    versionKey: "actionTimelineTuning",
+    normalize: normalizeActionTimelineTuningFile,
+    assign: (importedData, value) => {
+      importedData.actionTimelineTuning = value as ActionTimelineTuningFile;
+    },
+    describe: (_value) => "action timeline tuning 1 份"
   },
   {
     filename: "studio_runtime_recall_trace.json",
@@ -2049,7 +2309,13 @@ function normalizeStudioTimeOfDayTick(rawTick: number): number {
 
 function normalizePersonaFocusTags(focusTags: FocusTag[] | undefined, fallback?: FocusTag): FocusTag[] {
   const source = Array.isArray(focusTags) && focusTags.length ? focusTags : fallback ? [fallback] : [];
-  return Array.from(new Set(source.filter((focusTag): focusTag is FocusTag => typeof focusTag === "string")));
+  return Array.from(
+    new Set(
+      source
+        .map((focusTag) => normalizeFocusTagValue(focusTag))
+        .filter((focusTag): focusTag is FocusTag => focusTag !== null)
+    )
+  );
 }
 
 function getPersonaFocusTags(persona: PersonaEntry): FocusTag[] {
@@ -2366,8 +2632,14 @@ function App() {
   const [runtimeInteractions, setRuntimeInteractions] = useState<RuntimeRecentInteractionsFile>(
     createEmptyRuntimeRecentInteractionsFile()
   );
+  const [runtimeActionTimeline, setRuntimeActionTimeline] = useState<RuntimeActionTimelineFile>(
+    createEmptyRuntimeActionTimelineFile()
+  );
   const [runtimeRecallTrace, setRuntimeRecallTrace] = useState<RuntimeRecallTraceFile>(
     createEmptyRuntimeRecallTraceFile()
+  );
+  const [actionTimelineTuningFile, setActionTimelineTuningFile] = useState<ActionTimelineTuningFile>(
+    createEmptyActionTimelineTuningFile()
   );
   const [memoryRecallTuningFile, setMemoryRecallTuningFile] = useState<MemoryRecallTuningFile>(
     createEmptyMemoryRecallTuningFile()
@@ -2387,7 +2659,8 @@ function App() {
   const [locations, setLocations] = useState<Record<string, LocationRegistryEntry>>(studioSeedData.locations);
   const [schemaVersions, setSchemaVersions] = useState<SchemaVersions>({
     ...studioSeedData.schemaVersions,
-    agentState: Math.max(studioSeedData.schemaVersions.agentState ?? 1, 3),
+    actionTimelineTuning: Math.max((studioSeedData.schemaVersions as Partial<SchemaVersions>).actionTimelineTuning ?? 1, 3),
+    agentState: Math.max(studioSeedData.schemaVersions.agentState ?? 1, 4),
     importance: 1,
     prompts: 1,
     recallTuning: 1
@@ -3330,6 +3603,15 @@ function App() {
     }));
   };
 
+  const updateActionTimelineTuning = (patch: Partial<ActionTimelineTuningFile>) => {
+    setActionTimelineTuningFile((currentFile) =>
+      normalizeActionTimelineTuningFile({
+        ...currentFile,
+        ...patch
+      }) ?? currentFile
+    );
+  };
+
   const updateImportanceEntry = (key: string, nextValue: number) => {
     const normalizedKey = key.trim();
     if (!normalizedKey) {
@@ -3461,13 +3743,23 @@ function App() {
     schemaVersion: schemaVersions.recallTuning
   });
 
+  const buildActionTimelineTuningFile = (): ActionTimelineTuningFile => ({
+    ...(normalizeActionTimelineTuningFile(actionTimelineTuningFile) ?? createEmptyActionTimelineTuningFile()),
+    schemaVersion: schemaVersions.actionTimelineTuning
+  });
+
   const buildLocationRegistryFile = (): Record<string, unknown> => buildLocationRegistryJson(locations);
 
   const editableWorkspaceFiles: Array<{
     filename: string;
-    versionKey: Extract<keyof WorkspaceManifestVersions, "memoryRecallTuning" | "importance" | "prompts" | "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
+    versionKey: Extract<keyof WorkspaceManifestVersions, "actionTimelineTuning" | "memoryRecallTuning" | "importance" | "prompts" | "customTags" | "descriptions" | "relations" | "personas" | "memories" | "agentState" | "locations">;
     build: () => unknown;
   }> = [
+    {
+      filename: "action_timeline_tuning.json",
+      versionKey: "actionTimelineTuning",
+      build: buildActionTimelineTuningFile
+    },
     {
       filename: "memory_recall_tuning.json",
       versionKey: "memoryRecallTuning",
@@ -3564,6 +3856,16 @@ function App() {
     if (importedData.runtimeInteractions) {
       setRuntimeInteractions(importedData.runtimeInteractions);
     }
+    if (importedData.runtimeActionTimeline) {
+      setRuntimeActionTimeline(importedData.runtimeActionTimeline);
+    }
+    if (importedData.actionTimelineTuning) {
+      setActionTimelineTuningFile(importedData.actionTimelineTuning);
+      setSchemaVersions((current) => ({
+        ...current,
+        actionTimelineTuning: importedData.actionTimelineTuning?.schemaVersion ?? current.actionTimelineTuning
+      }));
+    }
     if (importedData.runtimeRecallTrace) {
       setRuntimeRecallTrace(importedData.runtimeRecallTrace);
     }
@@ -3619,7 +3921,7 @@ function App() {
       setAgentStateFile(sanitizeAgentStateFile(importedData.agentState));
       setSchemaVersions((current) => ({
         ...current,
-        agentState: Math.max(importedData.agentState?.schemaVersion ?? current.agentState, 3)
+        agentState: Math.max(importedData.agentState?.schemaVersion ?? current.agentState, 4)
       }));
     }
     if (importedData.locations) {
@@ -4022,7 +4324,7 @@ function App() {
             </div>
             <p className="muted-copy">
               读取会加载该目录下已有的 schema 文件；保存只会回写 `custom_tags.json`、
-              `tag_descriptions.json`、`tag_relations.json`、`personas.json`、
+              `action_timeline_tuning.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、
               `implanted_memories.json`、`agent_state.json` 与 `location_registry.json`。这些 authored 文件本身就是游戏运行时真源；保存不会覆盖模组生成的
               snapshot 与图标文件。若游戏内 HTTP bridge 在线，保存后会立即请求热重载；否则退回 manifest 轮询同步。
             </p>
@@ -4187,6 +4489,13 @@ function App() {
           <RuntimeInteractionsPage
             generatedAt={runtimeInteractions.generatedAt}
             entries={runtimeInteractionEntries}
+          />
+        ) : null}
+        {page === "playerActions" ? (
+          <RuntimeActionTimelinePage
+            runtimeActionTimeline={runtimeActionTimeline}
+            tuningFile={actionTimelineTuningFile}
+            onTuningChange={updateActionTimelineTuning}
           />
         ) : null}
         {page === "recallGraph" ? (

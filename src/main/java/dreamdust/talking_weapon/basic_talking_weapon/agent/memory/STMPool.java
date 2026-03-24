@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.CollectedContextSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 
 import java.util.ArrayList;
@@ -62,7 +63,7 @@ public final class STMPool {
      */
     public synchronized void pushContextAll(List<TaggedContextEntry> entries) {
         if (entries == null || entries.isEmpty()) return;
-        contextEntries.addAll(entries);
+        contextEntries.addAll(CollectedContextSnapshot.memoryEligibleEntries(entries));
         // 超容量时淘汰最旧的
         while (contextEntries.size() > contextCapacity) {
             contextEntries.remove(0);

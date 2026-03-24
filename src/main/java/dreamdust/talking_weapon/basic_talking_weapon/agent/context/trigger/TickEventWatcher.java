@@ -2,14 +2,12 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionRecord;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentSplitPoint;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTimeline;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.EpisodeIntentTracker;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -96,13 +94,6 @@ public class TickEventWatcher {
     /** 发呆动作阈值：超过该时长没有任何非 IDLE 动作，则补写一条 IDLE。 */
     private static final long IDLE_ACTION_THRESHOLD_MS = 120_000L;
 
-    /**
-     * episode split 即时 hotbar 提示的临时测试检测节流。
-     * <p>
-     * 目标是避免高频动作下每条 ActionRecord 都重跑完整 intent/episode 分析。
-     */
-    private static final long EPISODE_NOTIFICATION_EVALUATION_DEBOUNCE_MS = 1_000L;
-
     private int tickCounter = 0;
 
     // ── 群系与维度变化检测状态 ──
@@ -128,6 +119,12 @@ public class TickEventWatcher {
     // ── 发呆检测状态 ──
     private long lastNonIdleActionTimestampMs = -1L;
     private long lastIdleActionTimestampMs = -1L;
+
+    // ── episode 边界动作检测状态 ──
+    private final RegisteredLocationBoundaryTracker registeredLocationBoundaryTracker =
+            new RegisteredLocationBoundaryTracker();
+    private final MajorStructureBoundaryTracker majorStructureBoundaryTracker =
+            new MajorStructureBoundaryTracker();
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
@@ -164,6 +161,10 @@ public class TickEventWatcher {
 
         // ── 锚点位移检测（旅行） ──
         checkTravel(player, level);
+
+        // ── episode 边界相关动作检测 ──
+        emitObservedActions(registeredLocationBoundaryTracker.update(player, level));
+        emitObservedActions(majorStructureBoundaryTracker.update(player, level));
 
         // ── 发呆检测 ──
         checkIdle(now);
@@ -1008,6 +1009,15 @@ public class TickEventWatcher {
         emitObservedAction(ActionRecord.of(type, targetId, tags));
     }
 
+    private void emitObservedActions(List<ActionRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (ActionRecord record : records) {
+            emitObservedAction(record);
+        }
+    }
+
     private void emitObservedAction(ActionRecord record) {
         if (record == null) {
             return;
@@ -1020,67 +1030,7 @@ public class TickEventWatcher {
         }
         AgentMemory memory = AgentRuntime.getInstance().getMemory();
         memory.recordObservedAction(record);
-        maybeNotifyEpisodeBoundary(memory, now);
-    }
-
-    private void maybeNotifyEpisodeBoundary(AgentMemory memory, long now) {
-        if (memory == null
-                || !memory.shouldEvaluateEpisodeBoundaryNotification(
-                        now, EPISODE_NOTIFICATION_EVALUATION_DEBOUNCE_MS)) {
-            return;
-        }
-
-        // 临时测试提示不应抢占正常 speech / trigger 输出；
-        // 若前台交互仍在进行，则等下一次空闲后再尝试提示。
-        if (AgentRuntime.getInstance().isBusy()) {
-            return;
-        }
-
-        EpisodeIntentTimeline timeline =
-                EpisodeIntentTracker.analyzeSegments(memory.getActionArchive().snapshotCompacted());
-        EpisodeIntentSplitPoint latestSplit = timeline.latestSplitPoint();
-        if (latestSplit == null
-                || latestSplit.confirmationTimestamp() <= 0L
-                || !memory.markEpisodeBoundaryNotificationIfNew(latestSplit.confirmationTimestamp())) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
-            return;
-        }
-
-        long splitAgeMs = Math.max(0L, now - latestSplit.splitTimestamp());
-        String text = "新的记忆断点已确认，回溯切点在" + formatElapsedSince(splitAgeMs) + "。";
-        mc.execute(() -> {
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal(text), true);
-            }
-        });
-    }
-
-    private String formatElapsedSince(long elapsedMs) {
-        if (elapsedMs < 45_000L) {
-            return "刚刚";
-        }
-
-        long minutes = elapsedMs / 60_000L;
-        if (minutes < 60L) {
-            return "约" + minutes + "分钟前";
-        }
-
-        long hours = elapsedMs / 3_600_000L;
-        if (hours < 24L) {
-            return "约" + hours + "小时前";
-        }
-
-        long days = elapsedMs / 86_400_000L;
-        if (days < 30L) {
-            return "约" + days + "天前";
-        }
-
-        long months = Math.max(1L, days / 30L);
-        return "约" + months + "个月前";
+        StudioRuntimeActionTimelineFile.recordSnapshot(memory);
     }
 
     private void noteRecentPlayerDamage(UUID targetId, long now) {

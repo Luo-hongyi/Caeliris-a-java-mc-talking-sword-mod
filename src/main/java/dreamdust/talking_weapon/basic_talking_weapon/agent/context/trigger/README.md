@@ -5,6 +5,13 @@
 `trigger` 包存放所有 **触发器（Agent Trigger）** 的实现。  
 触发器定义：**什么游戏事件** → **需要哪些采集器** → **产生什么任务**。
 
+此外，`trigger/internal` 子包用于存放 **Agent 内部反应型 trigger**：
+
+- 不走 `AgentSensor`
+- 不声明 collectors
+- 只把内部 signal 显式包装成后台任务
+- 典型例子是后续的 `EpisodeSynthesisTrigger`
+
 ## 现有触发器
 
 ### LLM 交互触发器（已实现）
@@ -19,18 +26,18 @@
 | 类名 | 触发条件 | 用途 |
 |---|---|---|
 | `ReflectionTrigger` | 计划中的低频反思时机 | 旧版 LTM 合成入口骨架，尚未接入当前自动调度链 |
-| `CombatRecapTrigger` | RecentActionBuffer 中 KILL 计数 ≥ 阈值 | 连杀/恶战回顾骨架 |
+| `CombatRecapTrigger` | 计划中的高强度战斗片段 | 连杀/恶战回顾骨架 |
 | `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗记忆骨架 |
 
 ### 事件感知器
 
 | 类名 | 职责 |
 |---|---|
-| `TickEventWatcher` | 统一事件感知器：监听 Forge 事件，同时写入 RecentActionBuffer 与 ActionArchive，检测群系变化和旅行 |
+| `TickEventWatcher` | 统一事件感知器：监听 Forge 事件，同时写入 MovingActionBuffer 与 ActionArchive，检测群系变化和旅行 |
 
 ## TickEventWatcher 事件监听
 
-`TickEventWatcher` 已扩展为统一事件感知器，监听以下 Forge 事件，并将同一条动作同时写入 `RecentActionBuffer` 与 `ActionArchive`：
+`TickEventWatcher` 已扩展为统一事件感知器，监听以下 Forge 事件，并将同一条动作同时写入 `MovingActionBuffer` 与 `ActionArchive`：
 
 | @SubscribeEvent | 产生的 ActionRecord |
 |---|---|

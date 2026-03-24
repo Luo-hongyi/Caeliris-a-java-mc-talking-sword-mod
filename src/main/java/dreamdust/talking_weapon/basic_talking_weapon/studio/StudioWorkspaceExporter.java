@@ -1,7 +1,5 @@
 package dreamdust.talking_weapon.basic_talking_weapon.studio;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.CustomTagRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
@@ -14,8 +12,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStora
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaStorage;
 
 import java.io.IOException;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -32,11 +28,6 @@ import java.util.stream.Stream;
  * 目标：让 Studio 只需要接收一个文件夹，而不是逐个手动选择 JSON。
  */
 public final class StudioWorkspaceExporter {
-
-    private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
-            .disableHtmlEscaping()
-            .create();
 
     private StudioWorkspaceExporter() {
     }
@@ -84,10 +75,20 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(PromptRegistry.getConfigPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecentInteractionsFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecentInteractionsFile.getPath().getFileName()), exportedFiles);
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+            copyFile(StudioRuntimeActionTimelineFile.getPath(),
+                    workspaceRoot.resolve(StudioRuntimeActionTimelineFile.getPath().getFileName()), exportedFiles);
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+            copyFile(StudioRuntimeEpisodeTimelineFile.getPath(),
+                    workspaceRoot.resolve(StudioRuntimeEpisodeTimelineFile.getPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecallTraceFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecallTraceFile.getPath().getFileName()), exportedFiles);
+            StudioActionTimelineTuningFile.writeCurrent();
+            exportedFiles.add(StudioActionTimelineTuningFile.FILENAME);
             StudioMemoryRecallTuningFile.writeCurrent();
             exportedFiles.add(StudioMemoryRecallTuningFile.FILENAME);
+            StudioEpisodeTuningFile.writeCurrent();
+            exportedFiles.add(StudioEpisodeTuningFile.FILENAME);
 
             writeManifest(StudioWorkspaceManifestFile.getPath(), snapshot, runtimeTagView, icons, exportedFiles);
             return new ExportResult(workspaceRoot, exportedFiles.size(), snapshot.entryCount,
@@ -157,18 +158,6 @@ public final class StudioWorkspaceExporter {
         }
     }
 
-    private static void ensureEditableSeed(Path target, Object seedObject, List<String> exportedFiles) throws IOException {
-        if (Files.exists(target)) {
-            exportedFiles.add(workspaceRelative(target));
-            return;
-        }
-        Files.createDirectories(target.getParent());
-        try (Writer writer = Files.newBufferedWriter(target, StandardCharsets.UTF_8)) {
-            GSON.toJson(seedObject, writer);
-        }
-        exportedFiles.add(workspaceRelative(target));
-    }
-
     private static void writeManifest(Path manifestPath,
             NativeCatalogSnapshotExporter.ExportResult snapshot,
             StudioRuntimeTagViewExporter.ExportResult runtimeTagView,
@@ -193,8 +182,12 @@ public final class StudioWorkspaceExporter {
         versions.put("snapshot", lastModifiedToken(getWorkspaceRoot().resolve("native_catalog.snapshot.json")));
         versions.put("runtimeTagView", lastModifiedToken(getWorkspaceRoot().resolve("studio_runtime_tag_view.json")));
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
+        versions.put("runtimeActionTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionTimelineFile.FILENAME)));
+        versions.put("runtimeEpisodeTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeEpisodeTimelineFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
+        versions.put("actionTimelineTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioActionTimelineTuningFile.FILENAME)));
         versions.put("memoryRecallTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioMemoryRecallTuningFile.FILENAME)));
+        versions.put("episodeTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioEpisodeTuningFile.FILENAME)));
         versions.put("importance", lastModifiedToken(getWorkspaceRoot().resolve("importance.json")));
         versions.put("prompts", lastModifiedToken(getWorkspaceRoot().resolve("prompts.json")));
         versions.put("customTags", lastModifiedToken(getWorkspaceRoot().resolve("custom_tags.json")));

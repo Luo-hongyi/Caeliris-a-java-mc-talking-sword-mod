@@ -1429,6 +1429,60 @@ button {
   margin: 8px 0 0;
 }
 
+.action-timeline-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.action-timeline-controls,
+.action-timeline-overview-grid {
+  margin-bottom: 18px;
+}
+
+.action-timeline-fixed-sections .section-head {
+  margin-bottom: 14px;
+}
+
+.action-timeline-entry-list,
+.action-timeline-score-list,
+.action-timeline-region-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.action-timeline-entry-card,
+.action-timeline-score-card,
+.action-timeline-region-card {
+  border: 1px solid rgba(105, 79, 48, 0.12);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.action-timeline-entry-head,
+.action-timeline-score-head,
+.action-timeline-region-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.action-timeline-entry-card strong,
+.action-timeline-score-card strong,
+.action-timeline-region-card strong {
+  display: block;
+  margin-top: 8px;
+}
+
+.action-timeline-score-card p,
+.action-timeline-region-card p {
+  margin: 8px 0 0;
+}
+
 .runtime-recall-summary {
   align-items: stretch;
 }
@@ -1810,6 +1864,7 @@ button {
   .relations-shell,
   .relation-status-grid,
   .relation-batch-grid,
+  .action-timeline-summary-grid,
   .state-weight-grid,
   .tag-browser-toolbar,
   .recall-stat-grid,
