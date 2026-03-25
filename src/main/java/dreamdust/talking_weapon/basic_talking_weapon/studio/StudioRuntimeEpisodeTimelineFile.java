@@ -3,20 +3,16 @@ package dreamdust.talking_weapon.basic_talking_weapon.studio;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeReasonRuntimeConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRuntimeSettings;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSegmentPromptDraft;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisMaterial;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisPromptFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeSplitReason;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals;
 
@@ -28,18 +24,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Episode v2 的 runtime 调试输出。
@@ -55,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 public final class StudioRuntimeEpisodeTimelineFile {
 
     private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
@@ -62,28 +53,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
     public static final String VERSION_KEY = "runtimeEpisodeTimeline";
     public static final int SCHEMA_VERSION = 1;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
-    private static final long ASYNC_DEBOUNCE_MS = 100L;
-    private static final int MAX_RENDERED_SEGMENTS = 24;
-    private static final int MAX_RENDERED_PENDING_MARKS = 24;
-    private static final int MAX_RENDERED_SPLIT_POINTS = 24;
-    private static final int MAX_RENDERED_REGIONS = 12;
-    private static final int MAX_SEGMENT_PROMPT_DRAFTS = 8;
-
-    private static final Object WRITE_LOCK = new Object();
-    private static final ScheduledExecutorService WRITE_EXECUTOR = Executors.newSingleThreadScheduledExecutor(
-            new ThreadFactory() {
-                @Override
-                public Thread newThread(Runnable runnable) {
-                    Thread thread = new Thread(runnable, "TalkingWeapon-StudioEpisodeRuntime");
-                    thread.setDaemon(true);
-                    return thread;
-                }
-            });
 
     private static long lastWriteAt = 0L;
     private static RuntimeEpisodeTimelineFileModel cachedFile;
-    private static ScheduledFuture<?> pendingWrite;
-    private static AgentMemory pendingMemory;
 
     private StudioRuntimeEpisodeTimelineFile() {
     }
@@ -116,52 +88,18 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
     }
 
-    public static void recordSnapshot(AgentMemory memory) {
-        if (memory == null) {
+    public static synchronized void recordSnapshot(AgentMemory memory) {
+        long now = System.currentTimeMillis();
+        if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
             return;
         }
-        synchronized (WRITE_LOCK) {
-            pendingMemory = memory;
-            if (pendingWrite != null) {
-                return;
-            }
-            pendingWrite = WRITE_EXECUTOR.schedule(
-                    StudioRuntimeEpisodeTimelineFile::flushPendingSnapshot,
-                    nextWriteDelayMs(),
-                    TimeUnit.MILLISECONDS);
-        }
+        writeCurrentSnapshot(memory);
     }
 
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
         RuntimeEpisodeTimelineFileModel previous = readOrEmpty();
         RuntimeEpisodeTimelineFileModel current = build(memory, previous);
         write(current);
-    }
-
-    private static void flushPendingSnapshot() {
-        AgentMemory memory;
-        synchronized (WRITE_LOCK) {
-            memory = pendingMemory;
-            pendingMemory = null;
-            pendingWrite = null;
-        }
-        if (memory != null) {
-            writeCurrentSnapshot(memory);
-        }
-        synchronized (WRITE_LOCK) {
-            if (pendingMemory != null && pendingWrite == null) {
-                pendingWrite = WRITE_EXECUTOR.schedule(
-                        StudioRuntimeEpisodeTimelineFile::flushPendingSnapshot,
-                        nextWriteDelayMs(),
-                        TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    private static long nextWriteDelayMs() {
-        long elapsed = System.currentTimeMillis() - lastWriteAt;
-        long remainingInterval = elapsed >= MIN_WRITE_INTERVAL_MS ? 0L : (MIN_WRITE_INTERVAL_MS - elapsed);
-        return Math.max(ASYNC_DEBOUNCE_MS, remainingInterval);
     }
 
     public static synchronized void recordSynthesisMaterial(EpisodeSynthesisMaterial material) {
@@ -190,30 +128,20 @@ public final class StudioRuntimeEpisodeTimelineFile {
         file.splitPointCount = timeline.splitPoints().size();
         file.regionCount = timeline.regions().size();
 
-        List<FixedActionSegment> renderedSegments = enrichSegmentsWithCurrentTurns(
-                timeline.segments(),
-                memory == null ? List.of() : memory.getSTMPool().turnSnapshot());
-        List<FixedActionSegment> visibleSegments = tail(renderedSegments, MAX_RENDERED_SEGMENTS);
-        int visibleSegmentStartIndex = timeline.segmentCount() - visibleSegments.size();
-        int promptDraftStartIndex = Math.max(visibleSegmentStartIndex, timeline.segmentCount() - MAX_SEGMENT_PROMPT_DRAFTS);
-        for (int i = 0; i < visibleSegments.size(); i++) {
-            int segmentIndex = visibleSegmentStartIndex + i;
-            file.segments.add(toSegmentModel(
-                    segmentIndex,
-                    visibleSegments.get(i),
-                    segmentIndex >= promptDraftStartIndex));
+        for (int i = 0; i < timeline.segments().size(); i++) {
+            file.segments.add(toSegmentModel(i, timeline.segments().get(i)));
         }
-        for (EpisodePendingMark pendingMark : tail(timeline.pendingMarks(), MAX_RENDERED_PENDING_MARKS)) {
+        for (EpisodePendingMark pendingMark : timeline.pendingMarks()) {
             if (pendingMark != null) {
                 file.pendingMarks.add(RuntimeEpisodePendingMarkModel.from(pendingMark));
             }
         }
-        for (EpisodeSplitPoint splitPoint : tail(timeline.splitPoints(), MAX_RENDERED_SPLIT_POINTS)) {
+        for (EpisodeSplitPoint splitPoint : timeline.splitPoints()) {
             if (splitPoint != null) {
                 file.splitPoints.add(RuntimeEpisodeSplitPointModel.from(splitPoint));
             }
         }
-        for (EpisodeRegion region : tail(timeline.regions(), MAX_RENDERED_REGIONS)) {
+        for (EpisodeRegion region : timeline.regions()) {
             if (region != null) {
                 file.regions.add(RuntimeEpisodeRegionModel.from(region));
             }
@@ -236,10 +164,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
         return models;
     }
 
-    private static RuntimeEpisodeSegmentModel toSegmentModel(
-            int index,
-            FixedActionSegment segment,
-            boolean includePromptDraft) {
+    private static RuntimeEpisodeSegmentModel toSegmentModel(int index, FixedActionSegment segment) {
         RuntimeEpisodeSegmentModel model = new RuntimeEpisodeSegmentModel();
         model.index = index;
         if (segment == null) {
@@ -251,9 +176,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
         model.rawStartIndex = segment.getRawStartIndex();
         model.rawEndIndex = segment.getRawEndIndex();
         model.summary = summarizeFixedEntries(segment.getEntries());
-        if (includePromptDraft) {
-            model.promptDraft = EpisodeSynthesisPromptFormatter.buildSegmentPromptDraft(index, segment).promptDraft();
-        }
         if (segment.getSplitterSignals() != null) {
             model.observedActionTypes = segment.getSplitterSignals().getObservedActionTypes().stream()
                     .map(Enum::name)
@@ -276,11 +198,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
         List<String> summary = new ArrayList<>();
         int limit = Math.min(4, entries.size());
-        for (FixedActionSegmentEntry entry : entries) {
+        for (int i = 0; i < limit; i++) {
+            FixedActionSegmentEntry entry = entries.get(i);
             if (entry == null || entry.getType() == null) {
-                continue;
-            }
-            if (entry.getType().name().equals("ACQUIRE_ITEM")) {
                 continue;
             }
             String label = entry.getType().name().toLowerCase(Locale.ROOT) + " x" + Math.max(1, entry.getCount());
@@ -288,82 +208,11 @@ public final class StudioRuntimeEpisodeTimelineFile {
                 label += " @ " + entry.getTarget().trim();
             }
             summary.add(label);
-            if (summary.size() >= limit) {
-                break;
-            }
         }
-        int visibleCount = 0;
-        for (FixedActionSegmentEntry entry : entries) {
-            if (entry != null && entry.getType() != null && !entry.getType().name().equals("ACQUIRE_ITEM")) {
-                visibleCount++;
-            }
-        }
-        if (visibleCount > limit) {
-            summary.add("+" + (visibleCount - limit) + " more");
+        if (entries.size() > limit) {
+            summary.add("+" + (entries.size() - limit) + " more");
         }
         return summary.isEmpty() ? "(empty)" : String.join(" | ", summary);
-    }
-
-    private static List<FixedActionSegment> enrichSegmentsWithCurrentTurns(
-            List<FixedActionSegment> segments,
-            List<InteractionTurn> turns) {
-        if (segments == null || segments.isEmpty()) {
-            return List.of();
-        }
-        if (turns == null || turns.isEmpty()) {
-            return segments;
-        }
-
-        ArrayList<List<InteractionTurn>> turnBuckets = new ArrayList<>(segments.size());
-        for (int i = 0; i < segments.size(); i++) {
-            turnBuckets.add(new ArrayList<>());
-        }
-
-        for (InteractionTurn turn : turns) {
-            if (turn == null) {
-                continue;
-            }
-            int bucketIndex = findSegmentBucket(segments, turn.getTimestamp());
-            if (bucketIndex >= 0) {
-                turnBuckets.get(bucketIndex).add(turn);
-            }
-        }
-
-        ArrayList<FixedActionSegment> enriched = new ArrayList<>(segments.size());
-        for (int i = 0; i < segments.size(); i++) {
-            FixedActionSegment segment = segments.get(i);
-            if (segment == null) {
-                continue;
-            }
-            List<InteractionTurn> bucket = turnBuckets.get(i);
-            if (bucket.isEmpty()) {
-                enriched.add(segment);
-                continue;
-            }
-
-            FixedActionSegmentContext context = segment.getContext();
-            ArrayList<InteractionTurn> mergedTurns = new ArrayList<>(context.getInteractionTurns());
-            mergedTurns.addAll(bucket);
-            mergedTurns.sort(Comparator.comparingLong(InteractionTurn::getTimestamp));
-            FixedActionSegmentContext nextContext = context.withMergedSnapshot(
-                    context.getMergedContextSnapshot(),
-                    List.copyOf(mergedTurns));
-            enriched.add(segment.withContext(nextContext));
-        }
-        return List.copyOf(enriched);
-    }
-
-    private static int findSegmentBucket(List<FixedActionSegment> segments, long timestamp) {
-        for (int i = 0; i < segments.size(); i++) {
-            FixedActionSegment segment = segments.get(i);
-            if (segment == null) {
-                continue;
-            }
-            if (timestamp >= segment.getStartTimestamp() && timestamp < segment.getEndTimestamp()) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private static void write(RuntimeEpisodeTimelineFileModel file) {
@@ -385,16 +234,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
     private static String nameOf(Enum<?> value) {
         return value == null ? "" : value.name();
-    }
-
-    private static <T> List<T> tail(List<T> source, int maxCount) {
-        if (source == null || source.isEmpty()) {
-            return List.of();
-        }
-        if (maxCount <= 0 || source.size() <= maxCount) {
-            return source;
-        }
-        return source.subList(source.size() - maxCount, source.size());
     }
 
     public static final class RuntimeEpisodeTimelineFileModel {
@@ -473,7 +312,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public int rawStartIndex = -1;
         public int rawEndIndex = -1;
         public String summary = "";
-        public String promptDraft = "";
         public String dominantIntent = "";
         public double dominantScore;
         public String runnerUpIntent = "";
@@ -856,8 +694,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public int regionEndSegmentIndex;
         public long regionStartTimestamp;
         public long regionEndTimestamp;
-        public String regionPromptDraft = "";
-        public List<RuntimeEpisodeSegmentPromptDraftModel> segmentDrafts = new ArrayList<>();
+        public String promptDraft = "";
 
         static RuntimeEpisodeSynthesisPreviewModel fromMaterial(EpisodeSynthesisMaterial material) {
             RuntimeEpisodeSynthesisPreviewModel model = new RuntimeEpisodeSynthesisPreviewModel();
@@ -869,11 +706,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
             model.regionEndSegmentIndex = material.signal().regionEndSegmentIndex();
             model.regionStartTimestamp = material.signal().regionStartTimestamp();
             model.regionEndTimestamp = material.signal().regionEndTimestamp();
-            List<EpisodeSegmentPromptDraft> segmentPromptDrafts = material.buildSegmentPromptDrafts();
-            model.regionPromptDraft = material.buildRegionPromptDraft();
-            for (EpisodeSegmentPromptDraft draft : segmentPromptDrafts) {
-                model.segmentDrafts.add(RuntimeEpisodeSegmentPromptDraftModel.from(draft));
-            }
+            model.promptDraft = material.buildPromptDraft();
             return model;
         }
 
@@ -887,39 +720,14 @@ public final class StudioRuntimeEpisodeTimelineFile {
             copy.regionEndSegmentIndex = source.regionEndSegmentIndex;
             copy.regionStartTimestamp = source.regionStartTimestamp;
             copy.regionEndTimestamp = source.regionEndTimestamp;
-            copy.regionPromptDraft = source.regionPromptDraft != null ? source.regionPromptDraft : "";
-            copy.segmentDrafts = source.segmentDrafts == null ? new ArrayList<>() : new ArrayList<>(source.segmentDrafts);
+            copy.promptDraft = source.promptDraft != null ? source.promptDraft : "";
             return copy;
         }
 
         private void normalize() {
-            if (regionPromptDraft == null) {
-                regionPromptDraft = "";
+            if (promptDraft == null) {
+                promptDraft = "";
             }
-            if (segmentDrafts == null) {
-                segmentDrafts = new ArrayList<>();
-            }
-        }
-    }
-
-    public static final class RuntimeEpisodeSegmentPromptDraftModel {
-        public int segmentIndex;
-        public long startTimestamp;
-        public long endTimestamp;
-        public List<String> timelineLines = new ArrayList<>();
-        public String promptDraft = "";
-
-        static RuntimeEpisodeSegmentPromptDraftModel from(EpisodeSegmentPromptDraft draft) {
-            RuntimeEpisodeSegmentPromptDraftModel model = new RuntimeEpisodeSegmentPromptDraftModel();
-            if (draft == null) {
-                return model;
-            }
-            model.segmentIndex = draft.segmentIndex();
-            model.startTimestamp = draft.startTimestamp();
-            model.endTimestamp = draft.endTimestamp();
-            model.timelineLines = new ArrayList<>(draft.timelineLines());
-            model.promptDraft = draft.promptDraft();
-            return model;
         }
     }
 

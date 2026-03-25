@@ -39,10 +39,6 @@ export type GameBridgeExportResult = GameBridgeSuccess<{
   placeholderIcons: number;
 }>;
 
-export type GameBridgeClearResult = GameBridgeSuccess<{
-  cleared: string;
-}>;
-
 type GameBridgeResponse<T> = T | GameBridgeFailure;
 
 async function requestGameBridge<T>(path: string, init?: RequestInit): Promise<T> {
@@ -87,12 +83,4 @@ export async function publishWorkspaceToGame(): Promise<GameBridgePublishResult>
 
 export async function exportWorkspaceFromGame(): Promise<GameBridgeExportResult> {
   return await requestGameBridge<GameBridgeExportResult>("/export", { method: "POST" });
-}
-
-export async function clearPlayerActionsInGame(): Promise<GameBridgeClearResult> {
-  return await requestGameBridge<GameBridgeClearResult>("/clear-player-actions", { method: "POST" });
-}
-
-export async function clearEpisodeInGame(): Promise<GameBridgeClearResult> {
-  return await requestGameBridge<GameBridgeClearResult>("/clear-episode", { method: "POST" });
 }

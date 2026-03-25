@@ -14,8 +14,7 @@
     "desktop:dev:shell": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:4173 electron .",
     "desktop:start": "electron .",
     "desktop:pack": "npm run build && electron-builder --dir",
-    "desktop:dist": "npm run build && electron-builder",
-    "desktop:dist:win": "npm run build && electron-builder --win nsis"
+    "desktop:dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",
@@ -51,7 +50,7 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "dir"
       ]
     },
     "linux": {

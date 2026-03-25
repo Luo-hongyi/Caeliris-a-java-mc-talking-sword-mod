@@ -30,7 +30,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
-import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecentInteractionsFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecallTraceFile;
 
@@ -254,11 +253,9 @@ public class LLMInteractionTask extends AgentTask {
                     screenshotBase64,
                     records,
                     new java.util.ArrayList<>(actionTypes),
-                    new java.util.ArrayList<>(this.visibleContexts),
-                    ctx.getTimestamp());
+                    new java.util.ArrayList<>(this.visibleContexts));
             stmPool.pushInteractionTurn(turn);
             StudioRuntimeRecentInteractionsFile.recordTurn(turn);
-            StudioRuntimeEpisodeTimelineFile.recordSnapshot(memory);
 
             if (runtimeStateChanged) {
                 AgentStateStorage.requestSaveRuntimeState(state, persona);

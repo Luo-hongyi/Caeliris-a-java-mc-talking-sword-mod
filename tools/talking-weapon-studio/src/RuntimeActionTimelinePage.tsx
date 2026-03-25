@@ -46,7 +46,6 @@ type RuntimeActionTimelinePageProps = {
   runtimeActionTimeline: RuntimeActionTimelineFile;
   tuningFile: ActionTimelineTuningFile;
   onTuningChange: (patch: Partial<ActionTimelineTuningFile>) => void;
-  onClearRuntime: () => Promise<void>;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -178,11 +177,9 @@ function TimelineEntryCard({ entry }: { entry: RuntimeActionTimelineEntry }) {
 export function RuntimeActionTimelinePage({
   runtimeActionTimeline,
   tuningFile,
-  onTuningChange,
-  onClearRuntime
+  onTuningChange
 }: RuntimeActionTimelinePageProps) {
   const [expandedSegmentIndex, setExpandedSegmentIndex] = useState<number>(-1);
-  const [clearing, setClearing] = useState(false);
   const segments = runtimeActionTimeline.fixedSegments;
   const displaySegments = useMemo(() => [...segments].sort((left, right) => right.index - left.index), [segments]);
   const segmentsWithBoundaryActions = useMemo(
@@ -218,18 +215,6 @@ export function RuntimeActionTimelinePage({
   const topMovingEntries = movingWindow.entries.slice(0, 5);
   const majorStructureWhitelistText = tuningFile.majorStructureWhitelist.join("\n");
 
-  const handleClearRuntime = async () => {
-    if (clearing) {
-      return;
-    }
-    setClearing(true);
-    try {
-      await onClearRuntime();
-    } finally {
-      setClearing(false);
-    }
-  };
-
   return (
     <div className="panel page-panel">
       <div className="panel-head">
@@ -249,9 +234,6 @@ export function RuntimeActionTimelinePage({
               ? `最近同步 ${formatRuntimeTimestamp(Date.parse(runtimeActionTimeline.generatedAt))}`
               : "尚未读到 runtime 文件"}
           </span>
-          <button className="secondary-button danger-button" disabled={clearing} onClick={() => void handleClearRuntime()} type="button">
-            {clearing ? "清理中..." : "清空 Action Runtime"}
-          </button>
         </div>
       </div>
 

@@ -1,11 +1,14 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * ActionArchive 的通用压缩器。
@@ -153,6 +156,8 @@ public final class ActionArchiveCompactor {
         private long lastTimestamp;
         private int rawStartIndex;
         private int rawEndIndex;
+        private final Set<DetailTag> detailTags = new LinkedHashSet<>();
+
         private MutableEntry(ActionRecord record, int rawIndex) {
             this.type = record.getType();
             this.target = record.getTarget();
@@ -161,6 +166,7 @@ public final class ActionArchiveCompactor {
             this.lastTimestamp = safeTimestamp(record);
             this.rawStartIndex = rawIndex;
             this.rawEndIndex = rawIndex;
+            this.detailTags.addAll(record.getDetailTags());
         }
 
         private void merge(ActionRecord record, int rawIndex) {
@@ -170,6 +176,7 @@ public final class ActionArchiveCompactor {
             this.count += Math.max(1, record.getCount());
             this.lastTimestamp = Math.max(this.lastTimestamp, safeTimestamp(record));
             this.rawEndIndex = rawIndex;
+            this.detailTags.addAll(record.getDetailTags());
         }
 
         private FixedActionSegmentEntry freeze() {
@@ -181,7 +188,7 @@ public final class ActionArchiveCompactor {
                     lastTimestamp,
                     rawStartIndex,
                     rawEndIndex,
-                    Collections.emptySet());
+                    detailTags);
         }
     }
 }

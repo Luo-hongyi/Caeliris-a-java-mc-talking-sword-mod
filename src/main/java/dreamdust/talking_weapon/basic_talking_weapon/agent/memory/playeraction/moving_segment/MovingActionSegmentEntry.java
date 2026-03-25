@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -48,7 +49,9 @@ public final class MovingActionSegmentEntry implements ActionSegmentEntryView {
         this.count = count;
         this.firstTimestamp = firstTimestamp;
         this.lastTimestamp = lastTimestamp;
-        this.detailTags = Collections.emptySet();
+        this.detailTags = detailTags == null
+                ? Collections.emptySet()
+                : Collections.unmodifiableSet(new LinkedHashSet<>(detailTags));
         this.folded = folded;
         this.foldedTargets = foldedTargets == null
                 ? List.of()

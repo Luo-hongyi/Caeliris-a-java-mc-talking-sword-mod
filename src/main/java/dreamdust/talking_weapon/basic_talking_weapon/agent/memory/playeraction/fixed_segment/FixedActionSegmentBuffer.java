@@ -1,8 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -258,7 +259,7 @@ public final class FixedActionSegmentBuffer {
                     Math.max(0L, record.getTimestamp()),
                     rawIndex,
                     rawIndex,
-                    Collections.emptySet()));
+                    record.getDetailTags()));
         }
 
         private FixedActionSegment freeze() {
@@ -273,6 +274,8 @@ public final class FixedActionSegmentBuffer {
         }
 
         private FixedActionSegmentEntry mergeEntry(FixedActionSegmentEntry entry, ActionRecord record, int rawIndex) {
+            Set<DetailTag> mergedTags = new LinkedHashSet<>(entry.getDetailTags());
+            mergedTags.addAll(record.getDetailTags());
             long timestamp = Math.max(0L, record.getTimestamp());
             return new FixedActionSegmentEntry(
                     entry.getType(),
@@ -282,7 +285,7 @@ public final class FixedActionSegmentBuffer {
                     Math.max(entry.getLastTimestamp(), timestamp),
                     entry.getRawStartIndex(),
                     rawIndex,
-                    Collections.emptySet());
+                    mergedTags);
         }
     }
 }

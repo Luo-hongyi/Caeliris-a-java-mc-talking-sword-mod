@@ -1046,11 +1046,11 @@ public class TickEventWatcher {
             return;
         }
         if (actionTimelineSnapshotDirty) {
-            StudioRuntimeActionTimelineFile.recordSnapshot(memory);
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(memory);
             actionTimelineSnapshotDirty = false;
         }
         if (episodeTimelineSnapshotDirty) {
-            StudioRuntimeEpisodeTimelineFile.recordSnapshot(memory);
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(memory);
             episodeTimelineSnapshotDirty = false;
         }
     }

@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -38,7 +39,9 @@ public final class FixedActionSegmentEntry implements ActionSegmentEntryView {
         this.lastTimestamp = lastTimestamp;
         this.rawStartIndex = rawStartIndex;
         this.rawEndIndex = rawEndIndex;
-        this.detailTags = Collections.emptySet();
+        this.detailTags = detailTags == null
+                ? Collections.emptySet()
+                : Collections.unmodifiableSet(new LinkedHashSet<>(detailTags));
     }
 
     @Override
