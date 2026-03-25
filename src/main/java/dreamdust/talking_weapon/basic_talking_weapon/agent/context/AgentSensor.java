@@ -67,12 +67,17 @@ public class AgentSensor {
             markTriggered();
         }
 
-        // 0. 仅为交互型触发器建立独立日志会话，避免被动触发持续制造文件 I/O。
-        if (trigger.requiresDebounce()) {
-            AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
-            if (runtime.getState().isFullRawActionLogEnabled()) {
-                AgentLogger.logActionArchiveDump(runtime.getMemory());
-            }
+        // 0. 开始日志会话
+        AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
+
+        // 当前在 right_click fire 时额外写出一份独立的动作日志，
+        // 其中包含：
+        // 1. 原始 ActionArchive 时间线
+        // 2. fixed 60 秒 compaction
+        // 3. moving segment 及其 local intent
+        // 便于同时观察分析层与 prompt 近期感知层。
+        if ("right_click".equals(trigger.getSourceName())) {
+            AgentLogger.logActionArchiveDump(runtime.getMemory());
         }
 
         // 1. 创建 Builder，设置基础元信息

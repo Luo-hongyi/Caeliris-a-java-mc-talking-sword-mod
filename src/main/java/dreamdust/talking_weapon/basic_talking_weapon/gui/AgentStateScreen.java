@@ -70,13 +70,11 @@ public class AgentStateScreen extends Screen {
     private int recallPresetIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
     private boolean implantedMemorySafetyNetEnabled;
-    private boolean fullRawActionLogEnabled;
 
     private Button emotionLabel;
     private Button recallPresetLabel;
     private Button desireTagLabel;
     private Button implantedMemorySafetyNetButton;
-    private Button fullRawActionLogButton;
     private Button crosshairBonusButton;
     private StateScrollList scrollList;
 
@@ -88,7 +86,6 @@ public class AgentStateScreen extends Screen {
         this.emotionIndex = emotionIndexOf(state.getPrimaryEmotion());
         this.recallPresetIndex = recallPresetIndexOf(state.getRecallPreset());
         this.implantedMemorySafetyNetEnabled = state.isImplantedMemorySafetyNetEnabled();
-        this.fullRawActionLogEnabled = state.isFullRawActionLogEnabled();
         this.crosshairBonusEnabled = TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.get();
         // desireTagIndex: 0=无渴望, 1..n=FocusTag
         FocusTag desire = state.getCurrentDesireTag();
@@ -260,16 +257,6 @@ public class AgentStateScreen extends Screen {
         scrollList.addEntry(new ButtonRow("植入记忆保底", left, rowWidth, implantedMemorySafetyNetButton));
         scrollList.addEntry(new LabelRow("§8  开启后，若本轮正常召回未命中任何无 occurTime 的植入记忆，会额外做一次轻量补捞"));
 
-        scrollList.addEntry(new LabelRow("§b▸ 调试日志"));
-        fullRawActionLogButton = Button.builder(
-                Component.literal(fullRawActionLogEnabled ? "开启" : "关闭"),
-                btn -> {
-                    fullRawActionLogEnabled = !fullRawActionLogEnabled;
-                    btn.setMessage(Component.literal(fullRawActionLogEnabled ? "开启" : "关闭"));
-                }).bounds(0, 0, 100, 20).build();
-        scrollList.addEntry(new ButtonRow("全量原始动作日志", left, rowWidth, fullRawActionLogButton));
-        scrollList.addEntry(new LabelRow("§8  开启后，交互触发会额外写出 action archive dump，默认建议关闭"));
-
         // 渴望分类选择器（0 = 无渴望, 1..n = FocusTag）
         String desireLabelStr = desireTagIndex == 0 ? "(无)" : DESIRE_TAGS[desireTagIndex - 1].name();
         Button prevDesire = Button.builder(Component.literal("<"), btn -> {
@@ -411,7 +398,6 @@ public class AgentStateScreen extends Screen {
                 parseIntOrDefault(customConsciousMemoryCapBox, currentRecallTuning.getConsciousMemoryCap()),
                 parseIntOrDefault(customRetentionMemoryCapBox, currentRecallTuning.getRetentionMemoryCap())));
         state.setImplantedMemorySafetyNetEnabled(implantedMemorySafetyNetEnabled);
-        state.setFullRawActionLogEnabled(fullRawActionLogEnabled);
         state.setCurrentDesireTag(desireTagIndex == 0 ? null : DESIRE_TAGS[desireTagIndex - 1]);
         state.setDesireDescription(desireDescBox.getValue().trim());
 

@@ -52,10 +52,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
     public static final String FILENAME = "studio_runtime_episode_timeline.json";
     public static final String VERSION_KEY = "runtimeEpisodeTimeline";
     public static final int SCHEMA_VERSION = 1;
-    private static final long MIN_WRITE_INTERVAL_MS = 750L;
-
-    private static long lastWriteAt = 0L;
-    private static RuntimeEpisodeTimelineFileModel cachedFile;
 
     private StudioRuntimeEpisodeTimelineFile() {
     }
@@ -65,13 +61,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
     }
 
     public static synchronized RuntimeEpisodeTimelineFileModel readOrEmpty() {
-        if (cachedFile != null) {
-            return cachedFile;
-        }
         Path path = getPath();
         if (!Files.isRegularFile(path)) {
-            cachedFile = new RuntimeEpisodeTimelineFileModel();
-            return cachedFile;
+            return new RuntimeEpisodeTimelineFileModel();
         }
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             RuntimeEpisodeTimelineFileModel file = GSON.fromJson(reader, RuntimeEpisodeTimelineFileModel.class);
@@ -79,20 +71,14 @@ public final class StudioRuntimeEpisodeTimelineFile {
                 file = new RuntimeEpisodeTimelineFileModel();
             }
             file.normalize();
-            cachedFile = file;
-            return cachedFile;
+            return file;
         } catch (Exception e) {
             System.err.println("[TalkingWeapon/StudioRuntimeEpisodeTimeline] 读取失败：" + e.getMessage());
-            cachedFile = new RuntimeEpisodeTimelineFileModel();
-            return cachedFile;
+            return new RuntimeEpisodeTimelineFileModel();
         }
     }
 
     public static synchronized void recordSnapshot(AgentMemory memory) {
-        long now = System.currentTimeMillis();
-        if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
-            return;
-        }
         writeCurrentSnapshot(memory);
     }
 
@@ -218,13 +204,10 @@ public final class StudioRuntimeEpisodeTimelineFile {
     private static void write(RuntimeEpisodeTimelineFileModel file) {
         Path path = getPath();
         try {
-            file.normalize();
             Files.createDirectories(path.getParent());
             try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
                 GSON.toJson(file, writer);
             }
-            cachedFile = file;
-            lastWriteAt = System.currentTimeMillis();
             StudioWorkspaceManifestFile.markVersionUpdated(VERSION_KEY,
                     StudioWorkspaceManifestFile.UPDATED_BY_MINECRAFT);
         } catch (IOException e) {

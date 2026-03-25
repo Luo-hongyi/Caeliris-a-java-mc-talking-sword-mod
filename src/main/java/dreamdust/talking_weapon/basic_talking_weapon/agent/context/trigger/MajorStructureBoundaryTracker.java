@@ -34,16 +34,9 @@ public final class MajorStructureBoundaryTracker {
 
     private static final int MIN_SCAN_RADIUS_CHUNKS = 5;
     private static final int STRUCTURE_SCAN_MARGIN_BLOCKS = 96;
-    private static final long RESCAN_COOLDOWN_MS = 15_000L;
-    private static final double RESCAN_DISTANCE_THRESHOLD_BLOCKS = 24.0;
-    private static final double RESCAN_DISTANCE_THRESHOLD_SQR =
-            RESCAN_DISTANCE_THRESHOLD_BLOCKS * RESCAN_DISTANCE_THRESHOLD_BLOCKS;
 
     private boolean initialized;
     private TrackedStructure currentStructure;
-    private String lastScanDimensionId;
-    private BlockPos lastScanPlayerPos;
-    private long lastScanAtMs = -1L;
 
     public List<ActionRecord> update(Player player, Level level) {
         if (player == null || level == null) {
@@ -58,13 +51,11 @@ public final class MajorStructureBoundaryTracker {
 
         String dimensionId = level.dimension().location().toString();
         BlockPos playerPos = player.blockPosition();
-        long now = System.currentTimeMillis();
 
         if (!initialized) {
             initialized = true;
             currentStructure = detectNearestMajorStructure(level, playerPos, dimensionId,
                     ActionTimelineRuntimeSettings.getMajorStructureEnterRadiusBlocks());
-            noteScan(playerPos, dimensionId, now);
             return List.of();
         }
 
@@ -74,13 +65,12 @@ public final class MajorStructureBoundaryTracker {
             currentStructure = null;
         }
 
-        if (currentStructure == null && shouldRescan(playerPos, dimensionId, now)) {
+        if (currentStructure == null) {
             TrackedStructure enterCandidate = detectNearestMajorStructure(
                     level,
                     playerPos,
                     dimensionId,
                     ActionTimelineRuntimeSettings.getMajorStructureEnterRadiusBlocks());
-            noteScan(playerPos, dimensionId, now);
             if (enterCandidate != null) {
                 currentStructure = enterCandidate;
                 records.add(buildBoundaryRecord(ActionType.ENTER_MAJOR_STRUCTURE, currentStructure, true));
@@ -88,25 +78,6 @@ public final class MajorStructureBoundaryTracker {
         }
 
         return records.isEmpty() ? List.of() : List.copyOf(records);
-    }
-
-    private boolean shouldRescan(BlockPos playerPos, String dimensionId, long now) {
-        if (playerPos == null || dimensionId == null) {
-            return false;
-        }
-        if (lastScanPlayerPos == null || lastScanDimensionId == null || !dimensionId.equals(lastScanDimensionId)) {
-            return true;
-        }
-        if (now - lastScanAtMs >= RESCAN_COOLDOWN_MS) {
-            return true;
-        }
-        return horizontalDistanceSqr(playerPos, lastScanPlayerPos) >= RESCAN_DISTANCE_THRESHOLD_SQR;
-    }
-
-    private void noteScan(BlockPos playerPos, String dimensionId, long now) {
-        lastScanPlayerPos = playerPos == null ? null : playerPos.immutable();
-        lastScanDimensionId = dimensionId;
-        lastScanAtMs = now;
     }
 
     private boolean isWithinExitRange(TrackedStructure structure, BlockPos playerPos, String dimensionId) {
@@ -240,15 +211,6 @@ public final class MajorStructureBoundaryTracker {
         }
 
         return Math.sqrt((double) dx * dx + (double) dz * dz);
-    }
-
-    private static double horizontalDistanceSqr(BlockPos first, BlockPos second) {
-        if (first == null || second == null) {
-            return Double.MAX_VALUE;
-        }
-        double dx = first.getX() - second.getX();
-        double dz = first.getZ() - second.getZ();
-        return dx * dx + dz * dz;
     }
 
     private record TrackedStructure(
