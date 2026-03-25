@@ -8,6 +8,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.A
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -120,6 +121,10 @@ public class TickEventWatcher {
     private long lastNonIdleActionTimestampMs = -1L;
     private long lastIdleActionTimestampMs = -1L;
 
+    // ── Studio runtime 快照脏标记 ──
+    private boolean actionTimelineSnapshotDirty;
+    private boolean episodeTimelineSnapshotDirty;
+
     // ── episode 边界动作检测状态 ──
     private final RegisteredLocationBoundaryTracker registeredLocationBoundaryTracker =
             new RegisteredLocationBoundaryTracker();
@@ -168,6 +173,8 @@ public class TickEventWatcher {
 
         // ── 发呆检测 ──
         checkIdle(now);
+
+        flushStudioRuntimeSnapshotsIfDirty(memoryOfRuntime());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1030,7 +1037,26 @@ public class TickEventWatcher {
         }
         AgentMemory memory = AgentRuntime.getInstance().getMemory();
         memory.recordObservedAction(record);
-        StudioRuntimeActionTimelineFile.recordSnapshot(memory);
+        actionTimelineSnapshotDirty = true;
+        episodeTimelineSnapshotDirty = true;
+    }
+
+    private void flushStudioRuntimeSnapshotsIfDirty(AgentMemory memory) {
+        if (memory == null) {
+            return;
+        }
+        if (actionTimelineSnapshotDirty) {
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(memory);
+            actionTimelineSnapshotDirty = false;
+        }
+        if (episodeTimelineSnapshotDirty) {
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(memory);
+            episodeTimelineSnapshotDirty = false;
+        }
+    }
+
+    private AgentMemory memoryOfRuntime() {
+        return AgentRuntime.getInstance().getMemory();
     }
 
     private void noteRecentPlayerDamage(UUID targetId, long now) {
