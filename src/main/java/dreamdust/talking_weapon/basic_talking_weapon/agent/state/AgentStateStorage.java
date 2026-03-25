@@ -171,8 +171,8 @@ public final class AgentStateStorage {
 
     private static AgentStateFile normalized(AgentStateFile raw) {
         AgentStateFile file = raw != null ? raw : new AgentStateFile();
-        if (file.schemaVersion < 4) {
-            file.schemaVersion = 4;
+        if (file.schemaVersion < 5) {
+            file.schemaVersion = 5;
         }
         if (file.state == null) {
             file.state = new AgentRuntimeStateSection();
@@ -191,6 +191,9 @@ public final class AgentStateStorage {
         if (file.state.implanted_memory_safety_net == null) {
             file.state.implanted_memory_safety_net = false;
         }
+        if (file.state.full_raw_action_log == null) {
+            file.state.full_raw_action_log = false;
+        }
         return file;
     }
 
@@ -206,6 +209,7 @@ public final class AgentStateStorage {
         file.state.recall_preset = state.getRecallPreset().name();
         file.state.recall_tuning = RecallTuningSection.fromConfig(state.getRecallTuning());
         file.state.implanted_memory_safety_net = state.isImplantedMemorySafetyNetEnabled();
+        file.state.full_raw_action_log = state.isFullRawActionLogEnabled();
         file.state.current_desire_tag = state.getCurrentDesireTag() != null ? state.getCurrentDesireTag().name() : null;
         file.state.desire_description = state.getDesireDescription();
 
@@ -242,6 +246,7 @@ public final class AgentStateStorage {
         state.setRecallPresetByName(file.state.recall_preset);
         state.setRecallTuning(file.state.recall_tuning.toConfig());
         state.setImplantedMemorySafetyNetEnabled(Boolean.TRUE.equals(file.state.implanted_memory_safety_net));
+        state.setFullRawActionLogEnabled(Boolean.TRUE.equals(file.state.full_raw_action_log));
         state.setCurrentDesireTag(parseFocusTag(file.state.current_desire_tag));
         state.setDesireDescription(file.state.desire_description);
 
@@ -274,7 +279,7 @@ public final class AgentStateStorage {
     }
 
     public static final class AgentStateFile {
-        public int schemaVersion = 4;
+        public int schemaVersion = 5;
         public AgentRuntimeStateSection state = new AgentRuntimeStateSection();
         public AgentPersonaStateSection persona_state = new AgentPersonaStateSection();
         public AttentionWeightsSection attention_weights = new AttentionWeightsSection();
@@ -291,6 +296,7 @@ public final class AgentStateStorage {
         public String recall_preset = AgentState.RecallPreset.HYBRID.name();
         public RecallTuningSection recall_tuning = RecallTuningSection.fromConfig(AgentState.RecallTuning.defaults());
         public Boolean implanted_memory_safety_net = null;
+        public Boolean full_raw_action_log = false;
         public String current_desire_tag = null;
         public String desire_description = "";
     }

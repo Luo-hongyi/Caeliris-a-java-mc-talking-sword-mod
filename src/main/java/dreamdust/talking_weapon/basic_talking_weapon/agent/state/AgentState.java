@@ -99,6 +99,14 @@ public class AgentState {
     private volatile boolean implantedMemorySafetyNetEnabled;
 
     /**
+     * 是否额外写出全量原始动作日志。
+     * <p>
+     * 该日志主要用于调试 ActionArchive / fixed segment 封装过程，
+     * 默认关闭，避免在交互触发时制造额外文本 I/O。
+     */
+    private volatile boolean fullRawActionLogEnabled;
+
+    /**
      * 当前渴望关联的认知领域（可为 null，表示无特定执念）。
      * <p>
      * 当此 Tag 与当前活跃场景 Tag 不符时，
@@ -124,6 +132,7 @@ public class AgentState {
         this.recallPreset = RecallPreset.HYBRID;
         this.recallTuning = RecallTuning.defaults();
         this.implantedMemorySafetyNetEnabled = false;
+        this.fullRawActionLogEnabled = false;
         this.currentDesireTag = null;
         this.desireDescription = "";
         this.playerAddress = "主人";
@@ -254,6 +263,14 @@ public class AgentState {
 
     public void setImplantedMemorySafetyNetEnabled(boolean enabled) {
         this.implantedMemorySafetyNetEnabled = enabled;
+    }
+
+    public boolean isFullRawActionLogEnabled() {
+        return fullRawActionLogEnabled;
+    }
+
+    public void setFullRawActionLogEnabled(boolean enabled) {
+        this.fullRawActionLogEnabled = enabled;
     }
 
     // ── CurrentDesire ─────────────────────────────────────────────────

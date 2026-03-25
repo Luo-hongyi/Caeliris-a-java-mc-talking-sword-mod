@@ -34,6 +34,7 @@ public final class StudioRuntimeRecentInteractionsFile {
     public static final String VERSION_KEY = "runtimeInteractions";
     public static final int SCHEMA_VERSION = 2;
     private static final int MAX_ENTRIES = 96;
+    private static RuntimeRecentInteractionsFileModel cachedFile;
 
     private StudioRuntimeRecentInteractionsFile() {
     }
@@ -43,9 +44,13 @@ public final class StudioRuntimeRecentInteractionsFile {
     }
 
     public static synchronized RuntimeRecentInteractionsFileModel readOrEmpty() {
+        if (cachedFile != null) {
+            return cachedFile;
+        }
         Path path = getPath();
         if (!Files.isRegularFile(path)) {
-            return new RuntimeRecentInteractionsFileModel();
+            cachedFile = new RuntimeRecentInteractionsFileModel();
+            return cachedFile;
         }
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             RuntimeRecentInteractionsFileModel file = GSON.fromJson(reader, RuntimeRecentInteractionsFileModel.class);
@@ -53,10 +58,12 @@ public final class StudioRuntimeRecentInteractionsFile {
                 file = new RuntimeRecentInteractionsFileModel();
             }
             file.normalize();
-            return file;
+            cachedFile = file;
+            return cachedFile;
         } catch (Exception e) {
             System.err.println("[TalkingWeapon/StudioRuntimeRecentInteractions] 读取失败：" + e.getMessage());
-            return new RuntimeRecentInteractionsFileModel();
+            cachedFile = new RuntimeRecentInteractionsFileModel();
+            return cachedFile;
         }
     }
 
@@ -76,10 +83,12 @@ public final class StudioRuntimeRecentInteractionsFile {
     private static void write(RuntimeRecentInteractionsFileModel file) {
         Path path = getPath();
         try {
+            file.normalize();
             Files.createDirectories(path.getParent());
             try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
                 GSON.toJson(file, writer);
             }
+            cachedFile = file;
             StudioWorkspaceManifestFile.markVersionUpdated(VERSION_KEY,
                     StudioWorkspaceManifestFile.UPDATED_BY_MINECRAFT);
         } catch (IOException e) {
