@@ -39,7 +39,7 @@ public final class InteractionTurn {
 
     public InteractionTurn(String triggerSource, String userPrompt, String userScreenshotBase64,
             List<AgentOutputRecord> agentActions, List<String> actionTypes,
-            List<TaggedContextEntry> visibleContexts) {
+            List<TaggedContextEntry> visibleContexts, long timestamp) {
         this.triggerSource = triggerSource;
         this.userPrompt = userPrompt;
         this.userScreenshotBase64 = userScreenshotBase64;
@@ -49,7 +49,7 @@ public final class InteractionTurn {
                 : Collections.unmodifiableList(new ArrayList<>(actionTypes));
         this.visibleContexts = Collections.unmodifiableList(
                 new ArrayList<>(CollectedContextSnapshot.memoryEligibleEntries(visibleContexts)));
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = timestamp;
     }
 
     public String getTriggerSource() { return triggerSource; }

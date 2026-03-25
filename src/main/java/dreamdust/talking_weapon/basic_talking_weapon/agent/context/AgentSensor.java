@@ -70,9 +70,6 @@ public class AgentSensor {
         // 0. 仅为交互型触发器建立独立日志会话，避免被动触发持续制造文件 I/O。
         if (trigger.requiresDebounce()) {
             AgentLogger.beginSession(trigger.getSourceName(), trigger.getUserMessage(), trigger.getEventInstruction());
-            if (runtime.getState().isFullRawActionLogEnabled()) {
-                AgentLogger.logActionArchiveDump(runtime.getMemory());
-            }
         }
 
         // 1. 创建 Builder，设置基础元信息

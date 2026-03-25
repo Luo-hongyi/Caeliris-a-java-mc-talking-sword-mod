@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type C
 import { buildTagRecords, studioSeedData } from "./data";
 import { DEFAULT_MEMORY_RECALL_TUNING_FILE, sanitizeMemoryRecallTuningFile } from "./memoryRecallModel";
 import { RuntimeActionTimelinePage } from "./RuntimeActionTimelinePage";
+import { RuntimeEpisodeTimelinePage } from "./RuntimeEpisodeTimelinePage";
 import { RuntimeRecallGraphPage } from "./RuntimeRecallGraphPage";
 import {
   describeWorkspaceAccessMode,
@@ -20,7 +21,12 @@ import {
   supportsDirectoryAccessApi,
   writeJsonFileToDirectory
 } from "./workspaceBridge";
-import { pingGameBridge, publishWorkspaceToGame } from "./gameBridge";
+import {
+  clearEpisodeInGame,
+  clearPlayerActionsInGame,
+  pingGameBridge,
+  publishWorkspaceToGame
+} from "./gameBridge";
 import {
   ActionTimelineTuningFile,
   AgentStateRecallTuning,
@@ -38,6 +44,7 @@ import {
   PersonaEntry,
   PromptRegistryFile,
   RuntimeActionTimelineFile,
+  RuntimeEpisodeTimelineFile,
   RuntimeRecallTraceFile,
   RuntimeRecentInteractionsFile,
   TagRecord
@@ -55,6 +62,7 @@ type PageId =
   | "thoughts"
   | "interactions"
   | "playerActions"
+  | "episode"
   | "recallGraph"
   | "locations";
 type CustomTagKind = Extract<DetailTagKind, "custom_specific" | "custom_generic">;
@@ -244,6 +252,7 @@ type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
   runtimeInteractions?: RuntimeRecentInteractionsFile | null;
   runtimeActionTimeline?: RuntimeActionTimelineFile | null;
+  runtimeEpisodeTimeline?: RuntimeEpisodeTimelineFile | null;
   runtimeRecallTrace?: RuntimeRecallTraceFile | null;
   actionTimelineTuning?: ActionTimelineTuningFile | null;
   importance?: ImportanceRegistryFile | null;
@@ -265,6 +274,7 @@ type WorkspaceManifestVersions = {
   runtimeTagView: string;
   runtimeInteractions: string;
   runtimeActionTimeline: string;
+  runtimeEpisodeTimeline: string;
   runtimeRecallTrace: string;
   actionTimelineTuning: string;
   memoryRecallTuning: string;
@@ -385,6 +395,7 @@ const pages: Array<{ id: PageId; label: string; blurb: string }> = [
   { id: "thoughts", label: "Thoughts", blurb: "查看每次 inner monologue 的完整记录，而不只看最近一次。" },
   { id: "interactions", label: "Turns", blurb: "按回合查看触发记录、说话输出与 action 列表。" },
   { id: "playerActions", label: "Player Actions", blurb: "查看 moving window、fixed segments、边界动作与 player-action 调参。" },
+  { id: "episode", label: "Episode", blurb: "查看 episode timeline、pending / split / region 状态，以及最近一次 synthesis preview。" },
   { id: "recallGraph", label: "Recall Graph", blurb: "展示最近一次记忆联想的思维导图、触发 tags 与 trace。" },
   { id: "persona", label: "Persona", blurb: "按 focus 管理人格偏好描述与其 detail tags。" },
   { id: "memory", label: "Memory", blurb: "编辑植入记忆、独立时间语义与标签。" },
@@ -653,6 +664,45 @@ function createEmptyRuntimeActionTimelineFile(): RuntimeActionTimelineFile {
       endTimestamp: 0,
       open: false,
       entries: []
+    }
+  };
+}
+
+function createEmptyRuntimeEpisodeTimelineFile(): RuntimeEpisodeTimelineFile {
+  return {
+    schemaVersion: 1,
+    generatedAt: "",
+    fallbackQuietWindowSegments: 6,
+    segmentCount: 0,
+    pendingMarkCount: 0,
+    splitPointCount: 0,
+    regionCount: 0,
+    reasonConfigs: {},
+    segments: [],
+    pendingMarks: [],
+    splitPoints: [],
+    regions: [],
+    lastUpdate: {
+      updateKind: "",
+      previousSegmentCount: 0,
+      currentSegmentCount: 0,
+      summaryLines: [],
+      addedPendingMarks: [],
+      removedPendingMarks: [],
+      addedSplitPoints: [],
+      removedSplitPoints: [],
+      addedRegions: [],
+      removedRegions: [],
+      changedReasonConfigs: []
+    },
+    latestSynthesisPreview: {
+      available: false,
+      regionStartSegmentIndex: 0,
+      regionEndSegmentIndex: 0,
+      regionStartTimestamp: 0,
+      regionEndTimestamp: 0,
+      regionPromptDraft: "",
+      segmentDrafts: []
     }
   };
 }
@@ -1163,6 +1213,211 @@ function normalizeRuntimeActionTimelineFile(value: unknown): RuntimeActionTimeli
   };
 }
 
+function normalizeRuntimeEpisodeReasonConfig(
+  value: unknown
+): RuntimeEpisodeTimelineFile["reasonConfigs"][string] {
+  if (!isRecord(value)) {
+    return {
+      highPriority: false,
+      confirmDelaySegments: 0,
+      coverBeforeSegments: 0,
+      coverAfterSegments: 0
+    };
+  }
+
+  return {
+    highPriority: value.highPriority === true,
+    confirmDelaySegments: typeof value.confirmDelaySegments === "number" ? value.confirmDelaySegments : 0,
+    coverBeforeSegments: typeof value.coverBeforeSegments === "number" ? value.coverBeforeSegments : 0,
+    coverAfterSegments: typeof value.coverAfterSegments === "number" ? value.coverAfterSegments : 0
+  };
+}
+
+function normalizeRuntimeEpisodeSegment(
+  value: unknown
+): RuntimeEpisodeTimelineFile["segments"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    index: typeof value.index === "number" ? value.index : -1,
+    startTimestamp: typeof value.startTimestamp === "number" ? value.startTimestamp : 0,
+    endTimestamp: typeof value.endTimestamp === "number" ? value.endTimestamp : 0,
+    rawStartIndex: typeof value.rawStartIndex === "number" ? value.rawStartIndex : -1,
+    rawEndIndex: typeof value.rawEndIndex === "number" ? value.rawEndIndex : -1,
+    summary: typeof value.summary === "string" ? value.summary : "",
+    promptDraft: typeof value.promptDraft === "string" ? value.promptDraft : "",
+    dominantIntent: typeof value.dominantIntent === "string" ? value.dominantIntent : "",
+    dominantScore: typeof value.dominantScore === "number" ? value.dominantScore : 0,
+    runnerUpIntent: typeof value.runnerUpIntent === "string" ? value.runnerUpIntent : "",
+    runnerUpScore: typeof value.runnerUpScore === "number" ? value.runnerUpScore : 0,
+    ambiguous: value.ambiguous === true,
+    observedActionTypes: stringArrayOf(value.observedActionTypes)
+  };
+}
+
+function normalizeRuntimeEpisodePendingMark(
+  value: unknown
+): RuntimeEpisodeTimelineFile["pendingMarks"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    detectedAtSegmentIndex: typeof value.detectedAtSegmentIndex === "number" ? value.detectedAtSegmentIndex : -1,
+    splitSegmentIndex: typeof value.splitSegmentIndex === "number" ? value.splitSegmentIndex : -1,
+    splitTimestamp: typeof value.splitTimestamp === "number" ? value.splitTimestamp : 0,
+    reason: typeof value.reason === "string" ? value.reason : "",
+    confirmAtSegmentIndex: typeof value.confirmAtSegmentIndex === "number" ? value.confirmAtSegmentIndex : -1,
+    ownerSplitterId: typeof value.ownerSplitterId === "string" ? value.ownerSplitterId : "",
+    highPriority: value.highPriority === true,
+    coverBeforeSegments: typeof value.coverBeforeSegments === "number" ? value.coverBeforeSegments : 0,
+    coverAfterSegments: typeof value.coverAfterSegments === "number" ? value.coverAfterSegments : 0
+  };
+}
+
+function normalizeRuntimeEpisodeSplitPoint(
+  value: unknown
+): RuntimeEpisodeTimelineFile["splitPoints"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    splitSegmentIndex: typeof value.splitSegmentIndex === "number" ? value.splitSegmentIndex : -1,
+    splitTimestamp: typeof value.splitTimestamp === "number" ? value.splitTimestamp : 0,
+    confirmationSegmentIndex: typeof value.confirmationSegmentIndex === "number" ? value.confirmationSegmentIndex : -1,
+    confirmationTimestamp: typeof value.confirmationTimestamp === "number" ? value.confirmationTimestamp : 0,
+    reason: typeof value.reason === "string" ? value.reason : "",
+    previousPrimaryIntent: typeof value.previousPrimaryIntent === "string" ? value.previousPrimaryIntent : "",
+    previousSecondaryIntent: typeof value.previousSecondaryIntent === "string" ? value.previousSecondaryIntent : "",
+    nextPrimaryIntent: typeof value.nextPrimaryIntent === "string" ? value.nextPrimaryIntent : "",
+    nextSecondaryIntent: typeof value.nextSecondaryIntent === "string" ? value.nextSecondaryIntent : ""
+  };
+}
+
+function normalizeRuntimeEpisodeRegion(
+  value: unknown
+): RuntimeEpisodeTimelineFile["regions"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    startSegmentIndex: typeof value.startSegmentIndex === "number" ? value.startSegmentIndex : -1,
+    endSegmentIndex: typeof value.endSegmentIndex === "number" ? value.endSegmentIndex : -1,
+    startTimestamp: typeof value.startTimestamp === "number" ? value.startTimestamp : 0,
+    endTimestamp: typeof value.endTimestamp === "number" ? value.endTimestamp : 0,
+    segmentCount: typeof value.segmentCount === "number" ? value.segmentCount : 0,
+    primaryIntent: typeof value.primaryIntent === "string" ? value.primaryIntent : "",
+    primaryScore: typeof value.primaryScore === "number" ? value.primaryScore : 0,
+    secondaryIntent: typeof value.secondaryIntent === "string" ? value.secondaryIntent : "",
+    secondaryScore: typeof value.secondaryScore === "number" ? value.secondaryScore : 0,
+    aggregateIntentScores: normalizeRuntimeActionTimelineScores(value.aggregateIntentScores)
+  };
+}
+
+function normalizeRuntimeEpisodeTimelineFile(value: unknown): RuntimeEpisodeTimelineFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const fallback = createEmptyRuntimeEpisodeTimelineFile();
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : fallback.schemaVersion,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    fallbackQuietWindowSegments:
+      typeof value.fallbackQuietWindowSegments === "number" ? value.fallbackQuietWindowSegments : fallback.fallbackQuietWindowSegments,
+    segmentCount: typeof value.segmentCount === "number" ? value.segmentCount : 0,
+    pendingMarkCount: typeof value.pendingMarkCount === "number" ? value.pendingMarkCount : 0,
+    splitPointCount: typeof value.splitPointCount === "number" ? value.splitPointCount : 0,
+    regionCount: typeof value.regionCount === "number" ? value.regionCount : 0,
+    reasonConfigs: isRecord(value.reasonConfigs)
+      ? Object.fromEntries(
+          Object.entries(value.reasonConfigs).map(([key, entry]) => [key, normalizeRuntimeEpisodeReasonConfig(entry)])
+        )
+      : {},
+    segments: Array.isArray(value.segments)
+      ? value.segments
+          .map((entry) => normalizeRuntimeEpisodeSegment(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : [],
+    pendingMarks: Array.isArray(value.pendingMarks)
+      ? value.pendingMarks
+          .map((entry) => normalizeRuntimeEpisodePendingMark(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : [],
+    splitPoints: Array.isArray(value.splitPoints)
+      ? value.splitPoints
+          .map((entry) => normalizeRuntimeEpisodeSplitPoint(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : [],
+    regions: Array.isArray(value.regions)
+      ? value.regions
+          .map((entry) => normalizeRuntimeEpisodeRegion(entry))
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : [],
+    lastUpdate: isRecord(value.lastUpdate)
+      ? {
+          updateKind: typeof value.lastUpdate.updateKind === "string" ? value.lastUpdate.updateKind : "",
+          previousSegmentCount:
+            typeof value.lastUpdate.previousSegmentCount === "number" ? value.lastUpdate.previousSegmentCount : 0,
+          currentSegmentCount:
+            typeof value.lastUpdate.currentSegmentCount === "number" ? value.lastUpdate.currentSegmentCount : 0,
+          summaryLines: stringArrayOf(value.lastUpdate.summaryLines),
+          addedPendingMarks: stringArrayOf(value.lastUpdate.addedPendingMarks),
+          removedPendingMarks: stringArrayOf(value.lastUpdate.removedPendingMarks),
+          addedSplitPoints: stringArrayOf(value.lastUpdate.addedSplitPoints),
+          removedSplitPoints: stringArrayOf(value.lastUpdate.removedSplitPoints),
+          addedRegions: stringArrayOf(value.lastUpdate.addedRegions),
+          removedRegions: stringArrayOf(value.lastUpdate.removedRegions),
+          changedReasonConfigs: stringArrayOf(value.lastUpdate.changedReasonConfigs)
+        }
+      : fallback.lastUpdate,
+    latestSynthesisPreview: isRecord(value.latestSynthesisPreview)
+      ? {
+          available: value.latestSynthesisPreview.available === true,
+          regionStartSegmentIndex:
+            typeof value.latestSynthesisPreview.regionStartSegmentIndex === "number"
+              ? value.latestSynthesisPreview.regionStartSegmentIndex
+              : 0,
+          regionEndSegmentIndex:
+            typeof value.latestSynthesisPreview.regionEndSegmentIndex === "number"
+              ? value.latestSynthesisPreview.regionEndSegmentIndex
+              : 0,
+          regionStartTimestamp:
+            typeof value.latestSynthesisPreview.regionStartTimestamp === "number"
+              ? value.latestSynthesisPreview.regionStartTimestamp
+              : 0,
+          regionEndTimestamp:
+            typeof value.latestSynthesisPreview.regionEndTimestamp === "number"
+              ? value.latestSynthesisPreview.regionEndTimestamp
+              : 0,
+          regionPromptDraft: typeof value.latestSynthesisPreview.regionPromptDraft === "string"
+            ? value.latestSynthesisPreview.regionPromptDraft
+            : "",
+          segmentDrafts: Array.isArray(value.latestSynthesisPreview.segmentDrafts)
+            ? value.latestSynthesisPreview.segmentDrafts
+                .map((entry) => {
+                  if (!isRecord(entry)) {
+                    return null;
+                  }
+                  return {
+                    segmentIndex: typeof entry.segmentIndex === "number" ? entry.segmentIndex : -1,
+                    startTimestamp: typeof entry.startTimestamp === "number" ? entry.startTimestamp : 0,
+                    endTimestamp: typeof entry.endTimestamp === "number" ? entry.endTimestamp : 0,
+                    timelineLines: stringArrayOf(entry.timelineLines),
+                    promptDraft: typeof entry.promptDraft === "string" ? entry.promptDraft : ""
+                  };
+                })
+                .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+            : []
+        }
+      : fallback.latestSynthesisPreview
+  };
+}
+
 function normalizeAgentStateRecallTuning(value: unknown): AgentStateRecallTuning {
   const source = isRecord(value) ? value : {};
 
@@ -1586,6 +1841,7 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     runtimeTagView: "missing",
     runtimeInteractions: "missing",
     runtimeActionTimeline: "missing",
+    runtimeEpisodeTimeline: "missing",
     runtimeRecallTrace: "missing",
     actionTimelineTuning: "missing",
     memoryRecallTuning: "missing",
@@ -1623,6 +1879,8 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
         typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
       runtimeActionTimeline:
         typeof rawVersions.runtimeActionTimeline === "string" ? rawVersions.runtimeActionTimeline : "missing",
+      runtimeEpisodeTimeline:
+        typeof rawVersions.runtimeEpisodeTimeline === "string" ? rawVersions.runtimeEpisodeTimeline : "missing",
       runtimeRecallTrace:
         typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
       actionTimelineTuning:
@@ -1670,6 +1928,15 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.runtimeActionTimeline = value as RuntimeActionTimelineFile;
     },
     describe: (value) => `timeline ${(value as RuntimeActionTimelineFile).fixedSegments.length} 个 fixed segments`
+  },
+  {
+    filename: "studio_runtime_episode_timeline.json",
+    versionKey: "runtimeEpisodeTimeline",
+    normalize: normalizeRuntimeEpisodeTimelineFile,
+    assign: (importedData, value) => {
+      importedData.runtimeEpisodeTimeline = value as RuntimeEpisodeTimelineFile;
+    },
+    describe: (value) => `episode ${(value as RuntimeEpisodeTimelineFile).splitPointCount} 个 split points`
   },
   {
     filename: "action_timeline_tuning.json",
@@ -1785,6 +2052,29 @@ const WORKSPACE_IMPORT_DESCRIPTOR_BY_FILENAME = new Map(
   WORKSPACE_IMPORT_DESCRIPTORS.map((descriptor) => [descriptor.filename, descriptor])
 );
 
+const WORKSPACE_RUNTIME_FILENAMES = new Set([
+  "native_catalog.snapshot.json",
+  "studio_runtime_recent_interactions.json",
+  "studio_runtime_action_timeline.json",
+  "studio_runtime_recall_trace.json",
+  "studio_runtime_episode_timeline.json"
+]);
+
+const WORKSPACE_AUTHORED_FILENAMES = new Set([
+  "action_timeline_tuning.json",
+  "memory_recall_tuning.json",
+  "importance.json",
+  "prompts.json",
+  "custom_tags.json",
+  "tag_descriptions.json",
+  "tag_relations.json",
+  "personas.json",
+  "implanted_memories.json",
+  "agent_state.json",
+  "location_registry.json",
+  "episode_tuning.json"
+]);
+
 async function readWorkspaceManifestFromDirectory(
   handle: FileSystemDirectoryHandle
 ): Promise<StudioWorkspaceManifest | null> {
@@ -1808,6 +2098,41 @@ async function loadWorkspaceDataFromDirectory(
       descriptor.versionKey &&
       previousVersions[descriptor.versionKey] === nextManifest.versions[descriptor.versionKey]
     ) {
+      continue;
+    }
+
+    const raw = await readJsonFileFromDirectory(handle, descriptor.filename);
+    if (raw === null) {
+      continue;
+    }
+
+    const normalized = descriptor.normalize(raw);
+    if (!normalized) {
+      throw new Error(`${descriptor.filename} 结构无效`);
+    }
+
+    descriptor.assign(importedData, normalized);
+    importedParts.push(descriptor.describe(normalized));
+  }
+
+  return { importedData, importedParts };
+}
+
+async function loadWorkspaceDataFromDirectoryPaths(
+  handle: FileSystemDirectoryHandle,
+  changedPaths: string[]
+): Promise<{ importedData: ImportedWorkspaceData; importedParts: string[] }> {
+  const importedData: ImportedWorkspaceData = {};
+  const importedParts: string[] = [];
+  const basenames = Array.from(new Set(
+    changedPaths
+      .map((entry) => basenameOfPath(normalizeWorkspaceRelativePath(entry)))
+      .filter(Boolean)
+  ));
+
+  for (const basename of basenames) {
+    const descriptor = WORKSPACE_IMPORT_DESCRIPTOR_BY_FILENAME.get(basename);
+    if (!descriptor) {
       continue;
     }
 
@@ -2634,6 +2959,9 @@ function App() {
   );
   const [runtimeActionTimeline, setRuntimeActionTimeline] = useState<RuntimeActionTimelineFile>(
     createEmptyRuntimeActionTimelineFile()
+  );
+  const [runtimeEpisodeTimeline, setRuntimeEpisodeTimeline] = useState<RuntimeEpisodeTimelineFile>(
+    createEmptyRuntimeEpisodeTimelineFile()
   );
   const [runtimeRecallTrace, setRuntimeRecallTrace] = useState<RuntimeRecallTraceFile>(
     createEmptyRuntimeRecallTraceFile()
@@ -3612,6 +3940,40 @@ function App() {
     );
   };
 
+  const clearPlayerActionRuntime = async () => {
+    try {
+      await clearPlayerActionsInGame();
+      setImportFeedback({
+        tone: "good",
+        message: "已请求游戏清空 player action runtime，并同步刷新 action / episode runtime 文件。"
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setImportFeedback({
+        tone: "bad",
+        message: `清空 player action runtime 失败：${message}`
+      });
+      throw error;
+    }
+  };
+
+  const clearEpisodeRuntime = async () => {
+    try {
+      await clearEpisodeInGame();
+      setImportFeedback({
+        tone: "good",
+        message: "已请求游戏清空 episode timeline runtime。"
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setImportFeedback({
+        tone: "bad",
+        message: `清空 episode runtime 失败：${message}`
+      });
+      throw error;
+    }
+  };
+
   const updateImportanceEntry = (key: string, nextValue: number) => {
     const normalizedKey = key.trim();
     if (!normalizedKey) {
@@ -3859,6 +4221,9 @@ function App() {
     if (importedData.runtimeActionTimeline) {
       setRuntimeActionTimeline(importedData.runtimeActionTimeline);
     }
+    if (importedData.runtimeEpisodeTimeline) {
+      setRuntimeEpisodeTimeline(importedData.runtimeEpisodeTimeline);
+    }
     if (importedData.actionTimelineTuning) {
       setActionTimelineTuningFile(importedData.actionTimelineTuning);
       setSchemaVersions((current) => ({
@@ -3932,7 +4297,8 @@ function App() {
   const applyImportedWorkspaceData = (
     importedData: ImportedWorkspaceData,
     importedParts: string[],
-    ignoredFiles: string[] = []
+    ignoredFiles: string[] = [],
+    options?: { resetEditors?: boolean; feedbackMessage?: string }
   ) => {
     if (!importedParts.length) {
       setImportFeedback({
@@ -3943,10 +4309,12 @@ function App() {
     }
 
     applyWorkspaceDataPatch(importedData);
-    resetEditorsAfterImport();
+    if (options?.resetEditors ?? true) {
+      resetEditorsAfterImport();
+    }
     setImportFeedback({
       tone: "good",
-      message: `已导入工作区：${importedParts.join(" / ")}${
+      message: (options?.feedbackMessage ?? `已导入工作区：${importedParts.join(" / ")}`) + `${
         ignoredFiles.length ? `。已忽略 ${ignoredFiles.length} 个当前前端未使用的文件。` : "。"
       }`
     });
@@ -4046,17 +4414,39 @@ function App() {
         }
 
         removeListener = onDesktopWorkspaceChanged(async (_payload) => {
+          const changedBasenames = Array.from(new Set(
+            _payload.changedPaths
+              .map((entry) => basenameOfPath(normalizeWorkspaceRelativePath(entry)))
+              .filter(Boolean)
+          ));
+          const authoredChanged = changedBasenames.some((name) => WORKSPACE_AUTHORED_FILENAMES.has(name));
+          const runtimeOnlyChanged = changedBasenames.length > 0
+            && !authoredChanged
+            && changedBasenames.some((name) => WORKSPACE_RUNTIME_FILENAMES.has(name));
           if (cancelled || workspaceWatcherRefreshRef.current) {
             return;
           }
           workspaceWatcherRefreshRef.current = true;
           try {
-            await importWorkspaceFromDirectoryHandle(workspaceDirectoryHandle);
-            if (!cancelled) {
-              setImportFeedback({
-                tone: "good",
-                message: "已通过桌面 watcher 自动同步工作区变化。"
-              });
+            if (runtimeOnlyChanged) {
+              const { importedData, importedParts } = await loadWorkspaceDataFromDirectoryPaths(
+                workspaceDirectoryHandle,
+                _payload.changedPaths
+              );
+              if (!cancelled && importedParts.length) {
+                applyImportedWorkspaceData(importedData, importedParts, [], {
+                  resetEditors: false,
+                  feedbackMessage: "已通过桌面 watcher 自动同步 runtime 变化"
+                });
+              }
+            } else {
+              await importWorkspaceFromDirectoryHandle(workspaceDirectoryHandle);
+              if (!cancelled) {
+                setImportFeedback({
+                  tone: "good",
+                  message: "已通过桌面 watcher 自动同步工作区变化。"
+                });
+              }
             }
           } catch (error) {
             if (!cancelled) {
@@ -4496,6 +4886,13 @@ function App() {
             runtimeActionTimeline={runtimeActionTimeline}
             tuningFile={actionTimelineTuningFile}
             onTuningChange={updateActionTimelineTuning}
+            onClearRuntime={clearPlayerActionRuntime}
+          />
+        ) : null}
+        {page === "episode" ? (
+          <RuntimeEpisodeTimelinePage
+            runtimeEpisodeTimeline={runtimeEpisodeTimeline}
+            onClearRuntime={clearEpisodeRuntime}
           />
         ) : null}
         {page === "recallGraph" ? (

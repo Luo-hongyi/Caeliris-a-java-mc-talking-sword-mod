@@ -27,6 +27,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 将 player-action 正式输出写入 Studio workspace。
@@ -34,7 +39,6 @@ import java.util.Map;
 public final class StudioRuntimeActionTimelineFile {
 
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
@@ -42,8 +46,26 @@ public final class StudioRuntimeActionTimelineFile {
     public static final String VERSION_KEY = "runtimeActionTimeline";
     public static final int SCHEMA_VERSION = 3;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
+    private static final long ASYNC_DEBOUNCE_MS = 100L;
+    private static final int MAX_RENDERED_FIXED_SEGMENTS = 24;
+    private static final int MAX_RENDERED_FIXED_ENTRIES_PER_SEGMENT = 20;
+    private static final int MAX_RENDERED_MOVING_ENTRIES = 20;
+    private static final int MAX_RENDERED_DETAIL_TAGS_PER_ENTRY = 8;
+
+    private static final Object WRITE_LOCK = new Object();
+    private static final ScheduledExecutorService WRITE_EXECUTOR = Executors.newSingleThreadScheduledExecutor(
+            new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable runnable) {
+                    Thread thread = new Thread(runnable, "TalkingWeapon-StudioActionRuntime");
+                    thread.setDaemon(true);
+                    return thread;
+                }
+            });
 
     private static long lastWriteAt = 0L;
+    private static ScheduledFuture<?> pendingWrite;
+    private static AgentMemory pendingMemory;
 
     private StudioRuntimeActionTimelineFile() {
     }
@@ -66,12 +88,20 @@ public final class StudioRuntimeActionTimelineFile {
         }
     }
 
-    public static synchronized void recordSnapshot(AgentMemory memory) {
-        long now = System.currentTimeMillis();
-        if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
+    public static void recordSnapshot(AgentMemory memory) {
+        if (memory == null) {
             return;
         }
-        writeCurrentSnapshot(memory);
+        synchronized (WRITE_LOCK) {
+            pendingMemory = memory;
+            if (pendingWrite != null) {
+                return;
+            }
+            pendingWrite = WRITE_EXECUTOR.schedule(
+                    StudioRuntimeActionTimelineFile::flushPendingSnapshot,
+                    nextWriteDelayMs(),
+                    TimeUnit.MILLISECONDS);
+        }
     }
 
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
@@ -90,6 +120,32 @@ public final class StudioRuntimeActionTimelineFile {
         }
     }
 
+    private static void flushPendingSnapshot() {
+        AgentMemory memory;
+        synchronized (WRITE_LOCK) {
+            memory = pendingMemory;
+            pendingMemory = null;
+            pendingWrite = null;
+        }
+        if (memory != null) {
+            writeCurrentSnapshot(memory);
+        }
+        synchronized (WRITE_LOCK) {
+            if (pendingMemory != null && pendingWrite == null) {
+                pendingWrite = WRITE_EXECUTOR.schedule(
+                        StudioRuntimeActionTimelineFile::flushPendingSnapshot,
+                        nextWriteDelayMs(),
+                        TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    private static long nextWriteDelayMs() {
+        long elapsed = System.currentTimeMillis() - lastWriteAt;
+        long remainingInterval = elapsed >= MIN_WRITE_INTERVAL_MS ? 0L : (MIN_WRITE_INTERVAL_MS - elapsed);
+        return Math.max(ASYNC_DEBOUNCE_MS, remainingInterval);
+    }
+
     private static RuntimeActionTimelineFileModel build(AgentMemory memory) {
         RuntimeActionTimelineFileModel file = new RuntimeActionTimelineFileModel();
         file.generatedAt = OffsetDateTime.now().toString();
@@ -106,7 +162,8 @@ public final class StudioRuntimeActionTimelineFile {
 
         List<FixedActionSegment> archiveFixedSegments =
                 memory.getActionArchive().snapshotFixedSegments(ActionTimelineRuntimeSettings.getFixedSegmentMs());
-        List<FixedActionSegment> fixedSegments = archiveFixedSegments;
+        List<FixedActionSegment> fixedSegments = tail(archiveFixedSegments, MAX_RENDERED_FIXED_SEGMENTS);
+        int visibleSegmentStartIndex = archiveFixedSegments.size() - fixedSegments.size();
         List<SegmentIntentSignals> analyses = fixedSegments.stream()
                 .map(StudioRuntimeActionTimelineFile::intentSignalsOf)
                 .toList();
@@ -116,14 +173,14 @@ public final class StudioRuntimeActionTimelineFile {
                 : PlayerIntentScorer.analyze(movingWindow);
 
         file.rawActionCount = memory.getActionArchive().size();
-        file.fixedSegmentCount = fixedSegments.size();
+        file.fixedSegmentCount = archiveFixedSegments.size();
 
         int count = Math.max(fixedSegments.size(), analyses.size());
         for (int i = 0; i < count; i++) {
             FixedActionSegment segment = i < fixedSegments.size() ? fixedSegments.get(i) : null;
             SegmentIntentSignals analysis = i < analyses.size() ? analyses.get(i) : null;
             file.fixedSegments.add(toFixedSegmentModel(
-                    i,
+                    visibleSegmentStartIndex + i,
                     segment,
                     analysis));
         }
@@ -204,7 +261,9 @@ public final class StudioRuntimeActionTimelineFile {
         if (entries == null) {
             return result;
         }
-        for (FixedActionSegmentEntry entry : entries) {
+        int limit = Math.min(entries.size(), MAX_RENDERED_FIXED_ENTRIES_PER_SEGMENT);
+        for (int i = 0; i < limit; i++) {
+            FixedActionSegmentEntry entry = entries.get(i);
             if (entry == null) {
                 continue;
             }
@@ -227,7 +286,9 @@ public final class StudioRuntimeActionTimelineFile {
         if (entries == null) {
             return result;
         }
-        for (MovingActionSegmentEntry entry : entries) {
+        int limit = Math.min(entries.size(), MAX_RENDERED_MOVING_ENTRIES);
+        for (int i = 0; i < limit; i++) {
+            MovingActionSegmentEntry entry = entries.get(i);
             if (entry == null) {
                 continue;
             }
@@ -257,9 +318,22 @@ public final class StudioRuntimeActionTimelineFile {
         for (DetailTag detailTag : detailTags) {
             if (detailTag != null) {
                 result.add(detailTag.toString());
+                if (result.size() >= MAX_RENDERED_DETAIL_TAGS_PER_ENTRY) {
+                    break;
+                }
             }
         }
         return result;
+    }
+
+    private static <T> List<T> tail(List<T> source, int maxCount) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        if (maxCount <= 0 || source.size() <= maxCount) {
+            return source;
+        }
+        return source.subList(source.size() - maxCount, source.size());
     }
 
     private static String summarizeFixedEntries(List<FixedActionSegmentEntry> entries) {

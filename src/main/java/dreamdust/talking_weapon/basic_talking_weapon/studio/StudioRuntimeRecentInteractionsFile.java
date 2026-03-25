@@ -26,14 +26,15 @@ import java.util.Locale;
 public final class StudioRuntimeRecentInteractionsFile {
 
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
     public static final String FILENAME = "studio_runtime_recent_interactions.json";
     public static final String VERSION_KEY = "runtimeInteractions";
     public static final int SCHEMA_VERSION = 2;
-    private static final int MAX_ENTRIES = 96;
+    private static final int MAX_ENTRIES = 48;
+    private static final int MAX_VISIBLE_CONTEXTS_PER_ENTRY = 12;
+    private static final int MAX_OUTPUTS_PER_ENTRY = 8;
     private static RuntimeRecentInteractionsFileModel cachedFile;
 
     private StudioRuntimeRecentInteractionsFile() {
@@ -136,6 +137,7 @@ public final class StudioRuntimeRecentInteractionsFile {
             entry.userPrompt = turn.getUserPrompt() != null ? turn.getUserPrompt() : "";
             entry.hasImage = turn.hasImage();
             entry.actionTypes = new ArrayList<>(turn.getActionTypes() != null ? turn.getActionTypes() : Collections.emptyList());
+            int visibleContextCount = 0;
             for (TaggedContextEntry visibleContext : turn.getVisibleContexts()) {
                 if (visibleContext == null) {
                     continue;
@@ -144,7 +146,12 @@ public final class StudioRuntimeRecentInteractionsFile {
                 visibleEntry.description = visibleContext.getDescription() != null ? visibleContext.getDescription() : "";
                 visibleEntry.timestamp = visibleContext.getTimestamp();
                 entry.visibleContexts.add(visibleEntry);
+                visibleContextCount++;
+                if (visibleContextCount >= MAX_VISIBLE_CONTEXTS_PER_ENTRY) {
+                    break;
+                }
             }
+            int outputCount = 0;
             for (AgentOutputRecord output : turn.getAgentActions()) {
                 if (output == null) {
                     continue;
@@ -156,6 +163,10 @@ public final class StudioRuntimeRecentInteractionsFile {
                 outputEntry.text = output.getText() != null ? output.getText() : "";
                 outputEntry.timestamp = output.getTimestamp();
                 entry.outputs.add(outputEntry);
+                outputCount++;
+                if (outputCount >= MAX_OUTPUTS_PER_ENTRY) {
+                    break;
+                }
             }
             entry.normalize();
             return entry;

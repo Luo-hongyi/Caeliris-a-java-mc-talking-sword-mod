@@ -28,7 +28,15 @@ public record EpisodeSynthesisMaterial(
                 : Collections.unmodifiableList(new ArrayList<>(segments));
     }
 
+    public List<EpisodeSegmentPromptDraft> buildSegmentPromptDrafts() {
+        return EpisodeSynthesisPromptFormatter.buildSegmentPromptDrafts(this);
+    }
+
+    public String buildRegionPromptDraft() {
+        return EpisodeSynthesisPromptFormatter.buildRegionPromptDraft(this, buildSegmentPromptDrafts());
+    }
+
     public String buildPromptDraft() {
-        return EpisodeSynthesisPromptFormatter.buildPromptDraft(this);
+        return buildRegionPromptDraft();
     }
 }

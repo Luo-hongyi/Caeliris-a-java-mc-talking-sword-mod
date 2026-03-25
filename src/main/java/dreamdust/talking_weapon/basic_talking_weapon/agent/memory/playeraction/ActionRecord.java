@@ -3,7 +3,6 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -26,9 +25,7 @@ public final class ActionRecord {
         this.target = target;
         this.count = count;
         this.timestamp = timestamp;
-        this.detailTags = (detailTags != null)
-                ? Collections.unmodifiableSet(new LinkedHashSet<>(detailTags))
-                : Collections.emptySet();
+        this.detailTags = Collections.emptySet();
     }
 
     /** 便捷工厂：无细节标签 */

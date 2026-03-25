@@ -6,6 +6,7 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -53,6 +54,10 @@ public final class StudioHttpBridgeServer {
             httpServer.createContext(API_BASE + "/health", new JsonHandler(StudioHttpBridgeServer::handleHealth));
             httpServer.createContext(API_BASE + "/export", new JsonHandler(StudioHttpBridgeServer::handleExport));
             httpServer.createContext(API_BASE + "/publish", new JsonHandler(StudioHttpBridgeServer::handlePublish));
+            httpServer.createContext(API_BASE + "/clear-player-actions",
+                    new JsonHandler(StudioHttpBridgeServer::handleClearPlayerActions));
+            httpServer.createContext(API_BASE + "/clear-episode",
+                    new JsonHandler(StudioHttpBridgeServer::handleClearEpisode));
             httpServer.setExecutor(Executors.newCachedThreadPool(new ThreadFactory() {
                 @Override
                 public Thread newThread(Runnable runnable) {
@@ -138,6 +143,43 @@ public final class StudioHttpBridgeServer {
             return Response.ok(body);
         } catch (Exception e) {
             return Response.failure("publish studio workspace", e);
+        }
+    }
+
+    private static Response handleClearPlayerActions(HttpExchange exchange) {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            return Response.methodNotAllowed();
+        }
+
+        try {
+            AgentRuntime.getInstance().getMemory().clearPlayerActionRuntime();
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("ok", true);
+            body.put("cleared", "playerActions");
+            return Response.ok(body);
+        } catch (Exception e) {
+            return Response.failure("clear player actions", e);
+        }
+    }
+
+    private static Response handleClearEpisode(HttpExchange exchange) {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            return Response.methodNotAllowed();
+        }
+
+        try {
+            AgentRuntime.getInstance().getMemory().clearEpisodeRuntime();
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("ok", true);
+            body.put("cleared", "episode");
+            return Response.ok(body);
+        } catch (Exception e) {
+            return Response.failure("clear episode", e);
         }
     }
 

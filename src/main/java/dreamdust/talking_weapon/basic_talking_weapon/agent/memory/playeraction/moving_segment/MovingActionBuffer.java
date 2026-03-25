@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -458,7 +459,6 @@ public final class MovingActionBuffer {
         private int count;
         private long firstTimestamp;
         private long lastTimestamp;
-        private final Set<DetailTag> detailTags = new LinkedHashSet<>();
 
         private MutableEntry(ActionRecord record) {
             this.type = record.getType();
@@ -466,7 +466,6 @@ public final class MovingActionBuffer {
             this.count = Math.max(1, record.getCount());
             this.firstTimestamp = Math.max(0L, record.getTimestamp());
             this.lastTimestamp = this.firstTimestamp;
-            this.detailTags.addAll(record.getDetailTags());
         }
 
         private void merge(ActionRecord record) {
@@ -477,7 +476,6 @@ public final class MovingActionBuffer {
             long timestamp = Math.max(0L, record.getTimestamp());
             this.firstTimestamp = Math.min(firstTimestamp, timestamp);
             this.lastTimestamp = Math.max(lastTimestamp, timestamp);
-            this.detailTags.addAll(record.getDetailTags());
         }
 
         private MovingActionSegmentEntry freeze() {
@@ -487,7 +485,7 @@ public final class MovingActionBuffer {
                     count,
                     firstTimestamp,
                     lastTimestamp,
-                    detailTags);
+                    Collections.emptySet());
         }
     }
 
@@ -497,7 +495,6 @@ public final class MovingActionBuffer {
         private int count;
         private long firstTimestamp;
         private long lastTimestamp;
-        private final Set<DetailTag> detailTags = new LinkedHashSet<>();
 
         private WindowMutableEntry(MovingActionSegmentEntry entry) {
             this.type = entry.getType();
@@ -505,7 +502,6 @@ public final class MovingActionBuffer {
             this.count = Math.max(1, entry.getCount());
             this.firstTimestamp = Math.max(0L, entry.getFirstTimestamp());
             this.lastTimestamp = Math.max(0L, entry.getLastTimestamp());
-            this.detailTags.addAll(entry.getDetailTags());
         }
 
         private void merge(MovingActionSegmentEntry entry) {
@@ -515,7 +511,6 @@ public final class MovingActionBuffer {
             this.count += Math.max(1, entry.getCount());
             this.firstTimestamp = Math.min(firstTimestamp, Math.max(0L, entry.getFirstTimestamp()));
             this.lastTimestamp = Math.max(lastTimestamp, Math.max(0L, entry.getLastTimestamp()));
-            this.detailTags.addAll(entry.getDetailTags());
         }
 
         private MovingActionSegmentEntry freeze() {
@@ -525,7 +520,7 @@ public final class MovingActionBuffer {
                     count,
                     firstTimestamp,
                     lastTimestamp,
-                    detailTags);
+                    Collections.emptySet());
         }
     }
 

@@ -151,6 +151,16 @@ public class AgentMemory {
         return episodeTimelineStore;
     }
 
+    public void clearPlayerActionRuntime() {
+        movingActionBuffer.clear();
+        actionArchive.clear();
+        episodeTimelineStore.clear();
+    }
+
+    public void clearEpisodeRuntime() {
+        episodeTimelineStore.clear();
+    }
+
     // ── LTMRecords ────────────────────────────────────────────
 
     /**
