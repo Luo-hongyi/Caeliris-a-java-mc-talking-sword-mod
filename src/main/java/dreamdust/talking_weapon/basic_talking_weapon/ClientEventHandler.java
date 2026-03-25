@@ -1,6 +1,8 @@
 package dreamdust.talking_weapon.basic_talking_weapon;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.task.DebugEpisodeSynthesisTask;
 import dreamdust.talking_weapon.basic_talking_weapon.gui.AgentStateScreen;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -86,7 +88,12 @@ public class ClientEventHandler {
 
         // 持剑右键时统一走 right trigger，不让方块 / 实体先吃掉交互。
         event.setCanceled(true);
-        AgentSensor.getInstance().fireTrigger(new dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.RightClickTrigger(), player);
+        boolean accepted = AgentSensor.getInstance().fireTrigger(
+                new dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.RightClickTrigger(),
+                player);
+        if (accepted) {
+            AgentRuntime.getInstance().submitBackground(new DebugEpisodeSynthesisTask());
+        }
     }
 
     private static boolean isHoldingTalkingSword(Player player) {

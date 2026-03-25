@@ -49,6 +49,21 @@ public final class EpisodeTimelineStore {
         return Optional.empty();
     }
 
+    /**
+     * 手动调试入口：读取最近一个已经闭合的 region。
+     * <p>
+     * 这里不承载正式自动调度策略，只解决“右键手动测试 synthesis prompt”时的资格判断。
+     */
+    public synchronized Optional<EpisodeSynthesisTriggerSignal> peekLatestClosedRegionDebugSignal() {
+        List<BoundaryAnchor> boundaries = collectUniqueBoundaries();
+        if (boundaries.size() < 2) {
+            return Optional.empty();
+        }
+        return buildClosedRegionSignal(
+                boundaries.get(boundaries.size() - 2),
+                boundaries.get(boundaries.size() - 1));
+    }
+
     public synchronized Optional<EpisodeSynthesisMaterial> buildSynthesisMaterial(
             EpisodeSynthesisTriggerSignal signal,
             STMPool.TimeSlice stmSlice) {
@@ -212,5 +227,63 @@ public final class EpisodeTimelineStore {
             }
         }
         return -1;
+    }
+
+    private List<BoundaryAnchor> collectUniqueBoundaries() {
+        if (timeline.segments().isEmpty() || timeline.splitPoints().isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<BoundaryAnchor> boundaries = new ArrayList<>();
+        Integer lastSplitSegmentIndex = null;
+        for (EpisodeSplitPoint splitPoint : timeline.splitPoints()) {
+            if (splitPoint == null) {
+                continue;
+            }
+            int splitSegmentIndex = splitPoint.splitSegmentIndex();
+            if (splitSegmentIndex < 0 || splitSegmentIndex > timeline.segmentCount()) {
+                continue;
+            }
+            if (lastSplitSegmentIndex != null && splitSegmentIndex == lastSplitSegmentIndex) {
+                continue;
+            }
+            boundaries.add(new BoundaryAnchor(splitSegmentIndex, Math.max(0L, splitPoint.splitTimestamp())));
+            lastSplitSegmentIndex = splitSegmentIndex;
+        }
+        return List.copyOf(boundaries);
+    }
+
+    private Optional<EpisodeSynthesisTriggerSignal> buildClosedRegionSignal(
+            BoundaryAnchor leftBoundary,
+            BoundaryAnchor rightBoundary) {
+        if (leftBoundary == null || rightBoundary == null) {
+            return Optional.empty();
+        }
+        if (rightBoundary.splitSegmentIndex() <= leftBoundary.splitSegmentIndex()) {
+            return Optional.empty();
+        }
+
+        int regionStartSegmentIndex = leftBoundary.splitSegmentIndex();
+        int regionEndSegmentIndex = rightBoundary.splitSegmentIndex() - 1;
+        FixedActionSegment startSegment = timeline.getSegment(regionStartSegmentIndex);
+        FixedActionSegment endSegment = timeline.getSegment(regionEndSegmentIndex);
+        if (startSegment == null || endSegment == null) {
+            return Optional.empty();
+        }
+
+        long stmSliceExclusiveTimestamp = rightBoundary.splitTimestamp() > 0L
+                ? rightBoundary.splitTimestamp()
+                : Math.max(endSegment.getEndTimestamp(), startSegment.getStartTimestamp());
+        return Optional.of(new EpisodeSynthesisTriggerSignal(
+                leftBoundary.splitSegmentIndex(),
+                regionStartSegmentIndex,
+                regionEndSegmentIndex,
+                rightBoundary.splitSegmentIndex(),
+                startSegment.getStartTimestamp(),
+                endSegment.getEndTimestamp(),
+                stmSliceExclusiveTimestamp));
+    }
+
+    private record BoundaryAnchor(int splitSegmentIndex, long splitTimestamp) {
     }
 }

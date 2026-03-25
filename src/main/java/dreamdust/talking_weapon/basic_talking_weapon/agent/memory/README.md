@@ -4,17 +4,18 @@
 
 另见：
 
+- [episode/EPISODE_CURRENT_STATE.md](episode/EPISODE_CURRENT_STATE.md) - episode 当前实际实现总览；从 action 采集、action archive、splitter signals、split、region 到 prompt synthesis 的最新扫描结果
 - [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
 - [MEMORY_RECALL_NEXT_STEPS.md](MEMORY_RECALL_NEXT_STEPS.md) - 当前记忆重构讨论的明日清单与续做顺序
-- [PLAYER_INTENTS.md](PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
-- [EPISODE_SPLIT_DESIGN.md](EPISODE_SPLIT_DESIGN.md) - 长期记忆生成前的 episode 分割设计，包含分钟级 intent region、偏移确认与额外事件断点
-- [EPISODE_MARK_REASON_RULES.md](EPISODE_MARK_REASON_RULES.md) - 按 reason 拆开的 episode mark / confirm / cover 规则表
-- [ACTION_SIGNAL_DESIGN.md](ACTION_SIGNAL_DESIGN.md) - player intent 需要的底层动作信号设计，以及动作时间线层的职责分工
-- [LLM_FACING_ACTION_ARCHIVE.md](LLM_FACING_ACTION_ARCHIVE.md) - 面向 prompt / LTM 生成的动作档案整理层设计草案
+- [playeraction/PLAYER_INTENTS.md](playeraction/PLAYER_INTENTS.md) - LTM 生成前的玩家意图层设计草案，用于 episode 分割与长期记忆主题约束
+- [episode/splitter/EPISODE_SPLIT_DESIGN.md](episode/splitter/EPISODE_SPLIT_DESIGN.md) - episode split 的历史设计稿；若与当前代码不一致，请以 `episode/EPISODE_CURRENT_STATE.md` 为准
+- [episode/EPISODE_MARK_REASON_RULES.md](episode/EPISODE_MARK_REASON_RULES.md) - 按 reason 拆开的 episode mark / confirm / cover 规则表；与当前实现的差异请结合 `episode/EPISODE_CURRENT_STATE.md` 一起看
+- [playeraction/ACTION_SIGNAL_DESIGN.md](playeraction/ACTION_SIGNAL_DESIGN.md) - player intent / action signal 的历史设计稿；当前动作链路请以 `episode/EPISODE_CURRENT_STATE.md` 为准
+- [playeraction/LLM_FACING_ACTION_ARCHIVE.md](playeraction/LLM_FACING_ACTION_ARCHIVE.md) - 面向 prompt / LTM 生成的动作档案整理层设计草案
 
-截至 `2026-03-16`，`agent.memory` 子系统的状态可以概括为：
+截至 `2026-03-25`，`agent.memory` 子系统的状态可以概括为：
 
 - `MovingActionBuffer`、`ActionArchive`、`STMPool`、`AgentMemory`、`LTMEntry`、`LTMStorage` 已经构成可运行的短期记忆 + 长期记忆存储骨架。
 - `ActionArchive` 之上已经接入第一版 `PlayerIntentScorer`：它会对固定时间窗压缩结果做规则打分，输出每段的多意图分数、主导意图和理由，供 episode / LTM 设计阶段调试。

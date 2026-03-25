@@ -74,11 +74,15 @@ public final class EpisodeTracker {
             return snapshotTimeline();
         }
 
+        boolean firstSegment = segments.isEmpty();
         int nextSegmentIndex = segments.size();
         EpisodeTimeline detectTimeline = snapshotTimeline();
         List<EpisodePendingMark> detectedMarks = detectPendingMarks(detectTimeline, nextSegment, nextSegmentIndex);
 
         segments.add(nextSegment);
+        if (firstSegment) {
+            seedBootstrapSplit(nextSegment);
+        }
         addPendingMarks(detectedMarks);
         applyImmediateHighPriorityCleanup(detectedMarks);
         rebuildRegions();
@@ -314,5 +318,23 @@ public final class EpisodeTracker {
                 .comparingInt(EpisodeSplitPoint::splitSegmentIndex)
                 .thenComparingLong(EpisodeSplitPoint::splitTimestamp)
                 .thenComparing(splitPoint -> splitPoint.reason() != null ? splitPoint.reason().name() : ""));
+    }
+
+    private void seedBootstrapSplit(FixedActionSegment firstSegment) {
+        if (firstSegment == null || !splitPoints.isEmpty()) {
+            return;
+        }
+        long splitTimestamp = Math.max(0L, firstSegment.getStartTimestamp());
+        splitPoints.add(new EpisodeSplitPoint(
+                0,
+                splitTimestamp,
+                0,
+                splitTimestamp,
+                null,
+                null,
+                null,
+                null,
+                null));
+        sortSplitPoints();
     }
 }

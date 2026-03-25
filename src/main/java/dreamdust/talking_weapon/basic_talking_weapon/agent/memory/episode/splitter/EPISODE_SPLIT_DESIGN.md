@@ -1,5 +1,8 @@
 # Episode Split 设计草案
 
+> 注意：本文是设计稿与历史推演，不保证和当前实现完全一致。
+> 当前 episode 实际运行链路请优先看 [../EPISODE_CURRENT_STATE.md](../EPISODE_CURRENT_STATE.md)。
+
 本文档用于定义 **LTM 生成前的 episode 分割层**。
 
 它回答的问题是：

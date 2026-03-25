@@ -1,5 +1,8 @@
 # Context Layering Design
 
+> 注意：本文是设计稿，不完全等于当前实现。
+> 当前 `segment -> region -> synthesis` 的实际行为请优先看 [EPISODE_CURRENT_STATE.md](EPISODE_CURRENT_STATE.md)。
+
 ## Goal
 
 在 `segment -> region -> episode synthesis` 这条链路里，`context entry` 不再只是一种东西。

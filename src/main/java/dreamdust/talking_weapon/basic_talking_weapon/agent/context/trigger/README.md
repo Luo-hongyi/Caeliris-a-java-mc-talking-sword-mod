@@ -21,6 +21,8 @@
 | `RightClickTrigger` | 玩家右键使用武器 | Base + 截图 + 实体 + 环境... | `LLMInteractionTask` | `TOP_K_RIGHT_CLICK` |
 | `BiomeChangeTrigger` | 进入新群系（由 TickEventWatcher 检测） | Base + 按配置动态组合 | `LLMInteractionTask` | `TOP_K_BIOME_CHANGE` |
 
+> 当前有一个临时调试接线：客户端持剑右键成功提交 `RightClickTrigger` 后，还会额外提交一个后台 `DebugEpisodeSynthesisTask`，用于测试最近一个已闭合 episode region 的 prompt draft 生成是否会产生卡顿。这个调试任务不经过 Studio runtime preview，也不提交 LTM。
+
 ### 记忆/反思触发器（过渡骨架，尚未完成当前路线接线）
 
 | 类名 | 触发条件 | 用途 |

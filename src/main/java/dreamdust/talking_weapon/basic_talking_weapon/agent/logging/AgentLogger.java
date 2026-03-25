@@ -10,6 +10,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTur
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
@@ -545,6 +546,14 @@ public final class AgentLogger {
         return start.format(WINDOW_TIME_FMT) + " -> " + end.format(WINDOW_TIME_FMT);
     }
 
+    private static String formatTimestamp(long timestampMs) {
+        if (timestampMs < 0L) {
+            return "(unknown)";
+        }
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestampMs), ZoneId.systemDefault())
+                .format(DISPLAY_TIME_FMT);
+    }
+
     private static void writeEpisodePendingMarks(PrintWriter w, List<EpisodePendingMark> pendingMarks, String indent) {
         w.println(indent + "pending marks:");
         if (pendingMarks == null || pendingMarks.isEmpty()) {
@@ -821,6 +830,53 @@ public final class AgentLogger {
             w.println("│ " + line);
         }
         w.println();
+    }
+
+    /**
+     * 将一次手动 episode synthesis 调试结果写入独立日志文件。
+     * <p>
+     * 这里故意不复用当前 trigger session，避免与前台交互日志并发写同一个文件。
+     */
+    public static synchronized void logEpisodeSynthesisDebug(
+            EpisodeSynthesisTriggerSignal signal,
+            String promptDraft) {
+        try {
+            Path dir = ensureLogDir();
+            String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
+            File file = dir.resolve("episode_synthesis_debug_" + timestamp + ".log").toFile();
+            try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
+                w.println("╔══════════════════════════════════════════════════════════════╗");
+                w.println("║      TALKING WEAPON — EPISODE SYNTHESIS DEBUG LOG           ║");
+                w.println("╚══════════════════════════════════════════════════════════════╝");
+                w.println();
+                w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
+                w.println("日志: " + file.getName());
+                w.println();
+
+                writeSectionHeader(w, "Signal");
+                if (signal == null) {
+                    w.println("signal: (null)");
+                } else {
+                    w.println("leftBoundarySplitSegmentIndex: " + signal.leftBoundarySplitSegmentIndex());
+                    w.println("regionStartSegmentIndex: " + signal.regionStartSegmentIndex());
+                    w.println("regionEndSegmentIndex: " + signal.regionEndSegmentIndex());
+                    w.println("rightBoundarySplitSegmentIndex: " + signal.rightBoundarySplitSegmentIndex());
+                    w.println("regionStartTimestamp: " + formatTimestamp(signal.regionStartTimestamp()));
+                    w.println("regionEndTimestamp: " + formatTimestamp(signal.regionEndTimestamp()));
+                    w.println("stmSliceExclusiveTimestamp: " + formatTimestamp(signal.stmSliceExclusiveTimestamp()));
+                }
+                w.println();
+
+                writeSectionHeader(w, "Prompt Draft");
+                String safePromptDraft = promptDraft == null ? "" : promptDraft;
+                for (String line : safePromptDraft.split("\n")) {
+                    w.println("│ " + line);
+                }
+                w.println();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     /**

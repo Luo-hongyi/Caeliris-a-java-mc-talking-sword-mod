@@ -1,5 +1,8 @@
 # Action Signal 设计草案
 
+> 注意：本文是设计稿与历史讨论，不保证和当前实现完全一致。
+> 当前实际运行链路请优先看 [../episode/EPISODE_CURRENT_STATE.md](../episode/EPISODE_CURRENT_STATE.md)。
+
 本文档用于补充 **player intent 分析所需的底层动作信号层**，并回顾当前 `RecentActionBuffer + ActionArchive` 的职责分工。
 
 它回答两个问题：
