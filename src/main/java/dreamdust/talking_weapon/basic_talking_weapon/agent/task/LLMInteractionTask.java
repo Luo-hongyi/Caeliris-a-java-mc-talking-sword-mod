@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.action.ActionRegistry
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.SpeechAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.ContextSupplementaryFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.PersonaMatcher;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.SubconsciousBooster;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.VisibleContextSelector;
@@ -366,44 +367,11 @@ public class LLMInteractionTask extends AgentTask {
             AgentLogger.logDebug(extrasLog.toString());
 
             // 仅将简短的概述注入提示词（如存在）
-            String nearbyCreatures = ctx.getExtra("nearby_creatures");
-            String nearbyObjects = ctx.getExtra("nearby_objects");
-            String blocksSummary = ctx.getExtra("surrounding_blocks_summary");
-            String playerPos = ctx.getExtra("player_pos");
-            String groundLevel = ctx.getExtra("ground_level");
-            String timeDesc = ctx.getExtra("time_desc");
-            String dimension = ctx.getExtra("dimension");
-            String registeredLocation = ctx.getExtra("registered_location_prompt");
-            String biome = ctx.getBiome();
-
-            if (nearbyCreatures != null || nearbyObjects != null || blocksSummary != null || playerPos != null
-                    || timeDesc != null || biome != null || dimension != null || registeredLocation != null) {
-                sb.append("[Supplementary Info]\n");
-                if (timeDesc != null || biome != null || dimension != null) {
-                    sb.append("- 环境: ");
-                    if (timeDesc != null)
-                        sb.append("时间为").append(timeDesc).append("  ");
-                    if (dimension != null)
-                        sb.append("身处维度:").append(dimension).append("  ");
-                    if (biome != null)
-                        sb.append("群系:").append(biome);
-                    sb.append("\n");
-                }
-                if (registeredLocation != null) {
-                    sb.append("- 当前登记地点: ").append(registeredLocation).append("\n");
-                }
-                if (playerPos != null) {
-                    sb.append("- 主人当前坐标: ").append(playerPos);
-                    if (groundLevel != null)
-                        sb.append("  地面高度Y=").append(groundLevel);
-                    sb.append("\n");
-                }
-                if (nearbyCreatures != null)
-                    sb.append("- 附近生物: ").append(nearbyCreatures).append("\n");
-                if (nearbyObjects != null)
-                    sb.append("- 附近实体: ").append(nearbyObjects).append("\n");
-                if (blocksSummary != null)
-                    sb.append("- ").append(blocksSummary).append("\n");
+            if (ContextSupplementaryFormatter.appendSection(
+                    sb,
+                    "[Supplementary Info]",
+                    "- ",
+                    ctx.getExtras())) {
                 sb.append("\n");
             }
         }

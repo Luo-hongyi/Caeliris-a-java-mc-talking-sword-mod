@@ -180,6 +180,7 @@ public class BaseContextCollector implements IContextCollector {
                 biomeHolder.unwrapKey().ifPresent(key -> {
                     String biomeId = key.location().toString();
                     builder.biome(biomeId);
+                    builder.extra("biome", biomeId);
 
                     // ── 标签：群系 ──
                     builder.addTaggedEntry(TaggedContextEntry.builder()

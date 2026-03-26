@@ -2,9 +2,12 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.DeathSplitter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeIntentMath;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeSplitReason;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeSplitter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.FallbackQuietSplitter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.IntentShiftSplitter;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.ObservedActionTypeSplitter;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 
 import java.util.ArrayList;
@@ -38,6 +41,26 @@ public final class EpisodeTracker {
         this(List.of(
                 new IntentShiftSplitter(),
                 new DeathSplitter(),
+                new ObservedActionTypeSplitter(
+                        "enter_registered_location",
+                        ActionType.ENTER_REGISTERED_LOCATION,
+                        EpisodeSplitReason.ENTER_REGISTERED_LOCATION,
+                        false),
+                new ObservedActionTypeSplitter(
+                        "leave_registered_location",
+                        ActionType.LEAVE_REGISTERED_LOCATION,
+                        EpisodeSplitReason.LEAVE_REGISTERED_LOCATION,
+                        false),
+                new ObservedActionTypeSplitter(
+                        "enter_major_structure",
+                        ActionType.ENTER_MAJOR_STRUCTURE,
+                        EpisodeSplitReason.ENTER_MAJOR_STRUCTURE,
+                        false),
+                new ObservedActionTypeSplitter(
+                        "exit_major_structure",
+                        ActionType.EXIT_MAJOR_STRUCTURE,
+                        EpisodeSplitReason.EXIT_MAJOR_STRUCTURE,
+                        false),
                 new FallbackQuietSplitter()));
     }
 

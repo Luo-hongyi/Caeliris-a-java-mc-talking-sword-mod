@@ -27,11 +27,17 @@ public final class PlayerIntentScorer {
     private static final double TRAVEL_WEIGHT = 4.0;
     private static final double BIOME_CHANGE_WEIGHT = 1.4;
     private static final double DIM_CHANGE_WEIGHT = 4.5;
+    private static final double REGISTERED_LOCATION_ENTER_TRAVEL_WEIGHT = 1.1;
+    private static final double REGISTERED_LOCATION_LEAVE_TRAVEL_WEIGHT = 1.6;
+    private static final double MAJOR_STRUCTURE_ENTER_TRAVEL_WEIGHT = 0.9;
+    private static final double MAJOR_STRUCTURE_EXIT_TRAVEL_WEIGHT = 1.4;
 
     private static final double EXPLORE_LOOT_CONTAINER_WEIGHT = 5.0;
     private static final double EXPLORE_TRAVEL_SUPPORT = 1.0;
     private static final double EXPLORE_BIOME_SUPPORT = 0.8;
     private static final double EXPLORE_DIM_SUPPORT = 1.6;
+    private static final double MAJOR_STRUCTURE_ENTER_EXPLORE_WEIGHT = 2.1;
+    private static final double MAJOR_STRUCTURE_EXIT_EXPLORE_WEIGHT = 0.8;
 
     private static final double ATTACK_WEIGHT = 2.2;
     private static final double KILL_WEIGHT = 4.0;
@@ -147,6 +153,34 @@ public final class PlayerIntentScorer {
         addTypeScore(acc, PlayerIntent.TRAVEL, countByType, ActionType.TRAVEL, TRAVEL_WEIGHT, "travel anchor");
         addTypeScore(acc, PlayerIntent.TRAVEL, countByType, ActionType.BIOME_CHANGE, BIOME_CHANGE_WEIGHT, "biome shift");
         addTypeScore(acc, PlayerIntent.TRAVEL, countByType, ActionType.DIM_CHANGE, DIM_CHANGE_WEIGHT, "dimension shift");
+        addTypeScore(
+                acc,
+                PlayerIntent.TRAVEL,
+                countByType,
+                ActionType.ENTER_REGISTERED_LOCATION,
+                REGISTERED_LOCATION_ENTER_TRAVEL_WEIGHT,
+                "registered location arrival");
+        addTypeScore(
+                acc,
+                PlayerIntent.TRAVEL,
+                countByType,
+                ActionType.LEAVE_REGISTERED_LOCATION,
+                REGISTERED_LOCATION_LEAVE_TRAVEL_WEIGHT,
+                "registered location departure");
+        addTypeScore(
+                acc,
+                PlayerIntent.TRAVEL,
+                countByType,
+                ActionType.ENTER_MAJOR_STRUCTURE,
+                MAJOR_STRUCTURE_ENTER_TRAVEL_WEIGHT,
+                "major structure arrival");
+        addTypeScore(
+                acc,
+                PlayerIntent.TRAVEL,
+                countByType,
+                ActionType.EXIT_MAJOR_STRUCTURE,
+                MAJOR_STRUCTURE_EXIT_TRAVEL_WEIGHT,
+                "major structure departure");
     }
 
     private static void scoreExplore(Map<ActionType, Integer> countByType, ScoreAccumulator acc) {
@@ -178,6 +212,20 @@ public final class PlayerIntentScorer {
                 ActionType.DIM_CHANGE,
                 EXPLORE_DIM_SUPPORT,
                 "exploration dimension support");
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.ENTER_MAJOR_STRUCTURE,
+                MAJOR_STRUCTURE_ENTER_EXPLORE_WEIGHT,
+                "entered major structure");
+        addTypeScore(
+                acc,
+                PlayerIntent.EXPLORE,
+                countByType,
+                ActionType.EXIT_MAJOR_STRUCTURE,
+                MAJOR_STRUCTURE_EXIT_EXPLORE_WEIGHT,
+                "left major structure");
     }
 
     private static void scoreCombat(Map<ActionType, Integer> countByType, ScoreAccumulator acc) {

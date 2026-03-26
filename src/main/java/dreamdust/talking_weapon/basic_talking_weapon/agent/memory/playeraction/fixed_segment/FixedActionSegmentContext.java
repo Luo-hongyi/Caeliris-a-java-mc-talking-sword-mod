@@ -6,7 +6,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTur
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * FixedActionSegment 附带的上下文与交互承载区。
@@ -14,7 +16,8 @@ import java.util.List;
  * 这里显式区分两层：
  * <ul>
  * <li>defaultContextEntries：segment 开始时采集的兜底环境快照</li>
- * <li>contextEntries：后续由 STM slice 融合进来的正式上下文；若非空则覆盖默认快照</li>
+ * <li>contextEntries：后续由 STM slice 融合进来的正式上下文；entries / visible entries 保持 merged 优先</li>
+ * <li>contextExtras：supplementary extras 采用 default snapshot 兜底，再由 merged extras 覆盖同名 key</li>
  * </ul>
  */
 public final class FixedActionSegmentContext {
@@ -79,6 +82,29 @@ public final class FixedActionSegmentContext {
 
     public List<TaggedContextEntry> getMergedVisibleContextEntries() {
         return mergedContextSnapshot.getVisibleTaggedEntries();
+    }
+
+    public Map<String, String> getDefaultContextExtras() {
+        return defaultContextSnapshot.getExtras();
+    }
+
+    public Map<String, String> getMergedContextExtras() {
+        return mergedContextSnapshot.getExtras();
+    }
+
+    public Map<String, String> getEffectiveContextExtras() {
+        Map<String, String> defaultExtras = defaultContextSnapshot.getExtras();
+        Map<String, String> mergedExtras = mergedContextSnapshot.getExtras();
+        if (defaultExtras.isEmpty()) {
+            return mergedExtras;
+        }
+        if (mergedExtras.isEmpty()) {
+            return defaultExtras;
+        }
+
+        LinkedHashMap<String, String> effective = new LinkedHashMap<>(defaultExtras);
+        effective.putAll(mergedExtras);
+        return Collections.unmodifiableMap(effective);
     }
 
     public List<TaggedContextEntry> getEffectiveContextEntries() {

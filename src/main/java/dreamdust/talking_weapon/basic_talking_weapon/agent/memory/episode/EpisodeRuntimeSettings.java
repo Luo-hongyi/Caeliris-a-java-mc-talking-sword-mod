@@ -112,6 +112,10 @@ public final class EpisodeRuntimeSettings {
         EnumMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> defaults =
                 new EnumMap<>(EpisodeSplitReason.class);
         defaults.put(EpisodeSplitReason.DEATH, new EpisodeReasonRuntimeConfig(true, 1, 1, 1));
+        defaults.put(EpisodeSplitReason.ENTER_REGISTERED_LOCATION, new EpisodeReasonRuntimeConfig(true, 0, 1, 1));
+        defaults.put(EpisodeSplitReason.LEAVE_REGISTERED_LOCATION, new EpisodeReasonRuntimeConfig(true, 0, 1, 1));
+        defaults.put(EpisodeSplitReason.ENTER_MAJOR_STRUCTURE, new EpisodeReasonRuntimeConfig(true, 0, 1, 1));
+        defaults.put(EpisodeSplitReason.EXIT_MAJOR_STRUCTURE, new EpisodeReasonRuntimeConfig(true, 0, 1, 1));
         defaults.put(EpisodeSplitReason.INTENT_HARD_SHIFT, new EpisodeReasonRuntimeConfig(false, 1, 1, 1));
         defaults.put(EpisodeSplitReason.INTENT_SOFT_SHIFT, new EpisodeReasonRuntimeConfig(false, 1, 1, 1));
         defaults.put(EpisodeSplitReason.FALLBACK_QUIET_GAP, new EpisodeReasonRuntimeConfig(false, 1, 1, 1));

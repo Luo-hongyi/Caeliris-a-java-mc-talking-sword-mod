@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 唯一 high priority 的 v2 splitter。
+ * 死亡硬断点 splitter。
  */
 public final class DeathSplitter implements EpisodeSplitter {
 
@@ -35,13 +35,11 @@ public final class DeathSplitter implements EpisodeSplitter {
             return List.of();
         }
 
-        EpisodeSplitReason reason = EpisodeSplitReason.DEATH;
-        EpisodeReasonRuntimeConfig config = EpisodeRuntimeSettings.getConfig(reason);
         return List.of(EpisodePendingMark.fromRuntimeConfig(
                 latestSegmentIndex,
                 latestSegmentIndex + 1,
                 latestSegment.getEndTimestamp(),
-                reason,
+                EpisodeSplitReason.DEATH,
                 id()));
     }
 

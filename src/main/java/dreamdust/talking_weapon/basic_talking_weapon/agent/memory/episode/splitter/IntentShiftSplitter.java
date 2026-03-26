@@ -3,9 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.split
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeDetectContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeReasonRuntimeConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRuntimeSettings;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
@@ -54,7 +52,6 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
             return List.of();
         }
 
-        EpisodeReasonRuntimeConfig config = EpisodeRuntimeSettings.getConfig(reason);
         return List.of(EpisodePendingMark.fromRuntimeConfig(
                 latestSegmentIndex,
                 latestSegmentIndex,
@@ -106,7 +103,7 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
                 pendingMark.splitTimestamp(),
                 latestSegmentIndex,
                 latestSegment.getEndTimestamp(),
-                pendingMark.reason(),
+                confirmedReason,
                 previousRegion.primaryIntent(),
                 previousRegion.secondaryIntent(),
                 nextProfile.primaryIntent(),
@@ -121,10 +118,13 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
         if (primaryIntent == null) {
             return null;
         }
+        if (primaryIntent == previousRegion.primaryIntent()) {
+            return null;
+        }
 
         EnumSet<PlayerIntent> previousActive = previousRegion.getActiveIntents();
         if (previousActive.contains(primaryIntent)) {
-            return null;
+            return EpisodeSplitReason.INTENT_SOFT_SHIFT;
         }
 
         EnumSet<PlayerIntent> overlap = EnumSet.copyOf(candidateProfile.activeIntents());

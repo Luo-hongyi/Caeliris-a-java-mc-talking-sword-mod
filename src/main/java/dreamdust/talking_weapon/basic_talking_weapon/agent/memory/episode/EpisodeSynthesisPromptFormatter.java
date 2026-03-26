@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.ContextSupplementaryFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
@@ -54,6 +55,7 @@ public final class EpisodeSynthesisPromptFormatter {
 
         sb.append("[Segment ").append(segmentIndex).append("]\n");
         sb.append("范围: ").append(segment.getStartTimestamp()).append(" -> ").append(segment.getEndTimestamp()).append("\n");
+        appendSupplementaryInfo(sb, context);
 
         if (turns.isEmpty()) {
             appendQuietSegment(sb, segment, context);
@@ -94,6 +96,21 @@ public final class EpisodeSynthesisPromptFormatter {
         sb.append("玩家动作:\n");
         for (FixedActionSegmentEntry entry : segment.getEntries()) {
             sb.append("- ").append(describeActionEntry(entry)).append("\n");
+        }
+    }
+
+    private static void appendSupplementaryInfo(
+            StringBuilder sb,
+            FixedActionSegmentContext context) {
+        if (context == null) {
+            return;
+        }
+        if (ContextSupplementaryFormatter.appendSection(
+                sb,
+                "环境补充:",
+                "- ",
+                context.getEffectiveContextExtras())) {
+            sb.append("\n");
         }
     }
 

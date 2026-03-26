@@ -5,6 +5,7 @@
 另见：
 
 - [episode/EPISODE_CURRENT_STATE.md](episode/EPISODE_CURRENT_STATE.md) - episode 当前实际实现总览；从 action 采集、action archive、splitter signals、split、region 到 prompt synthesis 的最新扫描结果
+- [episode/EPISODE_SYNTHESIS_PLAN.md](episode/EPISODE_SYNTHESIS_PLAN.md) - episode-first 的长期记忆合成计划；记录 gate、favorability 迁移、现状摘要等后续主线决策
 - [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值

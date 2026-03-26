@@ -62,7 +62,13 @@
   - 产出 `ENTER_MAJOR_STRUCTURE`
   - 产出 `EXIT_MAJOR_STRUCTURE`
 
-这些动作现在已经进入 `ActionArchive` / `FixedActionSegment`，也会进入 `observedActionTypes`，但 **当前没有任何 episode splitter 消费它们**。
+这些动作现在已经进入 `ActionArchive` / `FixedActionSegment`，也会进入 `observedActionTypes`。
+当前它们已经被正式接入 episode splitter：
+
+- `ENTER_REGISTERED_LOCATION`
+- `LEAVE_REGISTERED_LOCATION`
+- `ENTER_MAJOR_STRUCTURE`
+- `EXIT_MAJOR_STRUCTURE`
 
 ### 2.3 动作进入内存
 
@@ -129,6 +135,8 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 - `defaultContextSnapshot` 是段开始时的兜底快照
 - `mergedContextSnapshot` 是后续 STM slice 融合进来的正式上下文
+- `taggedEntries / visible contexts` 当前仍按 merged 优先使用
+- `extras` 当前用于 supplementary/base environment info，采用 `default extras + merged extras overlay` 的方式读取，避免 merged STM 把默认环境信息抹掉
 - `interactionTurns` 是该段内归桶后的 LLM 交互回合
 
 ## 4. Prompt 侧 moving segment 现状

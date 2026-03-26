@@ -60,7 +60,12 @@ public final class StudioEpisodeTuningFile {
         if (!Files.isRegularFile(path)) {
             return false;
         }
-        applyToRuntime(readOrEmpty());
+        EpisodeTuningFileModel file = readOrEmpty();
+        boolean needsBackfill = needsWorkspaceBackfill(file);
+        applyToRuntime(file);
+        if (needsBackfill) {
+            write(file);
+        }
         return true;
     }
 
@@ -126,6 +131,18 @@ public final class StudioEpisodeTuningFile {
         } catch (IOException e) {
             System.err.println("[TalkingWeapon/StudioEpisodeTuning] 写入失败：" + e.getMessage());
         }
+    }
+
+    private static boolean needsWorkspaceBackfill(EpisodeTuningFileModel file) {
+        if (file == null || file.reasons == null) {
+            return true;
+        }
+        for (EpisodeSplitReason reason : EpisodeSplitReason.values()) {
+            if (!file.reasons.containsKey(reason.workspaceKey())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static final class EpisodeTuningFileModel {
