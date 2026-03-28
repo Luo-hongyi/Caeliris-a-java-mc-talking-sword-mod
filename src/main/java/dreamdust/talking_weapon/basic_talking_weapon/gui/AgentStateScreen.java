@@ -9,6 +9,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.Prim
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.RecallPreset;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePaths;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspacePublisher;
@@ -322,6 +324,19 @@ public class AgentStateScreen extends Screen {
         }).bounds(0, 0, 100, 20).build();
 
         scrollList.addEntry(new ThreeButtonActionRow(left, rowWidth, connectStudioWorkspace, exportStudioWorkspace, publishStudioWorkspace));
+
+        Button compactSegmentStore = Button.builder(Component.literal("执行"), btn -> {
+            try {
+                boolean compacted = AgentRuntime.getInstance().getMemory().compactDiscardedSourceMaterial();
+                StudioRuntimeActionTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+                StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+                btn.setMessage(Component.literal(compacted ? "§a已 Compact" : "§e无待处理"));
+            } catch (Exception e) {
+                handleStudioActionError(btn, "compact fixed segment store", e);
+            }
+        }).bounds(0, 0, 100, 20).build();
+        scrollList.addEntry(new ButtonRow("手动 Compact 段文件", left, rowWidth, compactSegmentStore));
+        scrollList.addEntry(new LabelRow("§8  将 pending discard windows 物理压进当前 fixed segment 持久化，并立即回写 runtime snapshot"));
 
         // ── 底部导航按钮 ──
         int btnW = 92;

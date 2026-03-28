@@ -8,6 +8,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.F
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentUpdate;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -92,8 +93,13 @@ public class AgentMemory {
                 StudioRuntimeActionTimelineFile.readPersistedFixedSegmentRuntimeState());
         this.stmPool = new STMPool();
         this.episodeTimelineStore = new EpisodeTimelineStore();
-        applyFixedSegmentUpdate(this.actionArchive.compactDiscardedSegments());
-        this.episodeTimelineStore.replaceFixedSegments(this.actionArchive.snapshotFixedSegments());
+        boolean compactedOnStartup = compactDiscardedSourceMaterial();
+        if (!compactedOnStartup) {
+            this.episodeTimelineStore.replaceFixedSegments(this.actionArchive.snapshotFixedSegments());
+        } else {
+            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(this);
+            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(this);
+        }
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
         this.recentRecallSuppressionTable = new LinkedHashMap<>();
@@ -214,6 +220,24 @@ public class AgentMemory {
                     removedEpisodeSegmentCount,
                     removedStmContextCount,
                     removedStmInteractionCount);
+        }
+    }
+
+    /**
+     * 手动触发一次 fixed segment discard compact。
+     * <p>
+     * 当前用于 UI / 手动保存入口：
+     * 若存在 pending discard windows，则将它们物理压进 sealed fixed segments，
+     * 然后把 episode timeline 同步到 compact 后的 active view。
+     */
+    public boolean compactDiscardedSourceMaterial() {
+        synchronized (sourceMaterialLock) {
+            FixedSegmentUpdate update = actionArchive.compactDiscardedSegments();
+            if (!update.hasChanges()) {
+                return false;
+            }
+            applyFixedSegmentUpdate(update);
+            return true;
         }
     }
 
