@@ -4,6 +4,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.Set;
 public final class FixedActionSegmentBuffer {
 
     private final List<FixedActionSegment> sealedSegments = new ArrayList<>();
+    private final List<FixedSegmentDiscardWindow> discardWindows = new ArrayList<>();
     private final List<ActionArchiveCompactor.FixedSegmentContextSeed> contextSeeds = new ArrayList<>();
     private MutableOpenSegment openSegment;
     private long fixedSegmentMs = -1L;
@@ -35,6 +38,7 @@ public final class FixedActionSegmentBuffer {
 
     public void clear() {
         sealedSegments.clear();
+        discardWindows.clear();
         contextSeeds.clear();
         openSegment = null;
         fixedSegmentMs = -1L;
@@ -66,6 +70,7 @@ public final class FixedActionSegmentBuffer {
             }
         }
 
+        restoreDiscardWindows(previousState);
         fixedSegmentMs = effectiveSegmentMs;
         pruneContextSeeds(records);
         dirty = false;
@@ -124,26 +129,59 @@ public final class FixedActionSegmentBuffer {
 
     public FixedSegmentUpdate sealElapsedSegments(long now) {
         FixedActionSegment sealed = sealElapsedOpenSegment(now);
-        return sealed == null ? FixedSegmentUpdate.none() : FixedSegmentUpdate.append(sealed);
+        if (sealed == null) {
+            return FixedSegmentUpdate.none();
+        }
+        return isDiscardedSegmentId(sealed.getSegmentId())
+                ? FixedSegmentUpdate.none()
+                : FixedSegmentUpdate.append(sealed);
     }
 
     public List<FixedActionSegment> snapshotSealedSegments() {
         return List.copyOf(sealedSegments);
     }
 
+    public List<FixedActionSegment> snapshotActiveSealedSegments() {
+        if (sealedSegments.isEmpty() || discardWindows.isEmpty()) {
+            return List.copyOf(sealedSegments);
+        }
+        Map<Long, Integer> segmentIndexById = buildSegmentIndexById(sealedSegments);
+        Set<Long> discardedSegmentIds = collectDiscardedSegmentIds(sealedSegments, discardWindows, segmentIndexById);
+        if (discardedSegmentIds.isEmpty()) {
+            return List.copyOf(sealedSegments);
+        }
+        ArrayList<FixedActionSegment> active = new ArrayList<>(sealedSegments.size());
+        for (FixedActionSegment segment : sealedSegments) {
+            if (segment == null || discardedSegmentIds.contains(segment.getSegmentId())) {
+                continue;
+            }
+            active.add(segment);
+        }
+        return List.copyOf(active);
+    }
+
     public FixedActionSegment snapshotOpenSegment() {
         return openSegment == null ? null : openSegment.freeze();
     }
 
+    public List<FixedSegmentDiscardWindow> snapshotDiscardWindows() {
+        return List.copyOf(discardWindows);
+    }
+
     public FixedSegmentBufferRuntimeState snapshotRuntimeState() {
-        if (fixedSegmentMs <= 0L && sealedSegments.isEmpty() && openSegment == null && nextSegmentId <= 1L) {
+        if (fixedSegmentMs <= 0L
+                && sealedSegments.isEmpty()
+                && openSegment == null
+                && discardWindows.isEmpty()
+                && nextSegmentId <= 1L) {
             return FixedSegmentBufferRuntimeState.empty();
         }
         return new FixedSegmentBufferRuntimeState(
                 fixedSegmentMs,
                 nextSegmentId,
                 snapshotSealedSegments(),
-                snapshotOpenSegment());
+                snapshotOpenSegment(),
+                snapshotDiscardWindows());
     }
 
     public void restoreRuntimeState(FixedSegmentBufferRuntimeState runtimeState) {
@@ -165,7 +203,37 @@ public final class FixedActionSegmentBuffer {
         if (persistedOpenSegment != null) {
             openSegment = MutableOpenSegment.from(persistedOpenSegment);
         }
+        restoreDiscardWindows(runtimeState);
         dirty = false;
+    }
+
+    public boolean registerDiscardWindow(FixedSegmentDiscardWindow discardWindow) {
+        if (discardWindow == null || sealedSegments.isEmpty()) {
+            return false;
+        }
+        Map<Long, Integer> segmentIndexById = buildSegmentIndexById(sealedSegments);
+        if (!resolvesToValidRange(discardWindow, segmentIndexById)) {
+            return false;
+        }
+        for (FixedSegmentDiscardWindow existing : discardWindows) {
+            if (existing != null && existing.sameRange(discardWindow)) {
+                return false;
+            }
+        }
+        discardWindows.add(discardWindow);
+        pruneDiscardWindows();
+        return true;
+    }
+
+    public boolean compactDiscardedSegments() {
+        if (sealedSegments.isEmpty() || discardWindows.isEmpty()) {
+            return false;
+        }
+        List<FixedActionSegment> active = snapshotActiveSealedSegments();
+        sealedSegments.clear();
+        sealedSegments.addAll(active);
+        discardWindows.clear();
+        return true;
     }
 
     private FixedActionSegment sealElapsedOpenSegment(long now) {
@@ -190,6 +258,15 @@ public final class FixedActionSegmentBuffer {
 
     private long allocateSegmentId() {
         return nextSegmentId++;
+    }
+
+    private boolean isDiscardedSegmentId(long segmentId) {
+        if (segmentId <= 0L || discardWindows.isEmpty() || sealedSegments.isEmpty()) {
+            return false;
+        }
+        Map<Long, Integer> segmentIndexById = buildSegmentIndexById(sealedSegments);
+        Set<Long> discardedSegmentIds = collectDiscardedSegmentIds(sealedSegments, discardWindows, segmentIndexById);
+        return discardedSegmentIds.contains(segmentId);
     }
 
     private List<FixedActionSegment> assignSegmentIds(
@@ -222,6 +299,77 @@ public final class FixedActionSegmentBuffer {
             assigned.add(segment.withSegmentId(allocateSegmentId()));
         }
         return List.copyOf(assigned);
+    }
+
+    private void restoreDiscardWindows(FixedSegmentBufferRuntimeState runtimeState) {
+        discardWindows.clear();
+        if (runtimeState == null || runtimeState.getDiscardWindows() == null || runtimeState.getDiscardWindows().isEmpty()) {
+            return;
+        }
+        discardWindows.addAll(runtimeState.getDiscardWindows());
+        pruneDiscardWindows();
+    }
+
+    private void pruneDiscardWindows() {
+        if (discardWindows.isEmpty() || sealedSegments.isEmpty()) {
+            if (sealedSegments.isEmpty()) {
+                discardWindows.clear();
+            }
+            return;
+        }
+        Map<Long, Integer> segmentIndexById = buildSegmentIndexById(sealedSegments);
+        discardWindows.removeIf(window -> window == null || !resolvesToValidRange(window, segmentIndexById));
+    }
+
+    private static boolean resolvesToValidRange(
+            FixedSegmentDiscardWindow discardWindow,
+            Map<Long, Integer> segmentIndexById) {
+        if (discardWindow == null || segmentIndexById == null || segmentIndexById.isEmpty()) {
+            return false;
+        }
+        Integer startIndex = segmentIndexById.get(discardWindow.startSegmentId());
+        Integer endIndex = segmentIndexById.get(discardWindow.endSegmentId());
+        return startIndex != null && endIndex != null && endIndex >= startIndex;
+    }
+
+    private static Map<Long, Integer> buildSegmentIndexById(List<FixedActionSegment> segments) {
+        HashMap<Long, Integer> segmentIndexById = new HashMap<>();
+        if (segments == null || segments.isEmpty()) {
+            return segmentIndexById;
+        }
+        for (int i = 0; i < segments.size(); i++) {
+            FixedActionSegment segment = segments.get(i);
+            if (segment == null || segment.getSegmentId() <= 0L) {
+                continue;
+            }
+            segmentIndexById.put(segment.getSegmentId(), i);
+        }
+        return segmentIndexById;
+    }
+
+    private static Set<Long> collectDiscardedSegmentIds(
+            List<FixedActionSegment> segments,
+            List<FixedSegmentDiscardWindow> discardWindows,
+            Map<Long, Integer> segmentIndexById) {
+        HashSet<Long> discardedSegmentIds = new HashSet<>();
+        if (segments == null || segments.isEmpty() || discardWindows == null || discardWindows.isEmpty()) {
+            return discardedSegmentIds;
+        }
+        for (FixedSegmentDiscardWindow discardWindow : discardWindows) {
+            if (!resolvesToValidRange(discardWindow, segmentIndexById)) {
+                continue;
+            }
+            int startIndex = segmentIndexById.get(discardWindow.startSegmentId());
+            int endIndex = segmentIndexById.get(discardWindow.endSegmentId());
+            for (int i = startIndex; i <= endIndex; i++) {
+                FixedActionSegment segment = segments.get(i);
+                if (segment == null || segment.getSegmentId() <= 0L) {
+                    continue;
+                }
+                discardedSegmentIds.add(segment.getSegmentId());
+            }
+        }
+        return discardedSegmentIds;
     }
 
     private static long windowStart(long timestamp, long fixedSegmentMs) {

@@ -10,6 +10,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.A
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentDiscardWindow;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentBufferRuntimeState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry;
@@ -43,7 +44,7 @@ public final class StudioRuntimeActionTimelineFile {
 
     public static final String FILENAME = "studio_runtime_action_timeline.json";
     public static final String VERSION_KEY = "runtimeActionTimeline";
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -208,11 +209,7 @@ public final class StudioRuntimeActionTimelineFile {
             return false;
         }
         return previous.index == expectedIndex
-                && previous.segmentId == current.getSegmentId()
-                && previous.startTimestamp == current.getStartTimestamp()
-                && previous.endTimestamp == current.getEndTimestamp()
-                && previous.rawStartIndex == current.getRawStartIndex()
-                && previous.rawEndIndex == current.getRawEndIndex();
+                && sameStableIdentity(previous, current);
     }
 
     private static String fixedSegmentSequenceTokenOf(List<FixedActionSegment> fixedSegments) {
@@ -230,11 +227,24 @@ public final class StudioRuntimeActionTimelineFile {
         if (segment == null) {
             return "null";
         }
-        return segment.getSegmentId()
-                + ":" + segment.getStartTimestamp()
-                + ":" + segment.getEndTimestamp()
-                + ":" + segment.getRawStartIndex()
-                + ":" + segment.getRawEndIndex();
+        return segment.stableIdentityToken();
+    }
+
+    private static boolean sameStableIdentity(
+            RuntimeFixedSegmentModel previous,
+            FixedActionSegment current) {
+        if (previous == null || current == null) {
+            return false;
+        }
+        if (previous.segmentId > 0L && current.hasAssignedSegmentId()) {
+            return previous.segmentId == current.getSegmentId()
+                    && previous.startTimestamp == current.getStartTimestamp()
+                    && previous.endTimestamp == current.getEndTimestamp();
+        }
+        return previous.startTimestamp == current.getStartTimestamp()
+                && previous.endTimestamp == current.getEndTimestamp()
+                && previous.rawStartIndex == current.getRawStartIndex()
+                && previous.rawEndIndex == current.getRawEndIndex();
     }
 
     private static RuntimeFixedSegmentModel toFixedSegmentModel(
@@ -634,6 +644,7 @@ public final class StudioRuntimeActionTimelineFile {
         public long fixedSegmentMs = -1L;
         public long nextSegmentId = 1L;
         public Map<Long, FixedActionSegmentContext> sealedSegmentContexts = new LinkedHashMap<>();
+        public List<RuntimeFixedSegmentDiscardWindowModel> discardWindows = new ArrayList<>();
         public RuntimePersistedFixedSegmentModel openSegment;
 
         public static RuntimeFixedSegmentBufferStateModel from(FixedSegmentBufferRuntimeState runtimeState) {
@@ -657,6 +668,14 @@ public final class StudioRuntimeActionTimelineFile {
             if (runtimeState.getOpenSegment() != null) {
                 model.openSegment = RuntimePersistedFixedSegmentModel.from(runtimeState.getOpenSegment());
             }
+            if (runtimeState.getDiscardWindows() != null) {
+                for (FixedSegmentDiscardWindow discardWindow : runtimeState.getDiscardWindows()) {
+                    if (discardWindow == null) {
+                        continue;
+                    }
+                    model.discardWindows.add(RuntimeFixedSegmentDiscardWindowModel.from(discardWindow));
+                }
+            }
             model.normalize();
             return model;
         }
@@ -665,6 +684,7 @@ public final class StudioRuntimeActionTimelineFile {
             sealedSegmentContexts = sealedSegmentContexts == null
                     ? new LinkedHashMap<>()
                     : new LinkedHashMap<>(sealedSegmentContexts);
+            discardWindows = discardWindows == null ? new ArrayList<>() : new ArrayList<>(discardWindows);
         }
 
         public FixedSegmentBufferRuntimeState toRuntimeState(List<RuntimeFixedSegmentModel> fixedSegments) {
@@ -689,11 +709,57 @@ public final class StudioRuntimeActionTimelineFile {
             if (maxObservedSegmentId > 0L) {
                 resolvedNextSegmentId = Math.max(resolvedNextSegmentId, maxObservedSegmentId + 1L);
             }
+            ArrayList<FixedSegmentDiscardWindow> restoredDiscardWindows = new ArrayList<>();
+            if (discardWindows != null) {
+                for (RuntimeFixedSegmentDiscardWindowModel discardWindow : discardWindows) {
+                    if (discardWindow == null) {
+                        continue;
+                    }
+                    FixedSegmentDiscardWindow restored = discardWindow.toDiscardWindow();
+                    if (restored != null) {
+                        restoredDiscardWindows.add(restored);
+                    }
+                }
+            }
             return new FixedSegmentBufferRuntimeState(
                     fixedSegmentMs,
                     resolvedNextSegmentId,
                     restoredSealedSegments,
-                    restoredOpenSegment);
+                    restoredOpenSegment,
+                    restoredDiscardWindows);
+        }
+    }
+
+    public static final class RuntimeFixedSegmentDiscardWindowModel {
+        public long startSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long endSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long startTimestamp;
+        public long endTimestamp;
+        public long createdAt;
+
+        public static RuntimeFixedSegmentDiscardWindowModel from(FixedSegmentDiscardWindow discardWindow) {
+            RuntimeFixedSegmentDiscardWindowModel model = new RuntimeFixedSegmentDiscardWindowModel();
+            if (discardWindow == null) {
+                return model;
+            }
+            model.startSegmentId = discardWindow.startSegmentId();
+            model.endSegmentId = discardWindow.endSegmentId();
+            model.startTimestamp = discardWindow.startTimestamp();
+            model.endTimestamp = discardWindow.endTimestamp();
+            model.createdAt = discardWindow.createdAt();
+            return model;
+        }
+
+        public FixedSegmentDiscardWindow toDiscardWindow() {
+            if (startSegmentId <= 0L || endSegmentId <= 0L) {
+                return null;
+            }
+            return new FixedSegmentDiscardWindow(
+                    startSegmentId,
+                    endSegmentId,
+                    Math.max(0L, startTimestamp),
+                    Math.max(Math.max(0L, startTimestamp), endTimestamp),
+                    Math.max(0L, createdAt));
         }
     }
 

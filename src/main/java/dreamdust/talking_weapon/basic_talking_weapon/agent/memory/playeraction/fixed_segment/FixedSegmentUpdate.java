@@ -45,6 +45,6 @@ public record FixedSegmentUpdate(
     }
 
     public boolean hasChanges() {
-        return !segments.isEmpty();
+        return replaceAll || !segments.isEmpty();
     }
 }

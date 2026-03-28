@@ -251,9 +251,15 @@ public final class StudioRuntimeActionSegmentStoreFile {
         if (left == null || right == null) {
             return false;
         }
-        return left.index == right.index
-                && left.segmentId == right.segmentId
-                && left.startTimestamp == right.startTimestamp
+        if (left.index != right.index) {
+            return false;
+        }
+        if (left.segmentId > 0L && right.segmentId > 0L) {
+            return left.segmentId == right.segmentId
+                    && left.startTimestamp == right.startTimestamp
+                    && left.endTimestamp == right.endTimestamp;
+        }
+        return left.startTimestamp == right.startTimestamp
                 && left.endTimestamp == right.endTimestamp
                 && left.rawStartIndex == right.rawStartIndex
                 && left.rawEndIndex == right.rawEndIndex;

@@ -214,11 +214,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
         if (segment == null) {
             return "null";
         }
-        return segment.getSegmentId()
-                + ":" + segment.getStartTimestamp()
-                + ":" + segment.getEndTimestamp()
-                + ":" + segment.getRawStartIndex()
-                + ":" + segment.getRawEndIndex();
+        return segment.stableIdentityToken();
     }
 
     private static String pendingMarkTokenOf(EpisodePendingMark pendingMark) {
@@ -468,6 +464,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public List<String> observedActionTypes = new ArrayList<>();
 
         String signature() {
+            if (segmentId > 0L) {
+                return index + "|" + segmentId + "|" + startTimestamp + "|" + endTimestamp;
+            }
             return index + "|" + segmentId + "|" + startTimestamp + "|" + endTimestamp + "|" + rawStartIndex + "|" + rawEndIndex;
         }
     }

@@ -1,8 +1,10 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimelineStore;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionArchive;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentUpdate;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
@@ -28,6 +30,8 @@ import java.util.UUID;
  * 的访问集中在 AgentRuntime 的 worker 线程中，调用方确保不并发写。
  */
 public class AgentMemory {
+
+    private final Object sourceMaterialLock = new Object();
 
     // ═══════════════════════════════════════════════════════════════
     // Layer 0: Identity（永久）
@@ -88,6 +92,8 @@ public class AgentMemory {
                 StudioRuntimeActionTimelineFile.readPersistedFixedSegmentRuntimeState());
         this.stmPool = new STMPool();
         this.episodeTimelineStore = new EpisodeTimelineStore();
+        applyFixedSegmentUpdate(this.actionArchive.compactDiscardedSegments());
+        this.episodeTimelineStore.replaceFixedSegments(this.actionArchive.snapshotFixedSegments());
         this.ltmRecords = new java.util.ArrayList<>();
         this.ltmRecordsCapacity = 100;
         this.recentRecallSuppressionTable = new LinkedHashMap<>();
@@ -130,9 +136,11 @@ public class AgentMemory {
         if (record == null) {
             return;
         }
-        FixedSegmentUpdate fixedSegmentUpdate = actionArchive.add(record);
-        applyFixedSegmentUpdate(fixedSegmentUpdate);
-        movingActionBuffer.add(record.copy());
+        synchronized (sourceMaterialLock) {
+            FixedSegmentUpdate fixedSegmentUpdate = actionArchive.add(record);
+            applyFixedSegmentUpdate(fixedSegmentUpdate);
+            movingActionBuffer.add(record.copy());
+        }
     }
 
     private void applyFixedSegmentUpdate(FixedSegmentUpdate update) {
@@ -152,6 +160,61 @@ public class AgentMemory {
 
     public EpisodeTimelineStore getEpisodeTimelineStore() {
         return episodeTimelineStore;
+    }
+
+    /**
+     * source material 的统一 owner-side cleanup 入口。
+     * <p>
+     * 当前先统一串起：
+     * - raw action archive 的内存裁剪
+     * - fixed segment discard window 登记
+     * - episode timeline replace-all(active fixed segments)
+     * - STM local discard
+     * <p>
+     * 后续 fixed segment tombstone / persisted discard state 也应继续收口在这条主路径。
+     */
+    public MemorySourceMaterialCleanupResult cleanupSourceMaterial(MemorySourceMaterialCleanupPlan plan) {
+        if (plan == null) {
+            throw new IllegalArgumentException("plan must not be null");
+        }
+
+        synchronized (sourceMaterialLock) {
+            MemorySourceMaterialWindow resolvedWindow = resolveActiveCleanupWindow(plan.window());
+            if (resolvedWindow == null) {
+                return MemorySourceMaterialCleanupResult.stale(plan);
+            }
+
+            int beforeRawActionCount = actionArchive.size();
+            int beforeEpisodeSegmentCount = episodeTimelineStore.snapshot().segmentCount();
+            int beforeStmContextCount = stmPool.contextSize();
+            int beforeStmInteractionCount = stmPool.turnSize();
+
+            int removedRawActionCount = actionArchive.discardRawRecordsBetween(
+                    resolvedWindow.startTimestamp(),
+                    resolvedWindow.endTimestamp());
+            FixedSegmentUpdate fixedSegmentUpdate = actionArchive.registerDiscardWindow(
+                    resolvedWindow.startSegmentId(),
+                    resolvedWindow.endSegmentId(),
+                    resolvedWindow.startTimestamp(),
+                    resolvedWindow.endTimestamp());
+            applyFixedSegmentUpdate(fixedSegmentUpdate);
+
+            stmPool.discardBetween(
+                    resolvedWindow.stmSliceStartTimestamp(),
+                    resolvedWindow.stmSliceExclusiveTimestamp());
+
+            int removedEpisodeSegmentCount = Math.max(0, beforeEpisodeSegmentCount - episodeTimelineStore.snapshot().segmentCount());
+            int removedStmContextCount = Math.max(0, beforeStmContextCount - stmPool.contextSize());
+            int removedStmInteractionCount = Math.max(0, beforeStmInteractionCount - stmPool.turnSize());
+
+            return new MemorySourceMaterialCleanupResult(
+                    plan,
+                    false,
+                    removedRawActionCount,
+                    removedEpisodeSegmentCount,
+                    removedStmContextCount,
+                    removedStmInteractionCount);
+        }
     }
 
     // ── LTMRecords ────────────────────────────────────────────
@@ -247,6 +310,38 @@ public class AgentMemory {
 
     public RecallRuntimeState getRecallRuntimeState() {
         return recallRuntimeState;
+    }
+
+    private MemorySourceMaterialWindow resolveActiveCleanupWindow(MemorySourceMaterialWindow requestedWindow) {
+        if (requestedWindow == null) {
+            return null;
+        }
+
+        EpisodeTimeline timeline = episodeTimelineStore.snapshot();
+        FixedActionSegment startSegment = timeline.getSegmentById(requestedWindow.startSegmentId());
+        FixedActionSegment endSegment = timeline.getSegmentById(requestedWindow.endSegmentId());
+        if (startSegment == null || endSegment == null) {
+            return null;
+        }
+
+        if (startSegment.getStartTimestamp() != requestedWindow.startTimestamp()
+                || endSegment.getEndTimestamp() != requestedWindow.endTimestamp()) {
+            return null;
+        }
+
+        int startIndex = timeline.indexOfSegmentId(requestedWindow.startSegmentId());
+        int endIndex = timeline.indexOfSegmentId(requestedWindow.endSegmentId());
+        if (startIndex < 0 || endIndex < startIndex) {
+            return null;
+        }
+
+        return new MemorySourceMaterialWindow(
+                startSegment.getSegmentId(),
+                endSegment.getSegmentId(),
+                startSegment.getStartTimestamp(),
+                endSegment.getEndTimestamp(),
+                requestedWindow.stmSliceStartTimestamp(),
+                requestedWindow.stmSliceExclusiveTimestamp());
     }
 
     private void trimRecentRecallSuppressionTable() {

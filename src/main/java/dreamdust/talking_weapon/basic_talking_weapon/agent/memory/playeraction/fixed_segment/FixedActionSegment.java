@@ -124,6 +124,35 @@ public final class FixedActionSegment implements ActionSegmentView {
         return segmentId > 0L;
     }
 
+    public boolean sameStableIdentity(FixedActionSegment other) {
+        if (other == null) {
+            return false;
+        }
+        if (hasAssignedSegmentId() && other.hasAssignedSegmentId()) {
+            return segmentId == other.segmentId
+                    && startTimestamp == other.startTimestamp
+                    && endTimestamp == other.endTimestamp;
+        }
+        return startTimestamp == other.startTimestamp
+                && endTimestamp == other.endTimestamp
+                && rawStartIndex == other.rawStartIndex
+                && rawEndIndex == other.rawEndIndex;
+    }
+
+    public String stableIdentityToken() {
+        if (hasAssignedSegmentId()) {
+            return segmentId + ":" + startTimestamp + ":" + endTimestamp;
+        }
+        return "unassigned:"
+                + startTimestamp
+                + ":"
+                + endTimestamp
+                + ":"
+                + rawStartIndex
+                + ":"
+                + rawEndIndex;
+    }
+
     public FixedActionSegment withSegmentId(long nextSegmentId) {
         return new FixedActionSegment(
                 nextSegmentId,

@@ -61,6 +61,75 @@
 - task 只负责 material / prompt / LLM / parse / validate / commit
 - resolved / rollback 与 reject cleanup 仍由 owner-side 闭环处理
 
+## 当前断点（2026-03-28）
+
+这一轮工作结束后，当前实际断点可以收敛为下面两组。
+
+### 已完成的收敛
+
+- reflection 正式链路已经拔除了跨边界 `timelineIndex`
+- `EpisodeSynthesisTriggerSignal -> ReflectionMaterialRequest -> exporter -> material` 现在只保留：
+  - `regionId`
+  - `segmentId`
+  - boundary segment ids
+  - region / STM 的时间窗
+- `DefaultReflectionMaterialExporter` 已改成只按 `segmentId` 解析正式 segment range
+- `STMPool` 已具备：
+  - `snapshotBetween(...)`
+  - `discardBetween(...)`
+- owner-side 共用 cleanup payload 已冻结：
+  - `MemorySourceMaterialCleanupPlan`
+  - `MemorySourceMaterialWindow`
+  - `MemorySourceMaterialCleanupReason`
+
+### 当前最重要的未完成点
+
+1. `AgentMemory` 要成为 source material cleanup 的统一 owner API
+
+- 统一吃 `MemorySourceMaterialCleanupPlan`
+- 统一执行：
+  - fixed segment source discard
+  - 局部 STM discard
+  - episode timeline rebuild
+
+2. fixed segment 真源还没有正式 discard / tombstone 机制
+
+- 当前即使 episode / STM 侧做了 cleanup
+- 如果上游 raw action source 不同步处理
+- 被删掉的 segment 仍可能在后续 rebuild 时重新长回来
+
+3. reflection 主线已经有骨架，但还没接成完整闭环
+
+- 还没有 internal trigger 真正提交 `EpisodeSynthesisReflectionTask`
+- `collectEpisodeSynthesisTriggerSignals()` 仍返回空列表
+- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 仍只停在 prepared skeleton
+- 还没有真正的：
+  - LLM 调用
+  - root parse / validate
+  - task-owned commit
+  - success / rollback / consumed cleanup
+
+### 下一阶段推荐顺序
+
+1. 先完成 `AgentMemory` 的 unified cleanup executor
+- 让 owner-side 真的能统一处理一段 source material window
+
+2. 再给 fixed segment 真源补 discard / tombstone 机制
+- 让 segment “被抛出后不会复活”
+
+3. 接回 episode gate / holdback / ready signal
+- 让 `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 真正产出 ready signals
+
+4. 重建 internal trigger
+- 逐个调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`
+
+5. 补齐单次 reflection task 的完整 LLM 闭环
+- instruction
+- root output contract
+- parse / validate / cross-validate
+- task-owned commit
+- owner-side consumed cleanup
+
 
 ## 记忆分层
 

@@ -132,13 +132,7 @@ public final class EpisodeTimelineStore {
         if (left == null || right == null) {
             return false;
         }
-        return left.getStartTimestamp() == right.getStartTimestamp()
-                && left.getEndTimestamp() == right.getEndTimestamp()
-                && left.getRawStartIndex() == right.getRawStartIndex()
-                && left.getRawEndIndex() == right.getRawEndIndex()
-                && (left.getSegmentId() <= 0L
-                        || right.getSegmentId() <= 0L
-                        || left.getSegmentId() == right.getSegmentId());
+        return left.sameStableIdentity(right);
     }
 
     private List<EpisodeRegion> collectRegionStateSeeds() {

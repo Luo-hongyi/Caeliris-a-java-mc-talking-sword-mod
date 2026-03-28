@@ -718,3 +718,221 @@
 - manifest 是否需要再批处理
 - 轻量 timeline JSON 是否还需要进一步降频
 - episode timeline 是否需要进一步拆 payload
+
+### 11.3 持久化后端再评估：SQLite / 二进制 / 继续沿用 JSON
+
+在继续推进 fixed segment discard 之前，这里补一次后端形式评估，避免我们在“业务复杂度”和“基础设施复杂度”之间做错交换。
+
+先把结论说准：
+
+- 当前最大的性能风险，不是“JSON 这个格式天生太慢”
+- 而是“中间删除语义会把 append-only 路径打回整份文件重写”
+- 只要仍然要求对大文件做中间物理删除，那么：
+  - 换成别的序列化格式也只能降低单次编码成本
+  - 不能从根上消掉“整份重写”这个成本来源
+
+也就是说，问题要拆成两层：
+
+1. 写出格式本身的 CPU / 体积成本
+2. 是否允许继续维持 append-only 主路径，而把删除改成小 delta / tombstone / discard state
+
+#### A. 直接切到 SQLite
+
+SQLite 的优点很明确：
+
+- 天然支持 row-level insert / update / delete
+- 中间删除不需要整份重写大 JSON 文件
+- 可以直接按 `segmentId` / timestamp range 做查询
+- 后续如果 discard、region、gate state 继续增多，它在数据组织上会更从容
+
+但它在当前项目里的成本也很实在：
+
+1. 依赖与打包成本
+
+- 当前工程没有任何 JDBC / SQLite 依赖
+- Forge 模组里引入 SQLite，意味着要处理：
+  - 依赖引入
+  - 最终 jar 打包
+  - 运行时 native / classloader 行为
+- 这不是业务层小改，而是基础设施升级
+
+2. Studio 工具链也要一起改
+
+- 当前 Studio 前端直接读取：
+  - `studio_runtime_action_timeline.json`
+  - `studio_runtime_action_segments.json`
+- 如果 segment 真源迁到 SQLite：
+  - Studio 就不能再直接读工作区文件得到完整视图
+  - 必须补一层导出 / bridge / query API
+
+3. 调试可见性会下降
+
+- 现在 workspace 文件是可直接肉眼检查的
+- SQLite 虽然更正式，但对当前“边开发边看文件”的工作流不如 JSON 直接
+
+4. 它解决的是“存储引擎问题”，不是“领域模型问题”
+
+- 即使换成 SQLite，我们仍然要定义：
+  - discard 的正式语义
+  - rebuild 时如何避免 deleted segment 复活
+  - episode / reflection 如何引用 active view
+- 也就是说，SQLite 不能替代 discard lifecycle 设计本身
+
+因此，当前阶段如果直接切 SQLite，收益是：
+
+- 可以把“中间删除导致整份重写”交给数据库层处理
+
+代价是：
+
+- 用一整套新的存储基础设施，替代当前已经接进 Studio 的 JSON workspace 主线
+
+这个交换只有在下面场景里才值得：
+
+- 我们明确接受 workspace 不再以 JSON 文件为主真源
+- 后续不仅 fixed segment，连 episode / region / STM / recall trace 都准备系统性数据库化
+- 我们愿意为此补 Studio 读取桥接层
+
+如果暂时没有这三个前提，SQLite 现在偏重。
+
+#### B. 换成“比 JSON 更轻”的二进制格式
+
+例如：
+
+- MessagePack / CBOR
+- protobuf length-delimited log
+- 自定义 binary journal
+
+这条路确实可以降低：
+
+- 序列化 CPU
+- 文件体积
+- 解析对象时的字符串开销
+
+但它有一个根本限制：
+
+- 如果中间删除仍然要求物理改写“大 segment 主文件”
+- 那么它还是会整份重写
+
+所以二进制格式能解决的是：
+
+- “单次重写更轻一些”
+
+解决不了的是：
+
+- “为什么会被迫重写整份文件”
+
+同时它还会带来：
+
+- Studio 不能直接读
+- 调试不可视
+- 需要自定义导出或反序列化工具
+
+因此，单独把 JSONL 换成 binary log，不足以成为当前最优先方案。
+
+#### C. 保持 JSON 主线，但把“删除”改成小型追加日志
+
+如果目标是：
+
+- 不引入数据库
+- 不破坏当前 Studio workspace 读法
+- 避免中间删除时重写整份大 segment 文件
+
+那么最务实的方向其实是：
+
+- 保留 `studio_runtime_action_segments.data.jsonl` 作为 append-only 的 physical segment journal
+- 另加一个很小的 append-only discard log / tombstone log
+  - 可以是 JSONL
+  - 也可以是更简单的紧凑文本 / binary event log
+- 运行时恢复时：
+  - 先读 physical segments
+  - 再 replay discard events
+  - 得到 active segment view
+
+这条路的优点是：
+
+- 不需要改掉当前整体工作区架构
+- 大文件仍然只负责追加
+- 中间删除只写一条小记录
+- Studio 仍然可以保留 JSON 入口
+
+它的本质和“persisted tombstone / discard window”是一回事，但结构上更扁平：
+
+- 不一定要把所有 discard state 都塞进 runtime state 大对象
+- 可以单独放成一个 sidecar journal
+
+如果后面确认 discard 规则会越来越复杂，再收敛回 runtime state 或数据库都还来得及。
+
+#### D. 当前推荐
+
+基于当前工程形态，当前更推荐的优先级是：
+
+1. 不直接切 SQLite
+
+- 它能解决部分写盘问题
+- 但会显著抬高项目的基础设施复杂度
+- 对当前已经成型的 Studio JSON 工作流冲击太大
+
+2. 不只为了“JSON 更吃 CPU”而盲目换二进制
+
+- 格式替换不能解决整份重写这个根因
+
+3. 优先考虑“小 delta 日志”
+
+- `physical segments` 继续 append-only
+- `discard events / tombstones` 单独 append-only
+- active view 在恢复时叠加求出
+
+这样做的实际收益是：
+
+- 把中间删除从“大文件重写”降成“小文件追加”
+- 同时不需要把整个项目切到数据库
+
+#### E. 第一版 compact 时机
+
+关于 tombstone / discard state 的第一版落地时机，这里先冻结一版偏务实的策略：
+
+- 运行时 reject / consumed cleanup 发生时：
+  - 只登记 discard state
+  - 不立刻重写整份 physical segment 主文件
+- discard state 本身仍要立即持久化
+  - 否则游戏异常退出后，被删除的 segment 会在下次启动时复活
+- 手动保存时：
+  - 对当前 physical segments + discard state 做一次 compact
+  - 产出新的 active physical view
+  - compact 成功后清空已消费的 tombstone / discard windows
+- 每次开始游戏时：
+  - 先按已持久化的 physical segments + discard state 恢复 active view
+  - 然后再做一次启动期 rebuild / compact 作为兜底对账
+
+这样收敛的原因是：
+
+- 运行时热路径不再承担整份大文件重写
+- 物理压实被推迟到用户可接受的低频时机
+- 即使上一次会话在 pending tombstone 状态下退出，下一次进入游戏也会主动做一次对账修正
+
+这里也顺手明确一个边界：
+
+- 自动保存 / 高频 snapshot 主路径，不应默认承担整份 compact
+- 否则 tombstone 设计虽然避免了“每次 reject 都重写”，但仍可能把周期性卡顿重新带回来
+
+#### F. 当前断点后的建议顺序
+
+如果按最小风险继续推进，下一步建议是：
+
+1. 先把 discard state 从“整份重建 fixed segment store”改成“sidecar delta log”设计稿
+2. 明确 delta log 的最小字段：
+   - `startSegmentId / endSegmentId`
+   - 或 timestamp range
+   - `reason`
+   - `createdAt`
+3. 明确恢复顺序：
+   - physical segment journal
+   - discard journal
+   - active filtered view
+4. 等这条链跑顺后，再重新评估是否还需要更换底层格式
+
+当前阶段的判断是：
+
+- SQLite 是可行方案
+- 但不是当前最省事、也不是最贴合现有架构的方案
+- 比起“换格式”，更值得先做的是“把删除改成 delta，而不是物理改写主文件”
