@@ -28,7 +28,7 @@ public final class StudioEpisodeTuningFile {
 
     public static final String FILENAME = "episode_tuning.json";
     public static final String VERSION_KEY = "episodeTuning";
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private StudioEpisodeTuningFile() {
     }
@@ -83,6 +83,7 @@ public final class StudioEpisodeTuningFile {
         EpisodeTuningFileModel safeFile = file != null ? file : createCurrentModel();
         safeFile.normalize();
         EpisodeRuntimeSettings.setFallbackQuietWindowSegments(safeFile.fallbackQuietWindowSegments);
+        EpisodeRuntimeSettings.setEmptyStmRejectProbability(safeFile.emptyStmRejectProbability);
 
         LinkedHashMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> configs =
                 new LinkedHashMap<>();
@@ -100,6 +101,7 @@ public final class StudioEpisodeTuningFile {
         EpisodeTuningFileModel file = new EpisodeTuningFileModel();
         file.generatedAt = OffsetDateTime.now().toString();
         file.fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
+        file.emptyStmRejectProbability = EpisodeRuntimeSettings.getEmptyStmRejectProbability();
         file.reasons = createReasonModels(EpisodeRuntimeSettings.snapshotConfigs());
         file.normalize();
         return file;
@@ -120,6 +122,7 @@ public final class StudioEpisodeTuningFile {
     private static void write(EpisodeTuningFileModel file) {
         Path path = getPath();
         EpisodeTuningFileModel safeFile = file != null ? file : createCurrentModel();
+        safeFile.schemaVersion = SCHEMA_VERSION;
         safeFile.normalize();
         safeFile.generatedAt = OffsetDateTime.now().toString();
         try {
@@ -134,7 +137,10 @@ public final class StudioEpisodeTuningFile {
     }
 
     private static boolean needsWorkspaceBackfill(EpisodeTuningFileModel file) {
-        if (file == null || file.reasons == null) {
+        if (file == null
+                || file.schemaVersion < SCHEMA_VERSION
+                || file.reasons == null
+                || file.emptyStmRejectProbability == null) {
             return true;
         }
         for (EpisodeSplitReason reason : EpisodeSplitReason.values()) {
@@ -149,6 +155,7 @@ public final class StudioEpisodeTuningFile {
         public int schemaVersion = SCHEMA_VERSION;
         public String generatedAt = "";
         public int fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
+        public Double emptyStmRejectProbability = EpisodeRuntimeSettings.getEmptyStmRejectProbability();
         public LinkedHashMap<String, EpisodeReasonTuningFileModel> reasons =
                 createReasonModels(EpisodeRuntimeSettings.snapshotConfigs());
 
@@ -160,6 +167,10 @@ public final class StudioEpisodeTuningFile {
                 generatedAt = "";
             }
             fallbackQuietWindowSegments = Math.max(1, Math.min(64, fallbackQuietWindowSegments));
+            double safeRejectProbability = emptyStmRejectProbability == null
+                    ? EpisodeRuntimeSettings.DEFAULT_EMPTY_STM_REJECT_PROBABILITY
+                    : emptyStmRejectProbability;
+            emptyStmRejectProbability = Math.max(0.0D, Math.min(1.0D, safeRejectProbability));
             Map<String, EpisodeReasonTuningFileModel> sourceReasons = reasons == null ? Map.of() : reasons;
             LinkedHashMap<String, EpisodeReasonTuningFileModel> normalizedReasons = new LinkedHashMap<>();
             for (EpisodeSplitReason reason : EpisodeSplitReason.values()) {

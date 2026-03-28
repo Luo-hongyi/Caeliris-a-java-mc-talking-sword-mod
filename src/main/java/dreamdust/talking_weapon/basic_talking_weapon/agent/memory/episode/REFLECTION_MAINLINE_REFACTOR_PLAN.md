@@ -252,20 +252,25 @@ episode 不应对一整段历史只发一个总 signal。
   - `rollbackEpisodeSynthesisToHolding(long regionId)`
 - `EpisodeSynthesisReflectionTask` 当前已经把 `regionId` 写入 task context extras
 - `EpisodeSynthesisGate` 独立骨架已落地
+- `DefaultEpisodeSynthesisGate` 第一版已落地：
+  - region 时间窗内只要存在 STM 记录则直接 `PASS`
+  - 若 STM slice 为空，则按可调 reject 概率判定
+  - 当前 reject 概率已挂到 state screen，并持久化进 `episode_tuning.json`
 - `STMPool` 已补出 `snapshotBetween(...)`，为 gate 提供 region 内 STM 切片能力
 - `STMPool` 已补出 `discardBetween(...)`，为后续 owner-side cleanup 提供 STM 截断入口
 - `MemorySourceMaterialCleanupPlan` 已落地：
   - `forEpisodeGateReject(...)`
   - `forEpisodeSynthesisConsumed(...)`
   - 后续 reject cleanup 与 synthesis consumed cleanup 共用同一套 plan 负载
+- reject cleanup 第一阶段已接回：
+  - `EpisodeTimelineStore` 现在会先做 closed region gate 判定
+  - `REJECT` 会立即回到 owner-side cleanup
+  - `PASS` 当前只缓存 gate 结果，后续 signal / task 提交链路再接
 
 这里要明确一个当前未完成点：
 
-- 现在的 owner-side 回调骨架还只覆盖了 region lifecycle 写回
-- 后续正式 apply 时，成功与 reject 都不能只改 state
-- 至少 reject 路径必须同步做：
-  - episode segment 丢弃
-  - STM truncate
+- consumed cleanup 目前还没有正式接线
+- `cleanupEpisodeSynthesisConsumedSourceMaterial(...)` 已经提供，但要等合成 task 主链真正跑通后再接
 
 ### 2.1.8 当前断点：先暂停 reflection 主线推进
 

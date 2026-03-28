@@ -1,5 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGate;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateInput;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeIntentMath;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
@@ -51,6 +55,57 @@ public final class EpisodeTimelineStore {
      */
     public synchronized List<EpisodeSynthesisTriggerSignal> collectEpisodeSynthesisTriggerSignals() {
         return List.of();
+    }
+
+    /**
+     * 当前第一阶段只先接入 gate reject。
+     * <p>
+     * 行为固定为：
+     * <ul>
+     * <li>只遍历 closed region，即当前处于 `HOLDING + UNSET` 的 region</li>
+     * <li>PASS 结果先缓存到 region 自身，后续 signal / task 提交链路再接</li>
+     * <li>REJECT 结果立即返回给 owner，由 owner 统一执行 cleanup</li>
+     * </ul>
+     */
+    public synchronized Optional<EpisodeSynthesisGateInput> pollEpisodeGateRejectInput(
+            STMPool stmPool,
+            EpisodeSynthesisGate gate) {
+        if (stmPool == null || gate == null || timeline.regions().isEmpty()) {
+            return Optional.empty();
+        }
+
+        for (int i = 0; i < timeline.regions().size(); i++) {
+            EpisodeRegion region = timeline.regions().get(i);
+            if (region == null) {
+                continue;
+            }
+            if (region.lifecycleState() != EpisodeRegionLifecycleState.HOLDING
+                    || region.gateDecision() != EpisodeRegionGateDecision.UNSET) {
+                continue;
+            }
+
+            EpisodeRegion nextRegion = i + 1 < timeline.regions().size()
+                    ? timeline.regions().get(i + 1)
+                    : null;
+            EpisodeSynthesisGateInput input = buildGateInput(region, nextRegion, stmPool);
+            if (input == null) {
+                continue;
+            }
+
+            EpisodeSynthesisGateResult result = gate.evaluate(input);
+            if (result == null) {
+                continue;
+            }
+
+            updateRegionRuntimeState(
+                    region.regionId(),
+                    result.gateDecision(),
+                    EpisodeRegionLifecycleState.HOLDING);
+            if (result.gateDecision() == EpisodeRegionGateDecision.REJECT) {
+                return Optional.of(input);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -242,6 +297,40 @@ public final class EpisodeTimelineStore {
             }
         }
         return 0L;
+    }
+
+    private EpisodeSynthesisGateInput buildGateInput(
+            EpisodeRegion region,
+            EpisodeRegion nextRegion,
+            STMPool stmPool) {
+        if (region == null || stmPool == null) {
+            return null;
+        }
+        int startIndex = timeline.indexOfSegmentId(region.startSegmentId());
+        int endIndex = timeline.indexOfSegmentId(region.endSegmentId());
+        if (startIndex < 0 || endIndex < startIndex) {
+            return null;
+        }
+
+        long stmSliceStartTimestamp = Math.max(0L, region.startTimestamp());
+        long stmSliceExclusiveTimestamp;
+        if (nextRegion != null && nextRegion.startTimestamp() > region.startTimestamp()) {
+            stmSliceExclusiveTimestamp = nextRegion.startTimestamp();
+        } else {
+            stmSliceExclusiveTimestamp = exclusiveUpperBoundAfter(region.endTimestamp());
+        }
+
+        return new EpisodeSynthesisGateInput(
+                region,
+                timeline.sliceSegments(startIndex, endIndex),
+                stmPool.snapshotBetween(stmSliceStartTimestamp, stmSliceExclusiveTimestamp),
+                stmSliceStartTimestamp,
+                stmSliceExclusiveTimestamp);
+    }
+
+    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
+        long safeInclusive = Math.max(0L, inclusiveTimestamp);
+        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
     }
 
     private boolean updateRegionRuntimeState(

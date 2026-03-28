@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.gui;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRuntimeSettings;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
@@ -9,6 +10,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.Prim
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState.RecallPreset;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioErrorLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioEpisodeTuningFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioWorkspaceExporter;
@@ -69,6 +71,7 @@ public class AgentStateScreen extends Screen {
     private EditBox customConsciousMemoryCapBox;
     private EditBox customRetentionMemoryCapBox;
     private EditBox desireDescBox;
+    private EditBox episodeEmptyStmRejectProbabilityBox;
     private int recallPresetIndex;
     private int desireTagIndex; // 0 = 无渴望，1…n = FocusTag
     private boolean implantedMemorySafetyNetEnabled;
@@ -293,6 +296,13 @@ public class AgentStateScreen extends Screen {
         desireDescBox = editBox("渴望描述", state.getDesireDescription(), 64);
         scrollList.addEntry(new BoxRow("渴望描述", left, rowWidth, desireDescBox));
 
+        scrollList.addEntry(new LabelRow("§b▸ Episode Gate"));
+        episodeEmptyStmRejectProbabilityBox = editBox(
+                "0.00 - 1.00",
+                String.format(Locale.ROOT, "%.2f", EpisodeRuntimeSettings.getEmptyStmRejectProbability()),
+                8);
+        scrollList.addEntry(new BoxRow("无 STM Reject 概率", left, rowWidth, episodeEmptyStmRejectProbabilityBox));
+
         scrollList.addEntry(new LabelRow("§b▸ Studio 工作区"));
 
         Button connectStudioWorkspace = Button.builder(Component.literal("建立连接"), btn -> {
@@ -446,6 +456,11 @@ public class AgentStateScreen extends Screen {
         setWeight(TalkingWeaponConfig.WEIGHT_COMMON, wCommon);
         TalkingWeaponConfig.LOOKING_AT_ATTENTION_BONUS_ENABLED.set(crosshairBonusEnabled);
         TalkingWeaponConfig.SPEC.save();
+        EpisodeRuntimeSettings.setEmptyStmRejectProbability(
+                parseDoubleOrDefault(
+                        episodeEmptyStmRejectProbabilityBox,
+                        EpisodeRuntimeSettings.getEmptyStmRejectProbability()));
+        StudioEpisodeTuningFile.writeCurrent();
         AgentStateStorage.flushSaveRuntimeState(state, persona);
 
         // 当用户编辑了配置文本并回到控制面板点击"保存"时，立即热重载记忆池
@@ -458,6 +473,17 @@ public class AgentStateScreen extends Screen {
         }
         try {
             return Integer.parseInt(box.getValue().trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static double parseDoubleOrDefault(EditBox box, double fallback) {
+        if (box == null) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(box.getValue().trim());
         } catch (NumberFormatException ignored) {
             return fallback;
         }

@@ -101,6 +101,7 @@ public final class StudioRuntimeActionTimelineFile {
         if (externalizedSegments) {
             file.fixedSegments = new ArrayList<>();
         }
+        StudioRuntimeActionDiscardLogFile.syncCurrentDiscardWindows(file.discardWindows);
         write(file);
     }
 
@@ -128,7 +129,9 @@ public final class StudioRuntimeActionTimelineFile {
         }
         file.normalize();
         List<RuntimeFixedSegmentModel> fixedSegments = StudioRuntimeActionSegmentStoreFile.readFixedSegmentsOrEmpty();
-        return file.runtimeState.toRuntimeState(fixedSegments);
+        return file.runtimeState.toRuntimeState(
+                fixedSegments,
+                StudioRuntimeActionDiscardLogFile.readDiscardWindowsOrEmpty());
     }
 
     private static RuntimeActionTimelineFileModel build(
@@ -169,6 +172,7 @@ public final class StudioRuntimeActionTimelineFile {
                     previousFixedSegmentModels);
         }
         file.runtimeState = RuntimeFixedSegmentBufferStateModel.from(bufferRuntimeState);
+        file.discardWindows = bufferRuntimeState.getDiscardWindows();
 
         file.movingWindow = toMovingWindowModel(movingWindow, movingAnalysis);
         file.normalize();
@@ -513,6 +517,7 @@ public final class StudioRuntimeActionTimelineFile {
         public int fixedSegmentCount;
         public String fixedSegmentSequenceToken = "";
         public transient List<RuntimeFixedSegmentModel> fixedSegments = new ArrayList<>();
+        public transient List<FixedSegmentDiscardWindow> discardWindows = new ArrayList<>();
         public RuntimeFixedSegmentBufferStateModel runtimeState = new RuntimeFixedSegmentBufferStateModel();
         public RuntimeMovingWindowModel movingWindow = new RuntimeMovingWindowModel();
 
@@ -520,6 +525,7 @@ public final class StudioRuntimeActionTimelineFile {
             fixedSegmentSequenceToken = fixedSegmentSequenceToken == null ? "" : fixedSegmentSequenceToken;
             majorStructureWhitelist = majorStructureWhitelist == null ? new ArrayList<>() : new ArrayList<>(majorStructureWhitelist);
             fixedSegments = fixedSegments == null ? new ArrayList<>() : new ArrayList<>(fixedSegments);
+            discardWindows = discardWindows == null ? new ArrayList<>() : new ArrayList<>(discardWindows);
             for (RuntimeFixedSegmentModel fixedSegment : fixedSegments) {
                 if (fixedSegment != null) {
                     fixedSegment.normalize();
@@ -644,7 +650,6 @@ public final class StudioRuntimeActionTimelineFile {
         public long fixedSegmentMs = -1L;
         public long nextSegmentId = 1L;
         public Map<Long, FixedActionSegmentContext> sealedSegmentContexts = new LinkedHashMap<>();
-        public List<RuntimeFixedSegmentDiscardWindowModel> discardWindows = new ArrayList<>();
         public RuntimePersistedFixedSegmentModel openSegment;
 
         public static RuntimeFixedSegmentBufferStateModel from(FixedSegmentBufferRuntimeState runtimeState) {
@@ -668,14 +673,6 @@ public final class StudioRuntimeActionTimelineFile {
             if (runtimeState.getOpenSegment() != null) {
                 model.openSegment = RuntimePersistedFixedSegmentModel.from(runtimeState.getOpenSegment());
             }
-            if (runtimeState.getDiscardWindows() != null) {
-                for (FixedSegmentDiscardWindow discardWindow : runtimeState.getDiscardWindows()) {
-                    if (discardWindow == null) {
-                        continue;
-                    }
-                    model.discardWindows.add(RuntimeFixedSegmentDiscardWindowModel.from(discardWindow));
-                }
-            }
             model.normalize();
             return model;
         }
@@ -684,10 +681,11 @@ public final class StudioRuntimeActionTimelineFile {
             sealedSegmentContexts = sealedSegmentContexts == null
                     ? new LinkedHashMap<>()
                     : new LinkedHashMap<>(sealedSegmentContexts);
-            discardWindows = discardWindows == null ? new ArrayList<>() : new ArrayList<>(discardWindows);
         }
 
-        public FixedSegmentBufferRuntimeState toRuntimeState(List<RuntimeFixedSegmentModel> fixedSegments) {
+        public FixedSegmentBufferRuntimeState toRuntimeState(
+                List<RuntimeFixedSegmentModel> fixedSegments,
+                List<FixedSegmentDiscardWindow> discardWindows) {
             ArrayList<FixedActionSegment> restoredSealedSegments = new ArrayList<>();
             if (fixedSegments != null) {
                 for (RuntimeFixedSegmentModel segmentModel : fixedSegments) {
@@ -709,57 +707,12 @@ public final class StudioRuntimeActionTimelineFile {
             if (maxObservedSegmentId > 0L) {
                 resolvedNextSegmentId = Math.max(resolvedNextSegmentId, maxObservedSegmentId + 1L);
             }
-            ArrayList<FixedSegmentDiscardWindow> restoredDiscardWindows = new ArrayList<>();
-            if (discardWindows != null) {
-                for (RuntimeFixedSegmentDiscardWindowModel discardWindow : discardWindows) {
-                    if (discardWindow == null) {
-                        continue;
-                    }
-                    FixedSegmentDiscardWindow restored = discardWindow.toDiscardWindow();
-                    if (restored != null) {
-                        restoredDiscardWindows.add(restored);
-                    }
-                }
-            }
             return new FixedSegmentBufferRuntimeState(
                     fixedSegmentMs,
                     resolvedNextSegmentId,
                     restoredSealedSegments,
                     restoredOpenSegment,
-                    restoredDiscardWindows);
-        }
-    }
-
-    public static final class RuntimeFixedSegmentDiscardWindowModel {
-        public long startSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
-        public long endSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
-        public long startTimestamp;
-        public long endTimestamp;
-        public long createdAt;
-
-        public static RuntimeFixedSegmentDiscardWindowModel from(FixedSegmentDiscardWindow discardWindow) {
-            RuntimeFixedSegmentDiscardWindowModel model = new RuntimeFixedSegmentDiscardWindowModel();
-            if (discardWindow == null) {
-                return model;
-            }
-            model.startSegmentId = discardWindow.startSegmentId();
-            model.endSegmentId = discardWindow.endSegmentId();
-            model.startTimestamp = discardWindow.startTimestamp();
-            model.endTimestamp = discardWindow.endTimestamp();
-            model.createdAt = discardWindow.createdAt();
-            return model;
-        }
-
-        public FixedSegmentDiscardWindow toDiscardWindow() {
-            if (startSegmentId <= 0L || endSegmentId <= 0L) {
-                return null;
-            }
-            return new FixedSegmentDiscardWindow(
-                    startSegmentId,
-                    endSegmentId,
-                    Math.max(0L, startTimestamp),
-                    Math.max(Math.max(0L, startTimestamp), endTimestamp),
-                    Math.max(0L, createdAt));
+                    discardWindows);
         }
     }
 

@@ -605,7 +605,12 @@ reject 路径也不只是“写一个 `REJECT + RESOLVED`”：
 
 - owner 还要同步抛出该 region 的 episode segments
 - 还要同步截断同时间窗内的 `STMPool`
-- 当前代码里这部分还没有正式接回，只是 owner-side state 回调骨架先占住了位置
+- 当前第一阶段已经正式接回 reject cleanup：
+  - closed region 会先经过独立 `EpisodeSynthesisGate`
+  - 若 region 时间窗内有 STM 记录，则直接放行
+  - 若 STM slice 为空，则按可调 reject 概率判定
+  - `REJECT` 当前会立即回到 owner-side cleanup，统一抛出 segment + 局部 STM
+- consumed cleanup 目前还只停在 API 已提供，等待后续 synthesis task 主链接起后再正式调用
 
 这意味着：
 

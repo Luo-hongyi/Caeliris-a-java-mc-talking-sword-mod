@@ -14,12 +14,14 @@ import java.util.Map;
 public final class EpisodeRuntimeSettings {
 
     public static final int DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS = 8;
+    public static final double DEFAULT_EMPTY_STM_REJECT_PROBABILITY = 0.0D;
 
     private static final EnumMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> DEFAULT_CONFIGS =
             buildDefaultConfigs();
     private static final EnumMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> runtimeConfigs =
             new EnumMap<>(EpisodeSplitReason.class);
     private static volatile int fallbackQuietWindowSegments = DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS;
+    private static volatile double emptyStmRejectProbability = DEFAULT_EMPTY_STM_REJECT_PROBABILITY;
 
     static {
         resetToDefaults();
@@ -61,6 +63,7 @@ public final class EpisodeRuntimeSettings {
             runtimeConfigs.put(reason, copyConfig(DEFAULT_CONFIGS.get(reason)));
         }
         fallbackQuietWindowSegments = DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS;
+        emptyStmRejectProbability = DEFAULT_EMPTY_STM_REJECT_PROBABILITY;
     }
 
     public static int getFallbackQuietWindowSegments() {
@@ -69,6 +72,14 @@ public final class EpisodeRuntimeSettings {
 
     public static void setFallbackQuietWindowSegments(int value) {
         fallbackQuietWindowSegments = clampInt(value, 1, 64);
+    }
+
+    public static double getEmptyStmRejectProbability() {
+        return emptyStmRejectProbability;
+    }
+
+    public static void setEmptyStmRejectProbability(double value) {
+        emptyStmRejectProbability = clampDouble(value, 0.0D, 1.0D);
     }
 
     public static EpisodeReasonRuntimeConfig defaultConfig(EpisodeSplitReason reason) {
@@ -123,6 +134,13 @@ public final class EpisodeRuntimeSettings {
     }
 
     private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return min;
+        }
         return Math.max(min, Math.min(max, value));
     }
 }

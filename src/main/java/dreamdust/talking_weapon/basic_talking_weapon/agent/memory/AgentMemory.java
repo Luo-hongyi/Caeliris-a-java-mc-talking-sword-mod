@@ -2,6 +2,10 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimelineStore;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.DefaultEpisodeSynthesisGate;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGate;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateInput;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionArchive;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
@@ -15,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -74,6 +79,7 @@ public class AgentMemory {
      * 后续 segment 级 STM 合并与持久化也应优先挂在这里。
      */
     private final EpisodeTimelineStore episodeTimelineStore;
+    private final EpisodeSynthesisGate episodeSynthesisGate;
 
     // ═══════════════════════════════════════════════════════════════
     // Layer 3: LTMRecords（长期记忆切片库）
@@ -93,6 +99,7 @@ public class AgentMemory {
                 StudioRuntimeActionTimelineFile.readPersistedFixedSegmentRuntimeState());
         this.stmPool = new STMPool();
         this.episodeTimelineStore = new EpisodeTimelineStore();
+        this.episodeSynthesisGate = new DefaultEpisodeSynthesisGate();
         boolean compactedOnStartup = compactDiscardedSourceMaterial();
         if (!compactedOnStartup) {
             this.episodeTimelineStore.replaceFixedSegments(this.actionArchive.snapshotFixedSegments());
@@ -145,6 +152,9 @@ public class AgentMemory {
         synchronized (sourceMaterialLock) {
             FixedSegmentUpdate fixedSegmentUpdate = actionArchive.add(record);
             applyFixedSegmentUpdate(fixedSegmentUpdate);
+            if (fixedSegmentUpdate != null && fixedSegmentUpdate.hasChanges()) {
+                processEpisodeGateRejects();
+            }
             movingActionBuffer.add(record.copy());
         }
     }
@@ -197,7 +207,7 @@ public class AgentMemory {
 
             int removedRawActionCount = actionArchive.discardRawRecordsBetween(
                     resolvedWindow.startTimestamp(),
-                    resolvedWindow.endTimestamp());
+                    resolvedWindow.rawActionSliceExclusiveTimestamp());
             FixedSegmentUpdate fixedSegmentUpdate = actionArchive.registerDiscardWindow(
                     resolvedWindow.startSegmentId(),
                     resolvedWindow.endSegmentId(),
@@ -205,9 +215,7 @@ public class AgentMemory {
                     resolvedWindow.endTimestamp());
             applyFixedSegmentUpdate(fixedSegmentUpdate);
 
-            stmPool.discardBetween(
-                    resolvedWindow.stmSliceStartTimestamp(),
-                    resolvedWindow.stmSliceExclusiveTimestamp());
+            stmPool.discardForWindow(resolvedWindow);
 
             int removedEpisodeSegmentCount = Math.max(0, beforeEpisodeSegmentCount - episodeTimelineStore.snapshot().segmentCount());
             int removedStmContextCount = Math.max(0, beforeStmContextCount - stmPool.contextSize());
@@ -221,6 +229,28 @@ public class AgentMemory {
                     removedStmContextCount,
                     removedStmInteractionCount);
         }
+    }
+
+    /**
+     * owner-side episode gate reject cleanup 入口。
+     */
+    public MemorySourceMaterialCleanupResult cleanupEpisodeGateRejectedSourceMaterial(
+            EpisodeSynthesisGateInput input) {
+        if (input == null) {
+            throw new IllegalArgumentException("input must not be null");
+        }
+        return cleanupSourceMaterial(MemorySourceMaterialCleanupPlan.forEpisodeGateReject(input));
+    }
+
+    /**
+     * owner-side episode synthesis consumed cleanup 入口。
+     */
+    public MemorySourceMaterialCleanupResult cleanupEpisodeSynthesisConsumedSourceMaterial(
+            EpisodeSynthesisTriggerSignal signal) {
+        if (signal == null) {
+            throw new IllegalArgumentException("signal must not be null");
+        }
+        return cleanupSourceMaterial(MemorySourceMaterialCleanupPlan.forEpisodeSynthesisConsumed(signal));
     }
 
     /**
@@ -364,8 +394,30 @@ public class AgentMemory {
                 endSegment.getSegmentId(),
                 startSegment.getStartTimestamp(),
                 endSegment.getEndTimestamp(),
+                exclusiveUpperBoundAfter(endSegment.getEndTimestamp()),
                 requestedWindow.stmSliceStartTimestamp(),
                 requestedWindow.stmSliceExclusiveTimestamp());
+    }
+
+    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
+        long safeInclusive = Math.max(0L, inclusiveTimestamp);
+        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
+    }
+
+    private void processEpisodeGateRejects() {
+        while (true) {
+            Optional<EpisodeSynthesisGateInput> rejectInput = episodeTimelineStore.pollEpisodeGateRejectInput(
+                    stmPool,
+                    episodeSynthesisGate);
+            if (rejectInput.isEmpty()) {
+                return;
+            }
+            MemorySourceMaterialCleanupResult cleanupResult =
+                    cleanupEpisodeGateRejectedSourceMaterial(rejectInput.get());
+            if (cleanupResult.stale()) {
+                return;
+            }
+        }
     }
 
     private void trimRecentRecallSuppressionTable() {

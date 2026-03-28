@@ -7,6 +7,7 @@
 - [episode/EPISODE_CURRENT_STATE.md](episode/EPISODE_CURRENT_STATE.md) - episode 当前实际实现总览；从 action 采集、action archive、splitter signals、split、region 到 prompt synthesis 的最新扫描结果
 - [episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md](episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md) - 当前 reflection 主线重构计划；记录 episode / interaction trace / material exporter 边界、gate、模块化输出与后续实现顺序
 - [SEGMENT_COORDINATE_REFACTOR_PLAN.md](SEGMENT_COORDINATE_REFACTOR_PLAN.md) - fixed segment 持久化坐标重构讨论；解决中间 region 物理删除、signal 稳定引用和 reflection task 入队后坐标漂移问题
+- [PERFORMANCE_HOTSPOTS.md](PERFORMANCE_HOTSPOTS.md) - 当前 memory / studio runtime 持久化热点、已完成优化与后续性能债记录
 - [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
@@ -30,6 +31,11 @@
 - 但这条 reflection 主线还没有正式接回 episode gate，也还没有进入 `AgentRuntime` 的后台队列执行闭环。
 - 继续推进这条主线前，当前先插入一个更底层的前置议题：fixed segment 持久化坐标。原因是 episode / reflection 现在仍把当前数组位置当作正式引用坐标，这会阻塞中间 region 物理删除和 targeted cleanup。
 - action runtime 持久化这一轮已经做过一次性能收尾：sealed fixed segment payload 已拆出高频 timeline snapshot 主路径，当前先不继续围绕写盘做大改，主线重新回到 segment / episode / reflection 的结构调整。
+- fixed segment discard window 也已经从 `studio_runtime_action_timeline.json` 拔出，改为独立的 `studio_runtime_action_segment_discards.jsonl` sidecar log。
+- 当前 fixed segment runtime 恢复链路已经拆成三部分：
+  - sealed segments 从 `studio_runtime_action_segments.*` 恢复
+  - discard windows 从 `studio_runtime_action_segment_discards.jsonl` 恢复
+  - open segment / nextSegmentId / sealed context 仍由 `studio_runtime_action_timeline.json` 承载
 
 ## 当前核心目标
 
@@ -81,22 +87,35 @@
   - `MemorySourceMaterialCleanupPlan`
   - `MemorySourceMaterialWindow`
   - `MemorySourceMaterialCleanupReason`
+- `AgentMemory.cleanupSourceMaterial(...)` 第一版 unified cleanup executor 已落地：
+  - 吃统一 `MemorySourceMaterialCleanupPlan`
+  - 解析 active segment window
+  - 裁剪 raw action source
+  - 登记 fixed segment discard window
+  - 截断局部 STM
+  - 回写 episode active view
+- owner-side 便利入口已补入：
+  - `cleanupEpisodeGateRejectedSourceMaterial(...)`
+  - `cleanupEpisodeSynthesisConsumedSourceMaterial(...)`
 
 ### 当前最重要的未完成点
 
-1. `AgentMemory` 要成为 source material cleanup 的统一 owner API
-
-- 统一吃 `MemorySourceMaterialCleanupPlan`
-- 统一执行：
-  - fixed segment source discard
-  - 局部 STM discard
-  - episode timeline rebuild
-
-2. fixed segment 真源还没有正式 discard / tombstone 机制
+1. fixed segment 真源还没有正式 discard / tombstone 机制
 
 - 当前即使 episode / STM 侧做了 cleanup
 - 如果上游 raw action source 不同步处理
 - 被删掉的 segment 仍可能在后续 rebuild 时重新长回来
+- 当前新增的 discard sidecar log 只解决了“不要在高频 action timeline snapshot 中反复重写 discard state”
+- 它还没有升级成真正的 tombstone / compaction policy
+
+2. unified cleanup API 还没有正式接回 episode / reflection 调用面
+
+- gate reject 已经接回 owner cleanup：
+  - closed region 会先经过第一版 `EpisodeSynthesisGate`
+  - 若 gate 判定 `REJECT`，当前会立刻走 owner-side cleanup
+- synthesis consumed cleanup 目前仍只停在 API 已提供：
+  - `cleanupEpisodeSynthesisConsumedSourceMaterial(...)`
+  - 等 episode synthesis task 真正跑通后再正式接线
 
 3. reflection 主线已经有骨架，但还没接成完整闭环
 
@@ -111,11 +130,12 @@
 
 ### 下一阶段推荐顺序
 
-1. 先完成 `AgentMemory` 的 unified cleanup executor
-- 让 owner-side 真的能统一处理一段 source material window
-
-2. 再给 fixed segment 真源补 discard / tombstone 机制
+1. 先给 fixed segment 真源补 discard / tombstone 机制
 - 让 segment “被抛出后不会复活”
+
+2. 再把 unified cleanup API 接回 episode / reflection 调用面
+- 当前 reject 已接回
+- 下一步只剩 consumed cleanup 在合成链路落地后正式接回
 
 3. 接回 episode gate / holdback / ready signal
 - 让 `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 真正产出 ready signals

@@ -156,6 +156,20 @@ public final class STMPool {
     }
 
     /**
+     * 按 owner-side source material window 提取对应的 STM 切片。
+     * <p>
+     * STMPool 只消费 window 中的 STM 时间边界，不关心 segment range 本身。
+     */
+    public synchronized TimeSlice snapshotForWindow(MemorySourceMaterialWindow window) {
+        if (window == null) {
+            return new TimeSlice(List.of(), List.of());
+        }
+        return snapshotBetween(
+                window.stmSliceStartTimestamp(),
+                window.stmSliceExclusiveTimestamp());
+    }
+
+    /**
      * 丢弃某个时间点之前的 STM 数据。
      * <p>
      * 第一版 episode split 暂不直接调用，后续 LTM 生成切片阶段再接入。
@@ -184,6 +198,18 @@ public final class STMPool {
                 turn != null
                         && turn.getTimestamp() >= safeStart
                         && turn.getTimestamp() < endExclusiveTimestamp);
+    }
+
+    /**
+     * 按 owner-side source material window 丢弃对应的 STM 记录。
+     */
+    public synchronized void discardForWindow(MemorySourceMaterialWindow window) {
+        if (window == null) {
+            return;
+        }
+        discardBetween(
+                window.stmSliceStartTimestamp(),
+                window.stmSliceExclusiveTimestamp());
     }
 
     /**
