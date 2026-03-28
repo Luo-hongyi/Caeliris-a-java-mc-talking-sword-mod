@@ -13,6 +13,8 @@ import java.util.List;
  */
 public final class FixedActionSegment implements ActionSegmentView {
 
+    public static final long UNASSIGNED_SEGMENT_ID = -1L;
+
     private static final Comparator<FixedActionSegmentEntry> ENTRY_ORDER =
             Comparator.comparingLong(FixedActionSegmentEntry::getFirstTimestamp)
                     .thenComparingLong(FixedActionSegmentEntry::getLastTimestamp)
@@ -21,6 +23,7 @@ public final class FixedActionSegment implements ActionSegmentView {
                     .thenComparing(entry -> entry.getType() == null ? "" : entry.getType().name())
                     .thenComparing(entry -> entry.getTarget() == null ? "" : entry.getTarget());
 
+    private final long segmentId;
     private final long startTimestamp;
     private final long endTimestamp;
     private final int rawStartIndex;
@@ -35,7 +38,7 @@ public final class FixedActionSegment implements ActionSegmentView {
             int rawStartIndex,
             int rawEndIndex,
             List<FixedActionSegmentEntry> entries) {
-        this(startTimestamp, endTimestamp, rawStartIndex, rawEndIndex, entries, null, null);
+        this(UNASSIGNED_SEGMENT_ID, startTimestamp, endTimestamp, rawStartIndex, rawEndIndex, entries, null, null);
     }
 
     public FixedActionSegment(
@@ -45,7 +48,7 @@ public final class FixedActionSegment implements ActionSegmentView {
             int rawEndIndex,
             List<FixedActionSegmentEntry> entries,
             FixedSegmentSplitterSignals splitterSignals) {
-        this(startTimestamp, endTimestamp, rawStartIndex, rawEndIndex, entries, splitterSignals, null);
+        this(UNASSIGNED_SEGMENT_ID, startTimestamp, endTimestamp, rawStartIndex, rawEndIndex, entries, splitterSignals, null);
     }
 
     public FixedActionSegment(
@@ -56,6 +59,19 @@ public final class FixedActionSegment implements ActionSegmentView {
             List<FixedActionSegmentEntry> entries,
             FixedSegmentSplitterSignals splitterSignals,
             FixedActionSegmentContext context) {
+        this(UNASSIGNED_SEGMENT_ID, startTimestamp, endTimestamp, rawStartIndex, rawEndIndex, entries, splitterSignals, context);
+    }
+
+    public FixedActionSegment(
+            long segmentId,
+            long startTimestamp,
+            long endTimestamp,
+            int rawStartIndex,
+            int rawEndIndex,
+            List<FixedActionSegmentEntry> entries,
+            FixedSegmentSplitterSignals splitterSignals,
+            FixedActionSegmentContext context) {
+        this.segmentId = segmentId;
         this.startTimestamp = startTimestamp;
         this.endTimestamp = endTimestamp;
         this.rawStartIndex = rawStartIndex;
@@ -65,6 +81,10 @@ public final class FixedActionSegment implements ActionSegmentView {
                 ? FixedSegmentSplitterSignals.fromSegment(this)
                 : splitterSignals;
         this.context = context == null ? FixedActionSegmentContext.empty() : context;
+    }
+
+    public long getSegmentId() {
+        return segmentId;
     }
 
     @Override
@@ -100,8 +120,25 @@ public final class FixedActionSegment implements ActionSegmentView {
         return context;
     }
 
+    public boolean hasAssignedSegmentId() {
+        return segmentId > 0L;
+    }
+
+    public FixedActionSegment withSegmentId(long nextSegmentId) {
+        return new FixedActionSegment(
+                nextSegmentId,
+                startTimestamp,
+                endTimestamp,
+                rawStartIndex,
+                rawEndIndex,
+                entries,
+                splitterSignals,
+                context);
+    }
+
     public FixedActionSegment withContext(FixedActionSegmentContext nextContext) {
         return new FixedActionSegment(
+                segmentId,
                 startTimestamp,
                 endTimestamp,
                 rawStartIndex,

@@ -5,12 +5,7 @@
 `trigger` 包存放所有 **触发器（Agent Trigger）** 的实现。  
 触发器定义：**什么游戏事件** → **需要哪些采集器** → **产生什么任务**。
 
-此外，`trigger/internal` 子包用于存放 **Agent 内部反应型 trigger**：
-
-- 不走 `AgentSensor`
-- 不声明 collectors
-- 只把内部 signal 显式包装成后台任务
-- 典型例子是后续的 `EpisodeSynthesisTrigger`
+此外，reflection 侧未来仍会存在 **Agent 内部反应型 trigger**，但旧内部 trigger 老链路已经清除，后续会在新 reflection 主线下重建。
 
 ## 现有触发器
 
@@ -21,15 +16,14 @@
 | `RightClickTrigger` | 玩家右键使用武器 | Base + 截图 + 实体 + 环境... | `LLMInteractionTask` | `TOP_K_RIGHT_CLICK` |
 | `BiomeChangeTrigger` | 进入新群系（由 TickEventWatcher 检测） | Base + 按配置动态组合 | `LLMInteractionTask` | `TOP_K_BIOME_CHANGE` |
 
-> 当前有一个临时调试接线：客户端持剑右键成功提交 `RightClickTrigger` 后，还会额外提交一个后台 `DebugEpisodeSynthesisTask`，用于测试最近一个已闭合 episode region 的 prompt draft 生成是否会产生卡顿。这个调试任务不经过 Studio runtime preview，也不提交 LTM。
-
-### 记忆/反思触发器（过渡骨架，尚未完成当前路线接线）
+### 记忆/反思触发器
 
 | 类名 | 触发条件 | 用途 |
 |---|---|---|
-| `ReflectionTrigger` | 计划中的低频反思时机 | 旧版 LTM 合成入口骨架，尚未接入当前自动调度链 |
 | `CombatRecapTrigger` | 计划中的高强度战斗片段 | 连杀/恶战回顾骨架 |
 | `BossKillTrigger` | 击杀 Boss 级实体 | 重大战斗记忆骨架 |
+
+> 当前 reflection 新骨架已经存在，但还没有接回新的正式运行入口；旧的 `EpisodeSynthesisTask` / 内部 trigger 调试链路已经清除。
 
 ### 事件感知器
 
@@ -57,7 +51,7 @@
 
 > **重要**：所有新增的事件监听方法仅记录动作，不直接触发 LLM。
 
-> **当前状态**：`TickEventWatcher` 目前没有自动派发 `ReflectionTrigger`。因此，长期记忆生成虽然保留了旧版 `ReflectionTask` 代码，但并未形成一条已经投入当前设计使用的稳定触发链。
+> **当前状态**：`TickEventWatcher` 不会直接派发 reflection trigger。reflection 的新后台提交链路将在新主线任务骨架落地后再接回。
 
 ## 如何新增触发器
 

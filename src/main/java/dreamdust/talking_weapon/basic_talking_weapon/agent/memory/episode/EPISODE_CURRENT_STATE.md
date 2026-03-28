@@ -19,17 +19,18 @@
    - `pending marks`
    - `split points`
    - `regions`
-6. `EpisodeSynthesisMaterial` / `EpisodeSynthesisPromptFormatter` 已经可以把一个 closed region 的材料拼成 prompt draft
+6. 旧 `EpisodeSynthesisMaterial` / `EpisodeSynthesisPromptFormatter` 预览链路已经删除
 7. timeline 第一段进入时会自动补一个 bootstrap split at `segmentIndex = 0`
-8. 当前存在一个临时的“右键触发手动 episode synthesis debug task”链路，用来测试 prompt draft 生成是否会卡顿
+8. 旧的“右键触发手动 episode synthesis debug task”链路已经删除
 
-但这条链路还没有完全闭环，当前仍缺少几段正式接线：
+当前 episode / reflection 之间仍未形成新正式闭环，现状是：
 
-- `EpisodeTimelineStore.peekEpisodeSynthesisTriggerSignal()` 仍然返回空
-- 但 `EpisodeTimelineStore.peekLatestClosedRegionDebugSignal()` 已可读取“最近一个已闭合 region”
-- `EpisodeSynthesisTrigger` 已定义，但没有实际被 episode 自动触发
+- `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 当前仍返回空列表
+- 旧的 debug signal / internal trigger / preview task 链路都已经清除
 - Studio workspace 已有 `studio_runtime_episode_timeline.json`，但 Electron Studio 里目前没有 episode 页面
-- `EpisodeSynthesisTask` 当前只会生成 preview + 日志，不会真的提交 LTM
+- `EpisodeRegion` 已经带有 `regionId / gateDecision / lifecycleState`
+- `EpisodeTracker` 现在会按 `regionId` 延续 region runtime state；replace-all 时若内存里没有旧 region，会回退读取 `studio_runtime_episode_timeline.json` 中已持久化的 region 状态
+- 新的 reflection task 主线骨架已经落地，但还没有接回 episode
 
 ## 2. 动作采集层
 
@@ -204,7 +205,7 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 - 接收新 fixed segment
 - 持有最新 `EpisodeTimeline`
-- 在需要时构造 `EpisodeSynthesisMaterial`
+- 对外保留 `collectEpisodeSynthesisTriggerSignals()` 这个正式多 signal gate 接口骨架
 
 真正的分割调度在 [EpisodeTracker.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTracker.java)。
 
@@ -248,10 +249,15 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 ### 6.4 splitters
 
-当前注册到 `EpisodeTracker` 的 splitter 只有三个：
+当前注册到 `EpisodeTracker` 的 splitter 有七个：
 
 - [IntentShiftSplitter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/splitter/IntentShiftSplitter.java)
 - [DeathSplitter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/splitter/DeathSplitter.java)
+- [ObservedActionTypeSplitter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/splitter/ObservedActionTypeSplitter.java)
+  - `ENTER_REGISTERED_LOCATION`
+  - `LEAVE_REGISTERED_LOCATION`
+  - `ENTER_MAJOR_STRUCTURE`
+  - `EXIT_MAJOR_STRUCTURE`
 - [FallbackQuietSplitter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/splitter/FallbackQuietSplitter.java)
 
 #### IntentShiftSplitter
@@ -340,6 +346,9 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 - `startTimestamp / endTimestamp`
 - `aggregateIntentScores`
 - `primaryIntent / secondaryIntent`
+- `regionId`
+- `gateDecision`
+- `lifecycleState`
 
 region 的构造统一走 [EpisodeIntentMath.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/splitter/EpisodeIntentMath.java)：
 
@@ -347,26 +356,46 @@ region 的构造统一走 [EpisodeIntentMath.java](/Users/jackluo/Documents/self
 - 没有 split 时，会有一个覆盖全部 segments 的 tail region
 - 没有“登录时默认插入一个 split point”的现实现状
 
-## 8. STM 融合与 Episode synthesis material
+当前实际 runtime state 语义是：
 
-### 8.1 目前是否已经能拼 material
+- tail region 会被强制保持为 `UNSET + ACTIVE`
+- closed region 当前默认是 `UNSET + HOLDING`
+- `EpisodeTracker.rebuildRegions()` 会按 `regionId` 复用已有 region 的 runtime state
+- 如果发生 replace-all 重建：
+  - 优先复用内存里已有的 region state
+  - 若当前内存为空，则回退读取 `studio_runtime_episode_timeline.json` 中持久化的 region state
+- 读取持久化 region state 时，当前已经会做归一化：
+  - tail region 强制回到 `UNSET + ACTIVE`
+  - closed region 的 `PENDING -> HOLDING`
+  - closed region 不允许继承旧 tail 的 `ACTIVE`
 
-能。
+也就是说，region runtime state 已经开始进入正式实现，但 gate 判定与 holdback 放行仍未接回。
 
-[EpisodeTimelineStore.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTimelineStore.java) 的 `buildSynthesisMaterial(...)` 已经可用，但它依赖外部显式传入 `EpisodeSynthesisTriggerSignal`。
+## 8. 旧 Episode synthesis material 链路
+
+### 8.1 当前状态
+
+旧 `EpisodeSynthesisMaterial` 链路已经删除。
+
+当前不再保留：
+
+- `buildSynthesisMaterial(...)`
+- `EpisodeSynthesisMaterial`
+- `EpisodeSynthesisPromptFormatter`
+- Studio runtime 中的 synthesis preview 持久化字段
 
 ### 8.2 当前融合方式
 
-传入 signal 后，store 会：
+旧融合实现已经删除，不再作为当前代码现状描述。
 
-1. 先从 timeline 里切出 region 对应的 base fixed segments
-2. 再从 `STMPool.snapshotBefore(signal.stmSliceExclusiveTimestamp())` 取时间切片
-3. 按时间戳把：
-   - `TaggedContextEntry`
-   - `InteractionTurn`
-   分配到各自 segment bucket
-4. 生成新的 `FixedActionSegmentContext`
-5. 返回 [EpisodeSynthesisMaterial.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeSynthesisMaterial.java)
+后续会改由新的：
+
+- `ReflectionRawMaterial`
+- `ReflectionMaterial`
+- `ReflectionMaterialExporter`
+- `ReflectionMaterialMerger`
+
+主线重建。
 
 ### 8.3 当前 context 融合的关键细节
 
@@ -385,17 +414,17 @@ region 的构造统一走 [EpisodeIntentMath.java](/Users/jackluo/Documents/self
 - 普通 context 走的是 `memoryEligible` 过滤后的全量上下文
 - interaction 走的是带 `visibleContexts` 绑定的回合对象
 
-## 9. Episode prompt 合成现状
+## 9. 旧 Episode prompt 合成现状
 
 ### 9.1 入口
 
-prompt draft 生成入口在 [EpisodeSynthesisPromptFormatter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeSynthesisPromptFormatter.java)。
+旧 prompt draft 生成入口已经删除。
 
-当前只生成 **一个 region 级 prompt draft 字符串**，没有 segment draft 对象层。
+后续会改由新的 reflection prompt 组装链路替代，不再以 `EpisodeSynthesisPromptFormatter` 作为当前实现。
 
 ### 9.2 当前段内叙事形态
 
-当前 formatter 已经实现两种 segment 形态：
+这一整段旧 formatter 逻辑已不再代表当前实现，只保留作历史说明。
 
 #### 没有 interaction turn
 
@@ -462,7 +491,37 @@ action 侧 authored tuning 仍在：
 - splitter tuning 快照
 - timeline 中的 segments / pending marks / split points / regions
 - 相对上一份快照的 diff
-- 最近一次 synthesis preview 的 prompt draft
+
+当前代码里，它仍然主要是 runtime 快照 / 调试文件，但已经开始承接一部分正式 episode runtime state 语义：
+
+- `regions` 已经持久化 `regionId / gateDecision / lifecycleState`
+- `EpisodeTimelineStore.replaceFixedSegments(...)` 在 replace-all 重建时，会把这里的 persisted regions 当作 runtime state seed 读回
+- 读回时已经执行 region 级归一化：
+  - tail region 强制为 `UNSET + ACTIVE`
+  - closed region `PENDING -> HOLDING`
+  - closed region 不继承 `ACTIVE`
+
+但已经冻结的后续方向是：
+
+- 不再另起第二份 episode state 真源文件
+- `studio_runtime_episode_timeline.json` 直接升级为 episode runtime state 的唯一真源
+- Studio 直接读取这份真源
+- 其中 `timeline` 主体字段成为正式状态
+- `generatedAt` / `lastUpdate diff` 一类字段只保留为辅助信息，不参与正式状态判定
+
+当前 `regions` 已经直接带上正式状态字段：
+
+- `regionId`
+- `gateDecision`
+  - `UNSET / PASS / REJECT`
+- `lifecycleState`
+  - `ACTIVE / HOLDING / PENDING / RESOLVED`
+
+当前在 persisted region 读回时已经执行：
+
+- `PENDING -> HOLDING`
+
+因为重启后旧的后台 reflection task 已经不存在。
 
 ### 10.3 当前 Studio app 的状态
 
@@ -479,43 +538,134 @@ action 侧 authored tuning 仍在：
 
 ### 11.1 自动 episode synthesis trigger 还没接上
 
-[EpisodeTimelineStore.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTimelineStore.java) 的 `peekEpisodeSynthesisTriggerSignal()` 现在仍直接返回空。
+[EpisodeTimelineStore.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTimelineStore.java) 的 `collectEpisodeSynthesisTriggerSignals()` 现在仍直接返回空列表。
 
 因此当前并不会因为“region 闭合”而自动发起后台 synthesis。
 
-但当前为了测试 prompt draft：
+旧的 debug signal / internal trigger / preview task 已经全部删除。
 
-- 已新增 `peekLatestClosedRegionDebugSignal()`
-- 它会读取最近一个已闭合的 region
-- 不读取当前未封口的 tail region
+不过，region runtime state 这一层已经有一部分真实实现：
 
-### 11.2 内部 trigger 只是骨架
+- `EpisodeRegion` 已经携带 `regionId / gateDecision / lifecycleState`
+- closed region 当前构造为 `UNSET + HOLDING`
+- tail region 当前强制保持 `UNSET + ACTIVE`
+- `EpisodeTracker` 重建 regions 时，会按 `regionId` 复用已有 runtime state
+- replace-all 重建时，如果当前内存为空，会从 `studio_runtime_episode_timeline.json` 回读 persisted region state
+- persisted region 回读时，当前已经执行：
+  - `PENDING -> HOLDING`
+  - tail 强制 `ACTIVE`
+  - closed region 不继承 `ACTIVE`
+- `EpisodeSynthesisTriggerSignal` 已经带有 `regionId`
+- `EpisodeTimelineStore` 已经补入 owner-side 回调骨架：
+  - `markEpisodeSynthesisResolved(long regionId)`
+  - `rollbackEpisodeSynthesisToHolding(long regionId)`
 
-- [EpisodeSynthesisTrigger.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/context/trigger/internal/EpisodeSynthesisTrigger.java)
-- [IInternalAgentTrigger.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/context/trigger/internal/IInternalAgentTrigger.java)
+按当前已冻结设计，后续这里不应只产出一个 signal，而应：
 
-这条线已经定义了，但没有看到实际调用方。
+- 按 closed region 输出多个 signal
+- 当前 region 模型下，signal 数量默认等于 `regions.size() - 2`
+- 这个 holdback 数量后续应可调，而不是写死
+- 默认要额外保留最近一部分 region / STM 不立即推出，以维持上下文连贯性
+- 当前默认语义是：至少保留最后两个 region 窗口不直接发 signal
+- 再交给对应 internal trigger 逐个提交后台任务
 
-### 11.3 EpisodeSynthesisTask 目前只做到 preview
+这条可调 holdback 规则会和 gate 一起实现，当前还没有接回代码。
 
-[EpisodeSynthesisTask.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/task/EpisodeSynthesisTask.java) 当前会：
+同时，当前已经冻结的 region gate 状态机是：
 
-- 读取 synthesis material
-- 写入 Studio runtime preview
-- 打印 prompt draft 日志
+- `gateDecision`
+  - `PASS`
+  - `REJECT`
+- `lifecycleState`
+  - `HOLDING`
+  - `PENDING`
+  - `RESOLVED`
 
-除此之外，当前还新增了一个纯调试后台任务：
+目标流程是：
 
-- [DebugEpisodeSynthesisTask.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/task/DebugEpisodeSynthesisTask.java)
-- 右键成功触发前台交互后，会额外提交一次后台调试任务
-- 它只读取最近一个已闭合 region，构造 `EpisodeSynthesisMaterial`，生成 region prompt draft，并写出独立日志
-- 它不会写 Studio runtime preview，也不会提交 LTM
+1. region 一旦闭合，立刻做 gate 判定
+2. gate 结果缓存到 region 自身
+3. region 先进入 `HOLDING`
+4. 越过 holdback 后：
+   - `PASS + HOLDING` -> 发 signal -> `PENDING`
+   - `REJECT + HOLDING` -> owner 直接清理 / 截断 -> `RESOLVED`
+5. `PENDING` task 成功后 -> `RESOLVED`
+6. `PENDING` task 失败、取消或重启后 -> 回滚到 `HOLDING`
 
-但还没有：
+并且最新冻结设计再补两点：
 
-- 真正调用 LLM 生成 LTM
-- commit / discard STM slice
-- 记忆价值判断
+- gate 会改成独立结构，不把具体判定逻辑硬写死在 `EpisodeTimelineStore` 里
+- gate 的输入必须同时包含：
+  - region 内的 fixed segments 基础信息
+  - region 时间窗内的 `STMPool` 记录
+
+也就是说，后续 episode synthesis gate 不是纯 timeline 内部逻辑，而是跨 `episode + STM` 的判定结构。
+
+reject 路径也不只是“写一个 `REJECT + RESOLVED`”：
+
+- owner 还要同步抛出该 region 的 episode segments
+- 还要同步截断同时间窗内的 `STMPool`
+- 当前代码里这部分还没有正式接回，只是 owner-side state 回调骨架先占住了位置
+
+这意味着：
+
+- 不再保留 `UNPROCESSED` 这一层
+- gate fail 不会单独生成 reflection task
+- 真正需要保留的是“已判定但暂不放行”的 `HOLDING`
+
+### 11.2 当前 reflection 接线状态
+
+当前状态需要拆成两层看：
+
+- 新 reflection 主线骨架已经存在：
+  - `AbstractReflectionTask`
+  - `EpisodeSynthesisReflectionTask`
+  - `ReflectionMaterialExporter / Merger`
+  - `ReflectionStateSnapshotLoader`
+  - `ReflectionPersonaLoader`
+  - 固定 modules：
+    - `memory_synthesis`
+    - `player_profile_update`
+    - `current_situation_update`
+    - `favorability_update`
+    - `emotion_update`
+- 当前骨架已经能完成：
+  - material export
+  - raw -> merged material
+  - state snapshot load
+  - relevant persona load
+  - prompt draft 生成
+  - module instruction prompt 拼装
+- 但下面这些还没有接回：
+  - episode 自动 gate
+  - internal trigger 的逐 signal 提交
+  - 单次 LLM 调用
+  - module output parse / validate 后的正式 commit
+  - episode / STM 的消费与截断联动
+
+也就是说，当前仍没有正式的 episode -> reflection 后台执行闭环。
+
+### 11.3 当前 reflection 后台队列状态
+
+当前没有“reflection 专属后台队列”。
+
+实际运行时结构是：
+
+- `AgentRuntime` 只有一条共享后台队列 `bgQueue`
+- 类型是 `PriorityBlockingQueue<AgentTask>`
+- 由单独的 `bgWorker` 串行消费
+- `AbstractReflectionTask` 作为 `AgentTask` 子类，本应进入这条队列
+- 当前 reflection task 的默认后台优先级固定为 `40`
+
+但当前代码里还没有任何地方调用：
+
+- 对应 internal trigger 去逐个调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`
+
+所以准确地说：
+
+- reflection 的后台执行容器已经存在
+- reflection 的 task 骨架也已经存在
+- 但 reflection 还没有真正入队运行
 
 ### 11.4 地点 / 结构边界动作已采集，但 episode 还没消费
 
@@ -555,5 +705,4 @@ action 侧 authored tuning 仍在：
 6. [EpisodeTimelineStore.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTimelineStore.java)
 7. [EpisodeTracker.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeTracker.java)
 8. `episode/splitter/*`
-9. [EpisodeSynthesisPromptFormatter.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodeSynthesisPromptFormatter.java)
-10. [StudioRuntimeEpisodeTimelineFile.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/studio/StudioRuntimeEpisodeTimelineFile.java)
+9. [StudioRuntimeEpisodeTimelineFile.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/studio/StudioRuntimeEpisodeTimelineFile.java)

@@ -2,6 +2,9 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.split
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionGateDecision;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionLifecycleState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.SegmentIntentSignals;
 
@@ -89,6 +92,20 @@ public final class EpisodeIntentMath {
     }
 
     public static EpisodeRegion buildRegion(List<FixedActionSegment> segments, int startInclusive, int endInclusive) {
+        return buildRegion(
+                segments,
+                startInclusive,
+                endInclusive,
+                EpisodeRegionGateDecision.UNSET,
+                EpisodeRegionLifecycleState.ACTIVE);
+    }
+
+    public static EpisodeRegion buildRegion(
+            List<FixedActionSegment> segments,
+            int startInclusive,
+            int endInclusive,
+            EpisodeRegionGateDecision gateDecision,
+            EpisodeRegionLifecycleState lifecycleState) {
         if (segments == null || segments.isEmpty()) {
             return null;
         }
@@ -105,12 +122,16 @@ public final class EpisodeIntentMath {
         return new EpisodeRegion(
                 safeStart,
                 safeEnd,
+                first != null ? first.getSegmentId() : EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                last != null ? last.getSegmentId() : EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 first != null ? first.getStartTimestamp() : 0L,
                 last != null ? last.getEndTimestamp() : 0L,
                 aggregateScores,
                 profile.primaryIntent(),
                 profile.primaryScore(),
                 profile.secondaryIntent(),
-                profile.secondaryScore());
+                profile.secondaryScore(),
+                gateDecision,
+                lifecycleState);
     }
 }

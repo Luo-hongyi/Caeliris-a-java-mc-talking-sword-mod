@@ -56,7 +56,9 @@ public final class FallbackQuietSplitter implements EpisodeSplitter {
         FixedActionSegment latestSegment = context.latestSegment();
         EpisodeSplitReason reason = EpisodeSplitReason.FALLBACK_QUIET_GAP;
         return List.of(EpisodePendingMark.fromRuntimeConfig(
+                context.timeline(),
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegmentIndex + 1,
                 latestSegment.getEndTimestamp(),
                 reason,
@@ -79,10 +81,15 @@ public final class FallbackQuietSplitter implements EpisodeSplitter {
         }
 
         EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitSegmentIndex());
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
+                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
         return Optional.of(new EpisodeSplitPoint(
                 pendingMark.splitSegmentIndex(),
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 pendingMark.reason(),
                 previousRegion != null ? previousRegion.primaryIntent() : null,

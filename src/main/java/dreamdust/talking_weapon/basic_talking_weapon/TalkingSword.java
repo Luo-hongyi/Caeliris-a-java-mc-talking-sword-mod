@@ -1,7 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.action.trigger.RightClickTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.RightClickTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -43,7 +43,7 @@ public class TalkingSword extends SwordItem {
             return InteractionResultHolder.pass(player.getItemInHand(hand));
         }
 
-        // 委托给 AgentSensor：通过 RightClickTrigger 采集上下文(含截图) → 提交 LLMInteractionTask
+        // 委托给 AgentSensor：通过 RightClickTrigger 采集上下文(含截图) → 提交 action 侧交互任务
         boolean accepted = AgentSensor.getInstance().fireTrigger(new RightClickTrigger(), player);
 
         return accepted

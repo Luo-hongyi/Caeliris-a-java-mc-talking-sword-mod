@@ -5,7 +5,8 @@
 另见：
 
 - [episode/EPISODE_CURRENT_STATE.md](episode/EPISODE_CURRENT_STATE.md) - episode 当前实际实现总览；从 action 采集、action archive、splitter signals、split、region 到 prompt synthesis 的最新扫描结果
-- [episode/EPISODE_SYNTHESIS_PLAN.md](episode/EPISODE_SYNTHESIS_PLAN.md) - episode-first 的长期记忆合成计划；记录 gate、favorability 迁移、现状摘要等后续主线决策
+- [episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md](episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md) - 当前 reflection 主线重构计划；记录 episode / interaction trace / material exporter 边界、gate、模块化输出与后续实现顺序
+- [SEGMENT_COORDINATE_REFACTOR_PLAN.md](SEGMENT_COORDINATE_REFACTOR_PLAN.md) - fixed segment 持久化坐标重构讨论；解决中间 region 物理删除、signal 稳定引用和 reflection task 入队后坐标漂移问题
 - [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
 - [RECALL_STRATEGIES.md](RECALL_STRATEGIES.md) - 独立记录唯一统一记忆模型，以及 `SEED_FIRST` / `FULL_VISIBILITY` / `HYBRID` 三种参数预设
 - [RECALL_TUNING_GUIDE.md](RECALL_TUNING_GUIDE.md) - 按当前代码实现整理的调参指南、公式与阈值
@@ -25,6 +26,10 @@
 - `LTMEntry` 已补入可持久化的游戏内语义时间锚点；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
 - `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue。
 - 当前仍未完成的关键环节，是和这套新 recall 架构一致的 **LTM 生成闭环**。
+- 新 reflection 主线骨架已经存在：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 都已落地；`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`current_situation_update`、`favorability_update`、`emotion_update` 五个 modules。
+- 但这条 reflection 主线还没有正式接回 episode gate，也还没有进入 `AgentRuntime` 的后台队列执行闭环。
+- 继续推进这条主线前，当前先插入一个更底层的前置议题：fixed segment 持久化坐标。原因是 episode / reflection 现在仍把当前数组位置当作正式引用坐标，这会阻塞中间 region 物理删除和 targeted cleanup。
+
 
 ## 记忆分层
 
@@ -106,8 +111,11 @@
 
 ## 当前缺口：LTM 生成
 
-仓库中仍保留 `ReflectionTask` 和 `ReflectionTrigger`，但这条链路目前只能视作旧版过渡骨架，而不是当前设计意义上的完整实现。原因包括：
+旧版 `ReflectionTask` 和 `ReflectionTrigger` 已经删除；当前 reflection 方向已经有新的 episode 驱动骨架，但它仍不是当前设计意义上的完整实现。原因包括：
 
+- `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 当前仍返回空列表，episode 侧 gate 还没有真正产出可提交的多 signal。
+- 当前还没有正式调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`，所以 reflection task 还没有真正入共享后台队列。
+- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 当前仍只停在 prepared skeleton，没有完成单次 LLM 调用、root output 解析、task-owned commit 和后续 consumption signal。
 - 它还没有和最新的 `specific` / `generic` 语义完全统一。
 - 它还没有和当前的 `visibleContexts`、`associativeOnly`、`native_generic hidden` 策略形成闭环。
 - 它还没有明确的新一代结算时机和筛选规则。

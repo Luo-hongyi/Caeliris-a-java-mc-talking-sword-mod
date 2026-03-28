@@ -24,6 +24,8 @@ public record EpisodeTimeline(
         List<EpisodePendingMark> pendingMarks,
         List<EpisodeSplitPoint> splitPoints) {
 
+    public static final long UNASSIGNED_SEGMENT_ID = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+
     public EpisodeTimeline {
         segments = segments == null
                 ? List.of()
@@ -49,6 +51,39 @@ public record EpisodeTimeline(
 
     public FixedActionSegment getSegment(int segmentIndex) {
         return segmentIndex >= 0 && segmentIndex < segments.size() ? segments.get(segmentIndex) : null;
+    }
+
+    public long getSegmentId(int segmentIndex) {
+        FixedActionSegment segment = getSegment(segmentIndex);
+        return segment == null ? UNASSIGNED_SEGMENT_ID : segment.getSegmentId();
+    }
+
+    public int indexOfSegmentId(long segmentId) {
+        if (segmentId <= 0L || segments.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < segments.size(); i++) {
+            FixedActionSegment segment = segments.get(i);
+            if (segment != null && segment.getSegmentId() == segmentId) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public FixedActionSegment getSegmentById(long segmentId) {
+        int index = indexOfSegmentId(segmentId);
+        return index < 0 ? null : getSegment(index);
+    }
+
+    public BoundarySegmentIds boundarySegmentIdsAt(int splitSegmentIndex) {
+        long leftSegmentId = splitSegmentIndex <= 0
+                ? UNASSIGNED_SEGMENT_ID
+                : getSegmentId(splitSegmentIndex - 1);
+        long rightSegmentId = splitSegmentIndex >= segments.size()
+                ? UNASSIGNED_SEGMENT_ID
+                : getSegmentId(splitSegmentIndex);
+        return new BoundarySegmentIds(leftSegmentId, rightSegmentId);
     }
 
     public List<FixedActionSegment> sliceSegments(int startInclusive, int endInclusive) {
@@ -112,5 +147,10 @@ public record EpisodeTimeline(
             }
         }
         return false;
+    }
+
+    public record BoundarySegmentIds(
+            long leftSegmentId,
+            long rightSegmentId) {
     }
 }

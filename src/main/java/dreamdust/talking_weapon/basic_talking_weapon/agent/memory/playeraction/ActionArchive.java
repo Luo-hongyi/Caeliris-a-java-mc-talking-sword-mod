@@ -37,15 +37,13 @@ public final class ActionArchive {
 
         ActionRecord copy = record.copy();
         records.addLast(copy);
-        boolean evicted = false;
         while (records.size() > capacity) {
             records.pollFirst();
-            evicted = true;
         }
 
         long fixedSegmentMs = ActionTimelineRuntimeSettings.getFixedSegmentMs();
         long now = Math.max(System.currentTimeMillis(), copy.getTimestamp());
-        if (evicted || fixedSegmentBuffer.needsRebuild(fixedSegmentMs)) {
+        if (fixedSegmentBuffer.needsRebuild(fixedSegmentMs)) {
             fixedSegmentBuffer.rebuild(new ArrayList<>(records), fixedSegmentMs, now);
             return FixedSegmentUpdate.replaceAll(fixedSegmentBuffer.snapshotSealedSegments());
         }
@@ -78,6 +76,31 @@ public final class ActionArchive {
             fixedSegmentBuffer.sealElapsedSegments(now);
         }
         return fixedSegmentBuffer.snapshotSealedSegments();
+    }
+
+    public synchronized FixedSegmentBufferRuntimeState snapshotFixedSegmentRuntimeState() {
+        return snapshotFixedSegmentRuntimeState(ActionTimelineRuntimeSettings.getFixedSegmentMs());
+    }
+
+    public synchronized FixedSegmentBufferRuntimeState snapshotFixedSegmentRuntimeState(long fixedSegmentMs) {
+        long now = System.currentTimeMillis();
+        if (fixedSegmentBuffer.needsRebuild(fixedSegmentMs)) {
+            fixedSegmentBuffer.rebuild(new ArrayList<>(records), fixedSegmentMs, now);
+        } else {
+            fixedSegmentBuffer.sealElapsedSegments(now);
+        }
+        return fixedSegmentBuffer.snapshotRuntimeState();
+    }
+
+    public synchronized void restoreFixedSegmentRuntimeState(FixedSegmentBufferRuntimeState runtimeState) {
+        if (runtimeState == null || runtimeState.isEmpty()) {
+            return;
+        }
+        long fixedSegmentMs = ActionTimelineRuntimeSettings.getFixedSegmentMs();
+        if (runtimeState.getFixedSegmentMs() != fixedSegmentMs) {
+            return;
+        }
+        fixedSegmentBuffer.restoreRuntimeState(runtimeState);
     }
 
     public synchronized int size() {

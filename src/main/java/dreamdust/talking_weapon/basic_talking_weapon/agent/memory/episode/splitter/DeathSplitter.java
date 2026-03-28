@@ -27,6 +27,7 @@ public final class DeathSplitter implements EpisodeSplitter {
 
     @Override
     public List<EpisodePendingMark> detect(EpisodeDetectContext context) {
+        EpisodeTimeline timeline = context == null ? null : context.timeline();
         FixedActionSegment latestSegment = context == null ? null : context.latestSegment();
         int latestSegmentIndex = context == null ? -1 : context.latestSegmentIndex();
         if (latestSegment == null
@@ -36,7 +37,9 @@ public final class DeathSplitter implements EpisodeSplitter {
         }
 
         return List.of(EpisodePendingMark.fromRuntimeConfig(
+                timeline,
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegmentIndex + 1,
                 latestSegment.getEndTimestamp(),
                 EpisodeSplitReason.DEATH,
@@ -64,11 +67,16 @@ public final class DeathSplitter implements EpisodeSplitter {
                         timeline.segments(),
                         pendingMark.splitSegmentIndex(),
                         latestSegmentIndex));
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
+                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
 
         return Optional.of(new EpisodeSplitPoint(
                 pendingMark.splitSegmentIndex(),
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 pendingMark.reason(),
                 previousRegion != null ? previousRegion.primaryIntent() : null,

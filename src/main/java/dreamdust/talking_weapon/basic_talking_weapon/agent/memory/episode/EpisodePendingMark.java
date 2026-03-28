@@ -10,7 +10,10 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitt
  */
 public record EpisodePendingMark(
         int detectedAtSegmentIndex,
+        long detectedAtSegmentId,
         int splitSegmentIndex,
+        long splitLeftSegmentId,
+        long splitRightSegmentId,
         long splitTimestamp,
         EpisodeSplitReason reason,
         int confirmAtSegmentIndex,
@@ -38,7 +41,9 @@ public record EpisodePendingMark(
     }
 
     public static EpisodePendingMark fromRuntimeConfig(
+            EpisodeTimeline timeline,
             int detectedAtSegmentIndex,
+            long detectedAtSegmentId,
             int splitSegmentIndex,
             long splitTimestamp,
             EpisodeSplitReason reason,
@@ -47,9 +52,17 @@ public record EpisodePendingMark(
         int confirmAtSegmentIndex = Math.max(
                 splitSegmentIndex,
                 detectedAtSegmentIndex + config.confirmDelaySegments());
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds = timeline == null
+                ? new EpisodeTimeline.BoundarySegmentIds(
+                        EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                        EpisodeTimeline.UNASSIGNED_SEGMENT_ID)
+                : timeline.boundarySegmentIdsAt(splitSegmentIndex);
         return new EpisodePendingMark(
                 detectedAtSegmentIndex,
+                detectedAtSegmentId,
                 splitSegmentIndex,
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
                 splitTimestamp,
                 reason,
                 confirmAtSegmentIndex,
@@ -57,6 +70,22 @@ public record EpisodePendingMark(
                 config.highPriority(),
                 config.coverBeforeSegments(),
                 config.coverAfterSegments());
+    }
+
+    public static EpisodePendingMark fromRuntimeConfig(
+            int detectedAtSegmentIndex,
+            int splitSegmentIndex,
+            long splitTimestamp,
+            EpisodeSplitReason reason,
+            String ownerSplitterId) {
+        return fromRuntimeConfig(
+                EpisodeTimeline.empty(),
+                detectedAtSegmentIndex,
+                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                splitSegmentIndex,
+                splitTimestamp,
+                reason,
+                ownerSplitterId);
     }
 
     public boolean isHighPriority() {
@@ -72,6 +101,15 @@ public record EpisodePendingMark(
     public boolean sameKey(EpisodePendingMark other) {
         if (other == null) {
             return false;
+        }
+        boolean hasStableBoundaryIds = splitLeftSegmentId > 0L || splitRightSegmentId > 0L;
+        boolean otherHasStableBoundaryIds = other.splitLeftSegmentId > 0L || other.splitRightSegmentId > 0L;
+        if (hasStableBoundaryIds && otherHasStableBoundaryIds) {
+            return splitLeftSegmentId == other.splitLeftSegmentId
+                    && splitRightSegmentId == other.splitRightSegmentId
+                    && confirmAtSegmentIndex == other.confirmAtSegmentIndex
+                    && reason == other.reason
+                    && ownerSplitterId.equals(other.ownerSplitterId);
         }
         return splitSegmentIndex == other.splitSegmentIndex
                 && confirmAtSegmentIndex == other.confirmAtSegmentIndex

@@ -12,7 +12,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.F
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -35,6 +37,7 @@ public final class EpisodeTracker {
     private final ArrayList<EpisodePendingMark> pendingMarks = new ArrayList<>();
     private final ArrayList<EpisodeSplitPoint> splitPoints = new ArrayList<>();
     private final ArrayList<EpisodeRegion> regions = new ArrayList<>();
+    private final LinkedHashMap<Long, EpisodeRegion> seededRegionStates = new LinkedHashMap<>();
     private int lastAcceptedPendingDetectSegmentIndex = -1;
 
     public EpisodeTracker() {
@@ -73,11 +76,19 @@ public final class EpisodeTracker {
         pendingMarks.clear();
         splitPoints.clear();
         regions.clear();
+        seededRegionStates.clear();
         lastAcceptedPendingDetectSegmentIndex = -1;
     }
 
     public EpisodeTimeline replaceSegments(List<FixedActionSegment> nextSegments) {
+        return replaceSegments(nextSegments, List.of());
+    }
+
+    public EpisodeTimeline replaceSegments(
+            List<FixedActionSegment> nextSegments,
+            List<EpisodeRegion> regionStateSeeds) {
         reset();
+        seedRegionStates(regionStateSeeds);
         appendSegments(nextSegments);
         return snapshotTimeline();
     }
@@ -268,9 +279,18 @@ public final class EpisodeTracker {
             return false;
         }
         for (EpisodeSplitPoint splitPoint : splitPoints) {
-            if (splitPoint != null
-                    && splitPoint.splitSegmentIndex() == pendingMark.splitSegmentIndex()
-                    && splitPoint.reason() == pendingMark.reason()) {
+            if (splitPoint == null || splitPoint.reason() != pendingMark.reason()) {
+                continue;
+            }
+            boolean stableBoundaryMatch =
+                    pendingMark.splitLeftSegmentId() > 0L
+                            || pendingMark.splitRightSegmentId() > 0L;
+            if (stableBoundaryMatch
+                    && splitPoint.splitLeftSegmentId() == pendingMark.splitLeftSegmentId()
+                    && splitPoint.splitRightSegmentId() == pendingMark.splitRightSegmentId()) {
+                return true;
+            }
+            if (splitPoint.splitSegmentIndex() == pendingMark.splitSegmentIndex()) {
                 return true;
             }
         }
@@ -290,6 +310,12 @@ public final class EpisodeTracker {
     }
 
     private void rebuildRegions() {
+        LinkedHashMap<Long, EpisodeRegion> stateSeeds = new LinkedHashMap<>(seededRegionStates);
+        for (EpisodeRegion region : regions) {
+            if (region != null) {
+                stateSeeds.put(region.regionId(), region);
+            }
+        }
         regions.clear();
         if (segments.isEmpty()) {
             return;
@@ -314,18 +340,75 @@ public final class EpisodeTracker {
                 continue;
             }
             int regionEnd = Math.min(boundary, segments.size()) - 1;
-            EpisodeRegion region = EpisodeIntentMath.buildRegion(segments, regionStart, regionEnd);
+            EpisodeRegion region = EpisodeIntentMath.buildRegion(
+                    segments,
+                    regionStart,
+                    regionEnd,
+                    EpisodeRegionGateDecision.UNSET,
+                    EpisodeRegionLifecycleState.HOLDING);
             if (region != null) {
-                regions.add(region);
+                regions.add(resolveRegionRuntimeState(region, false, stateSeeds));
             }
             regionStart = Math.min(boundary, segments.size());
             lastBoundary = boundary;
         }
 
-        EpisodeRegion tailRegion = EpisodeIntentMath.buildRegion(segments, regionStart, segments.size() - 1);
+        EpisodeRegion tailRegion = EpisodeIntentMath.buildRegion(
+                segments,
+                regionStart,
+                segments.size() - 1,
+                EpisodeRegionGateDecision.UNSET,
+                EpisodeRegionLifecycleState.ACTIVE);
         if (tailRegion != null) {
-            regions.add(tailRegion);
+            regions.add(resolveRegionRuntimeState(tailRegion, true, stateSeeds));
         }
+    }
+
+    private void seedRegionStates(List<EpisodeRegion> regionStateSeeds) {
+        seededRegionStates.clear();
+        if (regionStateSeeds == null || regionStateSeeds.isEmpty()) {
+            return;
+        }
+        for (EpisodeRegion region : regionStateSeeds) {
+            if (region != null) {
+                seededRegionStates.put(region.regionId(), region);
+            }
+        }
+    }
+
+    private EpisodeRegion resolveRegionRuntimeState(
+            EpisodeRegion region,
+            boolean tailRegion,
+            Map<Long, EpisodeRegion> stateSeeds) {
+        if (region == null) {
+            return null;
+        }
+        if (tailRegion) {
+            return region.withRuntimeState(
+                    EpisodeRegionGateDecision.UNSET,
+                    EpisodeRegionLifecycleState.ACTIVE);
+        }
+
+        EpisodeRegion seed = stateSeeds == null ? null : stateSeeds.get(region.regionId());
+        if (seed == null) {
+            return region.withRuntimeState(
+                    EpisodeRegionGateDecision.UNSET,
+                    EpisodeRegionLifecycleState.HOLDING);
+        }
+
+        EpisodeRegionGateDecision gateDecision = seed.gateDecision() == null
+                ? EpisodeRegionGateDecision.UNSET
+                : seed.gateDecision();
+        EpisodeRegionLifecycleState lifecycleState = seed.lifecycleState() == null
+                ? EpisodeRegionLifecycleState.HOLDING
+                : seed.lifecycleState();
+
+        if (lifecycleState == EpisodeRegionLifecycleState.ACTIVE) {
+            gateDecision = EpisodeRegionGateDecision.UNSET;
+            lifecycleState = EpisodeRegionLifecycleState.HOLDING;
+        }
+
+        return region.withRuntimeState(gateDecision, lifecycleState);
     }
 
     private void sortPendingMarks() {
@@ -350,8 +433,11 @@ public final class EpisodeTracker {
         long splitTimestamp = Math.max(0L, firstSegment.getStartTimestamp());
         splitPoints.add(new EpisodeSplitPoint(
                 0,
+                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                firstSegment.getSegmentId(),
                 splitTimestamp,
                 0,
+                firstSegment.getSegmentId(),
                 splitTimestamp,
                 null,
                 null,

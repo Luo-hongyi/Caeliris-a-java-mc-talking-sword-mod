@@ -17,7 +17,7 @@
 - `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
 - 全局植入记忆 (`implanted memories`) 的读写链路可用。
 - 植入记忆支持独立的 `semantic_time_tag`：它会参与记忆之间的联想边，并在 Prompt 中以独立时间语义输出，但不会并入普通 `detail_tags` 的 cue 列表。
-- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。仓库中仍保留旧版 `ReflectionTask` / `ReflectionTrigger` 骨架，但它还没有完成最新设计下的稳定接线、筛选策略与生成质量约束，因此不能视为该阶段已经彻底完成。
+- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。旧版 `ReflectionTask` / `ReflectionTrigger` 已经从代码中移除；当前新的 reflection 主线骨架已经落到 `AbstractReflectionTask + EpisodeSynthesisReflectionTask + fixed modules`，但 episode gate、后台入队、单次 LLM 调用与 task-owned commit 还没有正式接起。
 
 ## ✨ 核心特性
 
@@ -74,12 +74,10 @@ agent/
 │   ├── LTMStorage.java              — 长期记忆跨存档读取保存持久化服务
 │   ├── AgentMemory.java             — 行动流、短期汇总、LTM库、偏好身份管理
 │   └── README.md                    — 记忆系统现状与设计边界
-├── task/                           ← 任务调度
+├── task/                           ← 通用任务基类 / 本地任务
 │   ├── AgentTask.java               — 抽象基类 (taskId/priority/cancel/Comparable)
-│   ├── LLMInteractionTask.java      — LLM 交互：从 extras 读 user_prompt → 调 LLM → 更新记忆
 │   ├── MemoryUpdateTask.java        — 零网络开销的本地记忆更新
-│   ├── AgentStateUpdateTask.java    — 零网络开销的状态更新（含 description）
-│   └── ReflectionTask.java          — 旧版后台反思 / LTM 合成骨架（待按新架构重做）
+│   └── AgentStateUpdateTask.java    — 零网络开销的状态更新（含 description）
 ├── action/                         ← 动作执行
 │   ├── AgentAction.java             — 抽象基类 (perform/estimatedDuration)
 │   ├── SpeechAction.java            — ActionBar 逐行文字展示
@@ -91,10 +89,15 @@ agent/
 │   ├── TagDescriptionDictionary.java — DetailTag → 自然语言描述（只负责描述文本）
 │   ├── TagRelationDictionary.java  — DetailTag 一对多关系图（匹配 / fallback，要求无环）
 │   └── LocationRegistry.java        — 关键地点注册表（运行时增删 + 即时持久化）
-└── llm_service/                    ← LLM 工具
-    ├── LLMAgentService.java         — 纯工具类：buildModel()
-    ├── AgentResponse.java           — LLM JSON 响应结构（thinking/inner_monologue/speech）
-    └── AgentResponseParser.java     — 三级回退解析器（JSON → 代码块 → 纯文本）
+├── llm_service/                    ← LLM 工具
+│   └── LLMAgentService.java         — 纯工具类：buildModel()
+├── action/                         ← 运行时互动链路
+│   ├── response/
+│   │   ├── AgentActionResponse.java       — 运行时互动的 LLM JSON 响应结构
+│   │   └── AgentActionResponseParser.java — 运行时互动响应解析器
+│   └── task/
+│       └── LLMInteractionTask.java        — 前台互动任务
+└── reflection/                     ← 内部反思链路（旧 task / module 骨架已清除，按新 mainline 重建中）
 
 config/
 ├── TalkingWeaponConfig.java         — Forge 客户端配置（per-trigger 采集器开关 + per-trigger prompt）
@@ -195,9 +198,11 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 
 ### 长期记忆生成
 
-- 当前代码库中保留了一个旧版 `ReflectionTask` / `ReflectionTrigger` 路线，用于把一个纪元内的 STM 压缩为 `LTMEntry`。
-- 但这条生成链还没有完成与最新 detail-tag 语义、噪声过滤、visible context 设计、recent recall 策略的统一，因此当前阶段不应视为“LTM 生成系统已完成”。
-- 当前开发的关键缺口是：构建一个与新召回方案对齐的 LTM 生成闭环，包括何时结算、如何从 STM 提炼 detail tags / focus tags、如何控制植入与生成记忆的质量边界，以及如何与 persona / favorability 的低频更新协同。
+- 旧版 `ReflectionTask` / `ReflectionTrigger` 路线已经删除，不再作为过渡实现保留。
+- 旧 `EpisodeSynthesisTask` / `DebugEpisodeSynthesisTask` / 内部 trigger 接线也已经清除，不再作为当前入口保留。
+- 当前 reflection 已经按 `REFLECTION_MAINLINE_REFACTOR_PLAN.md` 落下第一版骨架：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 已存在，`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`current_situation_update`、`favorability_update`、`emotion_update` 五个 modules。
+- 但这条链路还没有接回 `EpisodeTimelineStore` 的 gate，也还没有正式调用 `AgentRuntime.submitBackground(...)` 入后台队列；当前 `executePreparedTask(...)` 仍停在 prepared skeleton 阶段，因此当前阶段仍不能视为“LTM 生成系统已完成”。
+- 当前开发的关键缺口是：构建一个与新召回方案对齐的 LTM 生成闭环，包括何时结算、如何从 episode / STM 提炼 detail tags / focus tags、如何控制植入与生成记忆的质量边界，以及如何与 persona / favorability 的低频更新协同。
 
 ### 显示机制
 - 所有剑的发言在**快捷栏上方（Action Bar）**显示
@@ -336,7 +341,6 @@ IContextCollector (采集器)
 | 5 | `MemoryUpdateTask` | 本地记忆更新，零网络开销 |
 | 5 | `AgentStateUpdateTask` | 本地状态更新，零网络开销 |
 | 10 | `LLMInteractionTask` | 需要 LLM 调用的核心交互 |
-| 50 | `ReflectionTask` | 旧版后台反思骨架，尚未完成与当前记忆架构的统一 |
 
 ## 🛠️ 技术栈
 

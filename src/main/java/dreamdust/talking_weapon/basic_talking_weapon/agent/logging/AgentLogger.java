@@ -3,14 +3,13 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.logging;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.action.response.AgentActionResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
@@ -774,7 +773,7 @@ public final class AgentLogger {
     /**
      * 记录 JSON 解析后的结构化响应。
      */
-    public static void logParsedResponse(AgentResponse response) {
+    public static void logParsedResponse(AgentActionResponse response) {
         LogSession session = CURRENT_SESSION.get();
         if (session == null)
             return;
@@ -783,7 +782,7 @@ public final class AgentLogger {
         writeSectionHeader(w, "4.7 解析后的结构化响应 (Parsed Response)");
         w.println("thinking:        " + (response.hasThinking() ? "(有)" : "(无)"));
         w.println("actions:         " + response.getActions().size() + " 个");
-        for (dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.AgentResponse.ActionRequest req : response.getActions()) {
+        for (dreamdust.talking_weapon.basic_talking_weapon.agent.action.response.AgentActionResponse.ActionRequest req : response.getActions()) {
             String contentSnippet = req.content != null && req.content.length() > 50 
                     ? req.content.substring(0, 50) + "..." 
                     : req.content;
@@ -830,53 +829,6 @@ public final class AgentLogger {
             w.println("│ " + line);
         }
         w.println();
-    }
-
-    /**
-     * 将一次手动 episode synthesis 调试结果写入独立日志文件。
-     * <p>
-     * 这里故意不复用当前 trigger session，避免与前台交互日志并发写同一个文件。
-     */
-    public static synchronized void logEpisodeSynthesisDebug(
-            EpisodeSynthesisTriggerSignal signal,
-            String promptDraft) {
-        try {
-            Path dir = ensureLogDir();
-            String timestamp = LocalDateTime.now().format(FILE_TIME_FMT);
-            File file = dir.resolve("episode_synthesis_debug_" + timestamp + ".log").toFile();
-            try (PrintWriter w = new PrintWriter(new FileWriter(file, false), true)) {
-                w.println("╔══════════════════════════════════════════════════════════════╗");
-                w.println("║      TALKING WEAPON — EPISODE SYNTHESIS DEBUG LOG           ║");
-                w.println("╚══════════════════════════════════════════════════════════════╝");
-                w.println();
-                w.println("时间: " + LocalDateTime.now().format(DISPLAY_TIME_FMT));
-                w.println("日志: " + file.getName());
-                w.println();
-
-                writeSectionHeader(w, "Signal");
-                if (signal == null) {
-                    w.println("signal: (null)");
-                } else {
-                    w.println("leftBoundarySplitSegmentIndex: " + signal.leftBoundarySplitSegmentIndex());
-                    w.println("regionStartSegmentIndex: " + signal.regionStartSegmentIndex());
-                    w.println("regionEndSegmentIndex: " + signal.regionEndSegmentIndex());
-                    w.println("rightBoundarySplitSegmentIndex: " + signal.rightBoundarySplitSegmentIndex());
-                    w.println("regionStartTimestamp: " + formatTimestamp(signal.regionStartTimestamp()));
-                    w.println("regionEndTimestamp: " + formatTimestamp(signal.regionEndTimestamp()));
-                    w.println("stmSliceExclusiveTimestamp: " + formatTimestamp(signal.stmSliceExclusiveTimestamp()));
-                }
-                w.println();
-
-                writeSectionHeader(w, "Prompt Draft");
-                String safePromptDraft = promptDraft == null ? "" : promptDraft;
-                for (String line : safePromptDraft.split("\n")) {
-                    w.println("│ " + line);
-                }
-                w.println();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     /**

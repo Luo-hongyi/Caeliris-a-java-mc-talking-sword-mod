@@ -5,11 +5,12 @@ import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionGateDecision;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionLifecycleState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeReasonRuntimeConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRuntimeSettings;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeSplitReason;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
@@ -25,6 +26,7 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,15 +34,11 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Episode v2 的 runtime 调试输出。
+ * Episode v2 的 workspace runtime state 文件。
  * <p>
- * 用于给 Studio / 本地测试查看当前正式 timeline：
- * <ul>
- * <li>fixed segments 视角下的 episode timeline 摘要</li>
- * <li>pending marks / split points / regions</li>
- * <li>本次更新相对于上一份快照的 diff</li>
- * <li>最近一次 synthesis material prompt draft（如有）</li>
- * </ul>
+ * 当前实现仍主要承载 Studio / 本地测试所需的 runtime 快照；
+ * 后续会继续收敛为 episode runtime state 的唯一真源文件，
+ * 由 Studio 直接消费同一份 timeline / region 状态。
  */
 public final class StudioRuntimeEpisodeTimelineFile {
 
@@ -51,7 +49,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
     public static final String FILENAME = "studio_runtime_episode_timeline.json";
     public static final String VERSION_KEY = "runtimeEpisodeTimeline";
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -88,25 +86,37 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
     }
 
-    public static synchronized void recordSnapshot(AgentMemory memory) {
+    public static synchronized List<EpisodeRegion> readPersistedRegions() {
+        RuntimeEpisodeTimelineFileModel file = readOrEmpty();
+        if (file == null || file.regions == null || file.regions.isEmpty()) {
+            return List.of();
+        }
+        ArrayList<EpisodeRegion> persistedRegions = new ArrayList<>();
+        for (RuntimeEpisodeRegionModel regionModel : file.regions) {
+            if (regionModel == null) {
+                continue;
+            }
+            EpisodeRegion region = regionModel.toEpisodeRegion();
+            if (region != null) {
+                persistedRegions.add(region);
+            }
+        }
+        return List.copyOf(persistedRegions);
+    }
+
+    public static synchronized boolean recordSnapshot(AgentMemory memory) {
         long now = System.currentTimeMillis();
         if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
-            return;
+            return false;
         }
         writeCurrentSnapshot(memory);
+        return true;
     }
 
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
         RuntimeEpisodeTimelineFileModel previous = readOrEmpty();
         RuntimeEpisodeTimelineFileModel current = build(memory, previous);
         write(current);
-    }
-
-    public static synchronized void recordSynthesisMaterial(EpisodeSynthesisMaterial material) {
-        RuntimeEpisodeTimelineFileModel file = readOrEmpty();
-        file.generatedAt = OffsetDateTime.now().toString();
-        file.latestSynthesisPreview = RuntimeEpisodeSynthesisPreviewModel.fromMaterial(material);
-        write(file);
     }
 
     private static RuntimeEpisodeTimelineFileModel build(
@@ -116,9 +126,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
         file.generatedAt = OffsetDateTime.now().toString();
         file.fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
         file.reasonConfigs = createReasonConfigModels(EpisodeRuntimeSettings.snapshotConfigs());
-        file.latestSynthesisPreview = previous == null
-                ? new RuntimeEpisodeSynthesisPreviewModel()
-                : RuntimeEpisodeSynthesisPreviewModel.copyOf(previous.latestSynthesisPreview);
 
         EpisodeTimeline timeline = memory == null
                 ? EpisodeTimeline.empty()
@@ -171,6 +178,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
             return model;
         }
 
+        model.segmentId = segment.getSegmentId();
         model.startTimestamp = segment.getStartTimestamp();
         model.endTimestamp = segment.getEndTimestamp();
         model.rawStartIndex = segment.getRawStartIndex();
@@ -236,6 +244,41 @@ public final class StudioRuntimeEpisodeTimelineFile {
         return value == null ? "" : value.name();
     }
 
+    private static PlayerIntent parseIntent(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return PlayerIntent.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static EpisodeRegionGateDecision parseGateDecision(String value) {
+        if (value == null || value.isBlank()) {
+            return EpisodeRegionGateDecision.UNSET;
+        }
+        try {
+            return EpisodeRegionGateDecision.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return EpisodeRegionGateDecision.UNSET;
+        }
+    }
+
+    private static EpisodeRegionLifecycleState parseLifecycleState(
+            String value,
+            EpisodeRegionLifecycleState fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return EpisodeRegionLifecycleState.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
+        }
+    }
+
     public static final class RuntimeEpisodeTimelineFileModel {
         public int schemaVersion = SCHEMA_VERSION;
         public String generatedAt = "";
@@ -250,7 +293,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public List<RuntimeEpisodeSplitPointModel> splitPoints = new ArrayList<>();
         public List<RuntimeEpisodeRegionModel> regions = new ArrayList<>();
         public RuntimeEpisodeUpdateModel lastUpdate = new RuntimeEpisodeUpdateModel();
-        public RuntimeEpisodeSynthesisPreviewModel latestSynthesisPreview = new RuntimeEpisodeSynthesisPreviewModel();
 
         private void normalize() {
             if (schemaVersion <= 0) {
@@ -275,14 +317,20 @@ public final class StudioRuntimeEpisodeTimelineFile {
             if (regions == null) {
                 regions = new ArrayList<>();
             }
+            ArrayList<RuntimeEpisodeRegionModel> normalizedRegions = new ArrayList<>();
+            for (RuntimeEpisodeRegionModel region : regions) {
+                if (region != null) {
+                    normalizedRegions.add(region);
+                }
+            }
+            for (int i = 0; i < normalizedRegions.size(); i++) {
+                normalizedRegions.get(i).normalize(i == normalizedRegions.size() - 1);
+            }
+            regions = normalizedRegions;
             if (lastUpdate == null) {
                 lastUpdate = new RuntimeEpisodeUpdateModel();
             }
             lastUpdate.normalize();
-            if (latestSynthesisPreview == null) {
-                latestSynthesisPreview = new RuntimeEpisodeSynthesisPreviewModel();
-            }
-            latestSynthesisPreview.normalize();
         }
     }
 
@@ -307,6 +355,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
     public static final class RuntimeEpisodeSegmentModel {
         public int index;
+        public long segmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long startTimestamp;
         public long endTimestamp;
         public int rawStartIndex = -1;
@@ -320,13 +369,16 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public List<String> observedActionTypes = new ArrayList<>();
 
         String signature() {
-            return index + "|" + startTimestamp + "|" + endTimestamp + "|" + rawStartIndex + "|" + rawEndIndex;
+            return index + "|" + segmentId + "|" + startTimestamp + "|" + endTimestamp + "|" + rawStartIndex + "|" + rawEndIndex;
         }
     }
 
     public static final class RuntimeEpisodePendingMarkModel {
         public int detectedAtSegmentIndex;
+        public long detectedAtSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public int splitSegmentIndex;
+        public long splitLeftSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long splitRightSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitTimestamp;
         public String reason = "";
         public int confirmAtSegmentIndex;
@@ -338,7 +390,10 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public static RuntimeEpisodePendingMarkModel from(EpisodePendingMark pendingMark) {
             RuntimeEpisodePendingMarkModel model = new RuntimeEpisodePendingMarkModel();
             model.detectedAtSegmentIndex = pendingMark.detectedAtSegmentIndex();
+            model.detectedAtSegmentId = pendingMark.detectedAtSegmentId();
             model.splitSegmentIndex = pendingMark.splitSegmentIndex();
+            model.splitLeftSegmentId = pendingMark.splitLeftSegmentId();
+            model.splitRightSegmentId = pendingMark.splitRightSegmentId();
             model.splitTimestamp = pendingMark.splitTimestamp();
             model.reason = nameOf(pendingMark.reason());
             model.confirmAtSegmentIndex = pendingMark.confirmAtSegmentIndex();
@@ -350,6 +405,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
 
         String signature() {
+            if (splitLeftSegmentId > 0L || splitRightSegmentId > 0L) {
+                return splitLeftSegmentId + "|" + splitRightSegmentId + "|" + confirmAtSegmentIndex + "|" + reason + "|" + ownerSplitterId;
+            }
             return splitSegmentIndex + "|" + confirmAtSegmentIndex + "|" + reason + "|" + ownerSplitterId;
         }
 
@@ -362,8 +420,11 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
     public static final class RuntimeEpisodeSplitPointModel {
         public int splitSegmentIndex;
+        public long splitLeftSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long splitRightSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitTimestamp;
         public int confirmationSegmentIndex;
+        public long confirmationSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long confirmationTimestamp;
         public String reason = "";
         public String previousPrimaryIntent = "";
@@ -374,8 +435,11 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public static RuntimeEpisodeSplitPointModel from(EpisodeSplitPoint splitPoint) {
             RuntimeEpisodeSplitPointModel model = new RuntimeEpisodeSplitPointModel();
             model.splitSegmentIndex = splitPoint.splitSegmentIndex();
+            model.splitLeftSegmentId = splitPoint.splitLeftSegmentId();
+            model.splitRightSegmentId = splitPoint.splitRightSegmentId();
             model.splitTimestamp = splitPoint.splitTimestamp();
             model.confirmationSegmentIndex = splitPoint.confirmationSegmentIndex();
+            model.confirmationSegmentId = splitPoint.confirmationSegmentId();
             model.confirmationTimestamp = splitPoint.confirmationTimestamp();
             model.reason = nameOf(splitPoint.reason());
             model.previousPrimaryIntent = nameOf(splitPoint.previousPrimaryIntent());
@@ -386,6 +450,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
 
         String signature() {
+            if (splitLeftSegmentId > 0L || splitRightSegmentId > 0L) {
+                return splitLeftSegmentId + "|" + splitRightSegmentId + "|" + splitTimestamp + "|" + reason;
+            }
             return splitSegmentIndex + "|" + splitTimestamp + "|" + reason;
         }
 
@@ -396,11 +463,16 @@ public final class StudioRuntimeEpisodeTimelineFile {
     }
 
     public static final class RuntimeEpisodeRegionModel {
+        public long regionId;
         public int startSegmentIndex;
         public int endSegmentIndex;
+        public long startSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long endSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long startTimestamp;
         public long endTimestamp;
         public int segmentCount;
+        public String gateDecision = "";
+        public String lifecycleState = "";
         public String primaryIntent = "";
         public double primaryScore;
         public String secondaryIntent = "";
@@ -409,11 +481,16 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
         public static RuntimeEpisodeRegionModel from(EpisodeRegion region) {
             RuntimeEpisodeRegionModel model = new RuntimeEpisodeRegionModel();
+            model.regionId = region.regionId();
             model.startSegmentIndex = region.startSegmentIndex();
             model.endSegmentIndex = region.endSegmentIndex();
+            model.startSegmentId = region.startSegmentId();
+            model.endSegmentId = region.endSegmentId();
             model.startTimestamp = region.startTimestamp();
             model.endTimestamp = region.endTimestamp();
             model.segmentCount = region.segmentCount();
+            model.gateDecision = nameOf(region.gateDecision());
+            model.lifecycleState = nameOf(region.lifecycleState());
             model.primaryIntent = nameOf(region.primaryIntent());
             model.primaryScore = region.primaryScore();
             model.secondaryIntent = nameOf(region.secondaryIntent());
@@ -428,13 +505,82 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
 
         String signature() {
-            return startSegmentIndex + "|" + endSegmentIndex + "|" + startTimestamp + "|" + endTimestamp;
+            return regionId + "|" + startSegmentId + "|" + endSegmentId + "|" + gateDecision + "|" + lifecycleState;
         }
 
         String summary() {
-            return "[" + startSegmentIndex + ".." + endSegmentIndex + "]"
+            return "#" + regionId
+                    + " [" + startSegmentIndex + ".." + endSegmentIndex + "]"
+                    + " state=" + lifecycleState
+                    + " gate=" + gateDecision
                     + " primary=" + primaryIntent
                     + " " + String.format(Locale.ROOT, "%.2f", primaryScore);
+        }
+
+        void normalize(boolean tailRegion) {
+            if (gateDecision == null) {
+                gateDecision = "";
+            }
+            if (lifecycleState == null) {
+                lifecycleState = "";
+            }
+            if (primaryIntent == null) {
+                primaryIntent = "";
+            }
+            if (secondaryIntent == null) {
+                secondaryIntent = "";
+            }
+            if (aggregateIntentScores == null) {
+                aggregateIntentScores = new LinkedHashMap<>();
+            } else {
+                aggregateIntentScores = new LinkedHashMap<>(aggregateIntentScores);
+            }
+
+            EpisodeRegionGateDecision normalizedGateDecision = tailRegion
+                    ? EpisodeRegionGateDecision.UNSET
+                    : parseGateDecision(gateDecision);
+            EpisodeRegionLifecycleState normalizedLifecycleState = tailRegion
+                    ? EpisodeRegionLifecycleState.ACTIVE
+                    : parseLifecycleState(lifecycleState, EpisodeRegionLifecycleState.HOLDING);
+
+            if (!tailRegion) {
+                if (normalizedLifecycleState == EpisodeRegionLifecycleState.ACTIVE
+                        || normalizedLifecycleState == EpisodeRegionLifecycleState.PENDING) {
+                    normalizedLifecycleState = EpisodeRegionLifecycleState.HOLDING;
+                }
+            }
+
+            gateDecision = normalizedGateDecision.name();
+            lifecycleState = normalizedLifecycleState.name();
+        }
+
+        EpisodeRegion toEpisodeRegion() {
+            EnumMap<PlayerIntent, Double> parsedScores = new EnumMap<>(PlayerIntent.class);
+            for (PlayerIntent intent : PlayerIntent.values()) {
+                parsedScores.put(intent, 0.0);
+            }
+            for (Map.Entry<String, Double> entry : aggregateIntentScores.entrySet()) {
+                PlayerIntent intent = parseIntent(entry.getKey());
+                if (intent == null || entry.getValue() == null) {
+                    continue;
+                }
+                parsedScores.put(intent, entry.getValue());
+            }
+            return new EpisodeRegion(
+                    startSegmentIndex,
+                    endSegmentIndex,
+                    startSegmentId,
+                    endSegmentId,
+                    startTimestamp,
+                    endTimestamp,
+                    parsedScores,
+                    parseIntent(primaryIntent),
+                    primaryScore,
+                    parseIntent(secondaryIntent),
+                    secondaryScore,
+                    regionId,
+                    parseGateDecision(gateDecision),
+                    parseLifecycleState(lifecycleState, EpisodeRegionLifecycleState.HOLDING));
         }
     }
 
@@ -684,49 +830,6 @@ public final class StudioRuntimeEpisodeTimelineFile {
             }
             if (changedReasonConfigs == null) {
                 changedReasonConfigs = new ArrayList<>();
-            }
-        }
-    }
-
-    public static final class RuntimeEpisodeSynthesisPreviewModel {
-        public boolean available;
-        public int regionStartSegmentIndex;
-        public int regionEndSegmentIndex;
-        public long regionStartTimestamp;
-        public long regionEndTimestamp;
-        public String promptDraft = "";
-
-        static RuntimeEpisodeSynthesisPreviewModel fromMaterial(EpisodeSynthesisMaterial material) {
-            RuntimeEpisodeSynthesisPreviewModel model = new RuntimeEpisodeSynthesisPreviewModel();
-            if (material == null) {
-                return model;
-            }
-            model.available = true;
-            model.regionStartSegmentIndex = material.signal().regionStartSegmentIndex();
-            model.regionEndSegmentIndex = material.signal().regionEndSegmentIndex();
-            model.regionStartTimestamp = material.signal().regionStartTimestamp();
-            model.regionEndTimestamp = material.signal().regionEndTimestamp();
-            model.promptDraft = material.buildPromptDraft();
-            return model;
-        }
-
-        static RuntimeEpisodeSynthesisPreviewModel copyOf(RuntimeEpisodeSynthesisPreviewModel source) {
-            RuntimeEpisodeSynthesisPreviewModel copy = new RuntimeEpisodeSynthesisPreviewModel();
-            if (source == null) {
-                return copy;
-            }
-            copy.available = source.available;
-            copy.regionStartSegmentIndex = source.regionStartSegmentIndex;
-            copy.regionEndSegmentIndex = source.regionEndSegmentIndex;
-            copy.regionStartTimestamp = source.regionStartTimestamp;
-            copy.regionEndTimestamp = source.regionEndTimestamp;
-            copy.promptDraft = source.promptDraft != null ? source.promptDraft : "";
-            return copy;
-        }
-
-        private void normalize() {
-            if (promptDraft == null) {
-                promptDraft = "";
             }
         }
     }

@@ -4,8 +4,10 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -24,6 +26,7 @@ public final class FixedActionSegmentBuffer {
     private final List<ActionArchiveCompactor.FixedSegmentContextSeed> contextSeeds = new ArrayList<>();
     private MutableOpenSegment openSegment;
     private long fixedSegmentMs = -1L;
+    private long nextSegmentId = 1L;
     private boolean dirty = true;
 
     public void invalidate() {
@@ -35,6 +38,7 @@ public final class FixedActionSegmentBuffer {
         contextSeeds.clear();
         openSegment = null;
         fixedSegmentMs = -1L;
+        nextSegmentId = 1L;
         dirty = true;
     }
 
@@ -45,6 +49,7 @@ public final class FixedActionSegmentBuffer {
 
     public void rebuild(List<ActionRecord> records, long segmentMs, long now) {
         long effectiveSegmentMs = Math.max(1L, segmentMs);
+        FixedSegmentBufferRuntimeState previousState = snapshotRuntimeState();
         sealedSegments.clear();
         openSegment = null;
 
@@ -53,11 +58,11 @@ public final class FixedActionSegmentBuffer {
             FixedActionSegment last = rebuilt.get(rebuilt.size() - 1);
             if (now < last.getEndTimestamp()) {
                 if (rebuilt.size() > 1) {
-                    sealedSegments.addAll(rebuilt.subList(0, rebuilt.size() - 1));
+                    sealedSegments.addAll(assignSegmentIds(rebuilt.subList(0, rebuilt.size() - 1), previousState));
                 }
                 openSegment = MutableOpenSegment.from(last);
             } else {
-                sealedSegments.addAll(rebuilt);
+                sealedSegments.addAll(assignSegmentIds(rebuilt, previousState));
             }
         }
 
@@ -130,6 +135,39 @@ public final class FixedActionSegmentBuffer {
         return openSegment == null ? null : openSegment.freeze();
     }
 
+    public FixedSegmentBufferRuntimeState snapshotRuntimeState() {
+        if (fixedSegmentMs <= 0L && sealedSegments.isEmpty() && openSegment == null && nextSegmentId <= 1L) {
+            return FixedSegmentBufferRuntimeState.empty();
+        }
+        return new FixedSegmentBufferRuntimeState(
+                fixedSegmentMs,
+                nextSegmentId,
+                snapshotSealedSegments(),
+                snapshotOpenSegment());
+    }
+
+    public void restoreRuntimeState(FixedSegmentBufferRuntimeState runtimeState) {
+        clear();
+        if (runtimeState == null || runtimeState.isEmpty()) {
+            return;
+        }
+        fixedSegmentMs = Math.max(1L, runtimeState.getFixedSegmentMs());
+        nextSegmentId = Math.max(1L, runtimeState.getNextSegmentId());
+        if (runtimeState.getSealedSegments() != null && !runtimeState.getSealedSegments().isEmpty()) {
+            sealedSegments.addAll(runtimeState.getSealedSegments());
+            long maxObservedSegmentId = sealedSegments.stream()
+                    .mapToLong(FixedActionSegment::getSegmentId)
+                    .max()
+                    .orElse(FixedActionSegment.UNASSIGNED_SEGMENT_ID);
+            nextSegmentId = Math.max(nextSegmentId, maxObservedSegmentId + 1L);
+        }
+        FixedActionSegment persistedOpenSegment = runtimeState.getOpenSegment();
+        if (persistedOpenSegment != null) {
+            openSegment = MutableOpenSegment.from(persistedOpenSegment);
+        }
+        dirty = false;
+    }
+
     private FixedActionSegment sealElapsedOpenSegment(long now) {
         if (openSegment == null) {
             return null;
@@ -144,10 +182,46 @@ public final class FixedActionSegmentBuffer {
         if (openSegment == null) {
             return null;
         }
-        FixedActionSegment sealed = openSegment.freeze();
+        FixedActionSegment sealed = openSegment.freeze(allocateSegmentId());
         sealedSegments.add(sealed);
         openSegment = null;
         return sealed;
+    }
+
+    private long allocateSegmentId() {
+        return nextSegmentId++;
+    }
+
+    private List<FixedActionSegment> assignSegmentIds(
+            List<FixedActionSegment> rebuiltSegments,
+            FixedSegmentBufferRuntimeState previousState) {
+        if (rebuiltSegments == null || rebuiltSegments.isEmpty()) {
+            return List.of();
+        }
+
+        Map<SegmentWindowKey, Long> existingIds = new LinkedHashMap<>();
+        if (previousState != null && previousState.getSealedSegments() != null) {
+            for (FixedActionSegment segment : previousState.getSealedSegments()) {
+                if (segment == null || !segment.hasAssignedSegmentId()) {
+                    continue;
+                }
+                existingIds.put(SegmentWindowKey.of(segment), segment.getSegmentId());
+            }
+        }
+
+        ArrayList<FixedActionSegment> assigned = new ArrayList<>(rebuiltSegments.size());
+        for (FixedActionSegment segment : rebuiltSegments) {
+            if (segment == null) {
+                continue;
+            }
+            Long existingId = existingIds.get(SegmentWindowKey.of(segment));
+            if (existingId != null && existingId > 0L) {
+                assigned.add(segment.withSegmentId(existingId));
+                continue;
+            }
+            assigned.add(segment.withSegmentId(allocateSegmentId()));
+        }
+        return List.copyOf(assigned);
     }
 
     private static long windowStart(long timestamp, long fixedSegmentMs) {
@@ -263,7 +337,12 @@ public final class FixedActionSegmentBuffer {
         }
 
         private FixedActionSegment freeze() {
+            return freeze(FixedActionSegment.UNASSIGNED_SEGMENT_ID);
+        }
+
+        private FixedActionSegment freeze(long segmentId) {
             return new FixedActionSegment(
+                    segmentId,
                     startTimestamp,
                     endTimestamp,
                     rawStartIndex,
@@ -286,6 +365,17 @@ public final class FixedActionSegmentBuffer {
                     entry.getRawStartIndex(),
                     rawIndex,
                     mergedTags);
+        }
+    }
+
+    private record SegmentWindowKey(
+            long startTimestamp,
+            long endTimestamp) {
+
+        private static SegmentWindowKey of(FixedActionSegment segment) {
+            return new SegmentWindowKey(
+                    segment == null ? 0L : segment.getStartTimestamp(),
+                    segment == null ? 0L : segment.getEndTimestamp());
         }
     }
 }

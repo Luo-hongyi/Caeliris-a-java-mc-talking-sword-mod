@@ -44,7 +44,7 @@ public final class AgentRuntime {
     /** 全局共享运行时状态（高频，两个 worker 线程均可读写） */
     private final AgentState state = new AgentState();
 
-    /** 全局共享人格画像（低频，仅在 ReflectionTask 中更新） */
+    /** 全局共享人格画像（低频，由后台链路更新） */
     private final AgentPersona persona = new AgentPersona();
 
     private AgentRuntime() {

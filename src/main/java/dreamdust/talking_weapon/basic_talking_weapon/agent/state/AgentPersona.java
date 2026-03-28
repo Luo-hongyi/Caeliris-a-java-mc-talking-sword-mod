@@ -8,7 +8,7 @@ import java.util.List;
  * Agent 低频人格画像（Persona）：描述武器灵魂深层的、长期演化的性格特征与关系状态。
  * <p>
  * 与 {@link AgentState}（高频运行时状态）相对，此类的数据变化缓慢，
- * 仅在后台反思任务（ReflectionTask）中由 LLM 更新。
+ * 由低频后台链路更新；当前应由新的 reflection / episode synthesis 设计承接。
  *
  * <h3>包含内容</h3>
  * <ul>
@@ -18,7 +18,7 @@ import java.util.List;
  * </ul>
  *
  * <h3>线程安全</h3>
- * 此对象的写操作集中在后台 worker 线程（ReflectionTask），
+ * 此对象的写操作集中在后台 worker 线程，
  * 读操作在前台 worker 线程（LLMInteractionTask）。
  * 字段使用 volatile 保证可见性；写入采用整体替换列表的方式避免并发修改问题。
  */

@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.action.trigger.BiomeChangeTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
@@ -1046,12 +1047,10 @@ public class TickEventWatcher {
             return;
         }
         if (actionTimelineSnapshotDirty) {
-            StudioRuntimeActionTimelineFile.writeCurrentSnapshot(memory);
-            actionTimelineSnapshotDirty = false;
+            actionTimelineSnapshotDirty = !StudioRuntimeActionTimelineFile.recordSnapshot(memory);
         }
         if (episodeTimelineSnapshotDirty) {
-            StudioRuntimeEpisodeTimelineFile.writeCurrentSnapshot(memory);
-            episodeTimelineSnapshotDirty = false;
+            episodeTimelineSnapshotDirty = !StudioRuntimeEpisodeTimelineFile.recordSnapshot(memory);
         }
     }
 

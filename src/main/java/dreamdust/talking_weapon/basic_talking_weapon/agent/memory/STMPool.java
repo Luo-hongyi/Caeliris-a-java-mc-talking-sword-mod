@@ -123,6 +123,39 @@ public final class STMPool {
     }
 
     /**
+     * 返回某个时间区间内的 STM 切片视图，不修改池本身。
+     * <p>
+     * 当前为 episode gate 预留，供其只查看“某个 region 内部”的 STM 记录，
+     * 而不是把整个 epoch 早期 STM 都一并喂进去。
+     */
+    public synchronized TimeSlice snapshotBetween(long startInclusiveTimestamp, long endExclusiveTimestamp) {
+        long safeStart = Math.max(0L, startInclusiveTimestamp);
+        if (endExclusiveTimestamp <= safeStart) {
+            return new TimeSlice(List.of(), List.of());
+        }
+
+        List<TaggedContextEntry> contextSlice = new ArrayList<>();
+        for (TaggedContextEntry entry : contextEntries) {
+            if (entry != null
+                    && entry.getTimestamp() >= safeStart
+                    && entry.getTimestamp() < endExclusiveTimestamp) {
+                contextSlice.add(entry);
+            }
+        }
+
+        List<InteractionTurn> turnSlice = new ArrayList<>();
+        for (InteractionTurn turn : interactionTurns) {
+            if (turn != null
+                    && turn.getTimestamp() >= safeStart
+                    && turn.getTimestamp() < endExclusiveTimestamp) {
+                turnSlice.add(turn);
+            }
+        }
+
+        return new TimeSlice(contextSlice, turnSlice);
+    }
+
+    /**
      * 丢弃某个时间点之前的 STM 数据。
      * <p>
      * 第一版 episode split 暂不直接调用，后续 LTM 生成切片阶段再接入。

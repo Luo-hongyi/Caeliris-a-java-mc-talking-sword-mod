@@ -10,15 +10,25 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
  * 由它决定是否产出该 signal。
  */
 public record EpisodeSynthesisTriggerSignal(
+        long regionId,
         int leftBoundarySplitSegmentIndex,
+        long leftBoundaryLeftSegmentId,
+        long leftBoundaryRightSegmentId,
         int regionStartSegmentIndex,
+        long regionStartSegmentId,
         int regionEndSegmentIndex,
+        long regionEndSegmentId,
         int rightBoundarySplitSegmentIndex,
+        long rightBoundaryLeftSegmentId,
+        long rightBoundaryRightSegmentId,
         long regionStartTimestamp,
         long regionEndTimestamp,
         long stmSliceExclusiveTimestamp) {
 
     public EpisodeSynthesisTriggerSignal {
+        if (regionId <= 0L) {
+            throw new IllegalArgumentException("regionId must be > 0");
+        }
         if (leftBoundarySplitSegmentIndex < 0) {
             throw new IllegalArgumentException("leftBoundarySplitSegmentIndex must be >= 0");
         }

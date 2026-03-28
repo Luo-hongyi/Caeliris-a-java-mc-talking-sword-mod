@@ -8,8 +8,11 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitt
  */
 public record EpisodeSplitPoint(
         int splitSegmentIndex,
+        long splitLeftSegmentId,
+        long splitRightSegmentId,
         long splitTimestamp,
         int confirmationSegmentIndex,
+        long confirmationSegmentId,
         long confirmationTimestamp,
         EpisodeSplitReason reason,
         PlayerIntent previousPrimaryIntent,
@@ -29,6 +32,14 @@ public record EpisodeSplitPoint(
     public boolean sameAnchor(EpisodeSplitPoint other) {
         if (other == null) {
             return false;
+        }
+        boolean hasStableBoundaryIds = splitLeftSegmentId > 0L || splitRightSegmentId > 0L;
+        boolean otherHasStableBoundaryIds = other.splitLeftSegmentId > 0L || other.splitRightSegmentId > 0L;
+        if (hasStableBoundaryIds && otherHasStableBoundaryIds) {
+            return splitLeftSegmentId == other.splitLeftSegmentId
+                    && splitRightSegmentId == other.splitRightSegmentId
+                    && splitTimestamp == other.splitTimestamp
+                    && reason == other.reason;
         }
         return splitSegmentIndex == other.splitSegmentIndex
                 && splitTimestamp == other.splitTimestamp

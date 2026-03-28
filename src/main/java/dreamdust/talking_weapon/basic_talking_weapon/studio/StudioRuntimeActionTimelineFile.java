@@ -8,7 +8,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionTimelineRuntimeSettings;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentBufferRuntimeState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionSegmentEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.PlayerIntentScorer;
@@ -27,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 将 player-action 正式输出写入 Studio workspace。
@@ -40,10 +43,11 @@ public final class StudioRuntimeActionTimelineFile {
 
     public static final String FILENAME = "studio_runtime_action_timeline.json";
     public static final String VERSION_KEY = "runtimeActionTimeline";
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 5;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
+    private static RuntimeActionTimelineFileModel cachedFile;
 
     private StudioRuntimeActionTimelineFile() {
     }
@@ -53,35 +57,55 @@ public final class StudioRuntimeActionTimelineFile {
     }
 
     public static synchronized RuntimeActionTimelineFileModel readOrEmpty() {
+        if (cachedFile != null) {
+            return cachedFile;
+        }
         Path path = getPath();
         if (!Files.isRegularFile(path)) {
-            return new RuntimeActionTimelineFileModel();
+            cachedFile = new RuntimeActionTimelineFileModel();
+            cachedFile.normalize();
+            return cachedFile;
         }
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             RuntimeActionTimelineFileModel file = GSON.fromJson(reader, RuntimeActionTimelineFileModel.class);
-            return file != null ? file : new RuntimeActionTimelineFileModel();
+            if (file == null) {
+                file = new RuntimeActionTimelineFileModel();
+            }
+            file.normalize();
+            cachedFile = file;
+            return cachedFile;
         } catch (Exception e) {
             System.err.println("[TalkingWeapon/StudioRuntimeActionTimeline] 读取失败：" + e.getMessage());
-            return new RuntimeActionTimelineFileModel();
+            cachedFile = new RuntimeActionTimelineFileModel();
+            cachedFile.normalize();
+            return cachedFile;
         }
     }
 
-    public static synchronized void recordSnapshot(AgentMemory memory) {
+    public static synchronized boolean recordSnapshot(AgentMemory memory) {
         long now = System.currentTimeMillis();
         if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
-            return;
+            return false;
         }
         writeCurrentSnapshot(memory);
+        return true;
     }
 
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
-        RuntimeActionTimelineFileModel file = build(memory);
+        RuntimeActionTimelineFileModel previous = readOrEmpty();
+        RuntimeActionTimelineFileModel file = build(memory, previous);
+        write(file);
+    }
+
+    private static synchronized void write(RuntimeActionTimelineFileModel file) {
         Path path = getPath();
         try {
+            file.normalize();
             Files.createDirectories(path.getParent());
             try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
                 GSON.toJson(file, writer);
             }
+            cachedFile = file;
             lastWriteAt = System.currentTimeMillis();
             StudioWorkspaceManifestFile.markVersionUpdated(VERSION_KEY,
                     StudioWorkspaceManifestFile.UPDATED_BY_MINECRAFT);
@@ -90,7 +114,18 @@ public final class StudioRuntimeActionTimelineFile {
         }
     }
 
-    private static RuntimeActionTimelineFileModel build(AgentMemory memory) {
+    public static synchronized FixedSegmentBufferRuntimeState readPersistedFixedSegmentRuntimeState() {
+        RuntimeActionTimelineFileModel file = readOrEmpty();
+        if (file == null || file.runtimeState == null) {
+            return FixedSegmentBufferRuntimeState.empty();
+        }
+        file.normalize();
+        return file.runtimeState.toRuntimeState(file.fixedSegments);
+    }
+
+    private static RuntimeActionTimelineFileModel build(
+            AgentMemory memory,
+            RuntimeActionTimelineFileModel previous) {
         RuntimeActionTimelineFileModel file = new RuntimeActionTimelineFileModel();
         file.generatedAt = OffsetDateTime.now().toString();
         file.fixedSegmentSeconds = ActionTimelineRuntimeSettings.getFixedSegmentSeconds();
@@ -104,12 +139,9 @@ public final class StudioRuntimeActionTimelineFile {
             return file;
         }
 
-        List<FixedActionSegment> archiveFixedSegments =
-                memory.getActionArchive().snapshotFixedSegments(ActionTimelineRuntimeSettings.getFixedSegmentMs());
-        List<FixedActionSegment> fixedSegments = archiveFixedSegments;
-        List<SegmentIntentSignals> analyses = fixedSegments.stream()
-                .map(StudioRuntimeActionTimelineFile::intentSignalsOf)
-                .toList();
+        FixedSegmentBufferRuntimeState bufferRuntimeState =
+                memory.getActionArchive().snapshotFixedSegmentRuntimeState(ActionTimelineRuntimeSettings.getFixedSegmentMs());
+        List<FixedActionSegment> fixedSegments = bufferRuntimeState.getSealedSegments();
         MovingActionSegment movingWindow = memory.getMovingActionBuffer().snapshotPromptWindowSegment();
         SegmentIntentSignals movingAnalysis = movingWindow == null || movingWindow.getEntries().isEmpty()
                 ? null
@@ -117,19 +149,55 @@ public final class StudioRuntimeActionTimelineFile {
 
         file.rawActionCount = memory.getActionArchive().size();
         file.fixedSegmentCount = fixedSegments.size();
-
-        int count = Math.max(fixedSegments.size(), analyses.size());
-        for (int i = 0; i < count; i++) {
-            FixedActionSegment segment = i < fixedSegments.size() ? fixedSegments.get(i) : null;
-            SegmentIntentSignals analysis = i < analyses.size() ? analyses.get(i) : null;
-            file.fixedSegments.add(toFixedSegmentModel(
-                    i,
-                    segment,
-                    analysis));
-        }
+        file.fixedSegments = buildFixedSegmentModels(
+                fixedSegments,
+                previous == null ? List.of() : previous.fixedSegments);
+        file.runtimeState = RuntimeFixedSegmentBufferStateModel.from(bufferRuntimeState);
 
         file.movingWindow = toMovingWindowModel(movingWindow, movingAnalysis);
+        file.normalize();
         return file;
+    }
+
+    private static List<RuntimeFixedSegmentModel> buildFixedSegmentModels(
+            List<FixedActionSegment> fixedSegments,
+            List<RuntimeFixedSegmentModel> previousModels) {
+        if (fixedSegments == null || fixedSegments.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<RuntimeFixedSegmentModel> safePrevious = previousModels == null ? List.of() : previousModels;
+        int sharedPrefix = 0;
+        int limit = Math.min(fixedSegments.size(), safePrevious.size());
+        while (sharedPrefix < limit
+                && canReuseFixedSegmentModel(safePrevious.get(sharedPrefix), fixedSegments.get(sharedPrefix), sharedPrefix)) {
+            sharedPrefix++;
+        }
+
+        ArrayList<RuntimeFixedSegmentModel> models = new ArrayList<>(fixedSegments.size());
+        for (int i = 0; i < sharedPrefix; i++) {
+            models.add(safePrevious.get(i));
+        }
+        for (int i = sharedPrefix; i < fixedSegments.size(); i++) {
+            FixedActionSegment segment = fixedSegments.get(i);
+            models.add(toFixedSegmentModel(i, segment, intentSignalsOf(segment)));
+        }
+        return models;
+    }
+
+    private static boolean canReuseFixedSegmentModel(
+            RuntimeFixedSegmentModel previous,
+            FixedActionSegment current,
+            int expectedIndex) {
+        if (previous == null || current == null) {
+            return false;
+        }
+        return previous.index == expectedIndex
+                && previous.segmentId == current.getSegmentId()
+                && previous.startTimestamp == current.getStartTimestamp()
+                && previous.endTimestamp == current.getEndTimestamp()
+                && previous.rawStartIndex == current.getRawStartIndex()
+                && previous.rawEndIndex == current.getRawEndIndex();
     }
 
     private static RuntimeFixedSegmentModel toFixedSegmentModel(
@@ -139,6 +207,7 @@ public final class StudioRuntimeActionTimelineFile {
         RuntimeFixedSegmentModel model = new RuntimeFixedSegmentModel();
         model.index = index;
         if (segment != null) {
+            model.segmentId = segment.getSegmentId();
             model.startTimestamp = segment.getStartTimestamp();
             model.endTimestamp = segment.getEndTimestamp();
             model.rawStartIndex = segment.getRawStartIndex();
@@ -396,7 +465,22 @@ public final class StudioRuntimeActionTimelineFile {
         public int rawActionCount;
         public int fixedSegmentCount;
         public List<RuntimeFixedSegmentModel> fixedSegments = new ArrayList<>();
+        public RuntimeFixedSegmentBufferStateModel runtimeState = new RuntimeFixedSegmentBufferStateModel();
         public RuntimeMovingWindowModel movingWindow = new RuntimeMovingWindowModel();
+
+        public void normalize() {
+            majorStructureWhitelist = majorStructureWhitelist == null ? new ArrayList<>() : new ArrayList<>(majorStructureWhitelist);
+            fixedSegments = fixedSegments == null ? new ArrayList<>() : new ArrayList<>(fixedSegments);
+            for (RuntimeFixedSegmentModel fixedSegment : fixedSegments) {
+                if (fixedSegment != null) {
+                    fixedSegment.normalize();
+                }
+            }
+            runtimeState = runtimeState == null ? new RuntimeFixedSegmentBufferStateModel() : runtimeState;
+            runtimeState.normalize();
+            movingWindow = movingWindow == null ? new RuntimeMovingWindowModel() : movingWindow;
+            movingWindow.normalize();
+        }
     }
 
     private interface RuntimeIntentCarrier {
@@ -419,6 +503,7 @@ public final class StudioRuntimeActionTimelineFile {
 
     public static final class RuntimeFixedSegmentModel implements RuntimeIntentCarrier {
         public int index;
+        public long segmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long startTimestamp;
         public long endTimestamp;
         public int rawStartIndex = -1;
@@ -435,6 +520,35 @@ public final class StudioRuntimeActionTimelineFile {
         public List<String> observedActionTypes = new ArrayList<>();
         public List<String> boundaryActions = new ArrayList<>();
         public List<RuntimeActionEntryModel> entries = new ArrayList<>();
+
+        public void normalize() {
+            headline = headline == null ? "" : headline;
+            summary = summary == null ? "" : summary;
+            dominantIntent = dominantIntent == null ? "" : dominantIntent;
+            runnerUpIntent = runnerUpIntent == null ? "" : runnerUpIntent;
+            scores = scores == null ? new LinkedHashMap<>() : new LinkedHashMap<>(scores);
+            reasons = reasons == null ? new LinkedHashMap<>() : new LinkedHashMap<>(reasons);
+            observedActionTypes = observedActionTypes == null ? new ArrayList<>() : new ArrayList<>(observedActionTypes);
+            boundaryActions = boundaryActions == null ? new ArrayList<>() : new ArrayList<>(boundaryActions);
+            entries = entries == null ? new ArrayList<>() : new ArrayList<>(entries);
+            for (RuntimeActionEntryModel entry : entries) {
+                if (entry != null) {
+                    entry.normalize();
+                }
+            }
+        }
+
+        public FixedActionSegment toFixedActionSegment(FixedActionSegmentContext context) {
+            return new FixedActionSegment(
+                    segmentId,
+                    startTimestamp,
+                    endTimestamp,
+                    rawStartIndex,
+                    rawEndIndex,
+                    restoreFixedEntries(entries),
+                    null,
+                    context == null ? FixedActionSegmentContext.empty() : context);
+        }
 
         @Override
         public void setHeadline(String headline) {
@@ -477,6 +591,124 @@ public final class StudioRuntimeActionTimelineFile {
         }
     }
 
+    public static final class RuntimeFixedSegmentBufferStateModel {
+        public long fixedSegmentMs = -1L;
+        public long nextSegmentId = 1L;
+        public Map<Long, FixedActionSegmentContext> sealedSegmentContexts = new LinkedHashMap<>();
+        public List<RuntimePersistedFixedSegmentModel> sealedSegments;
+        public RuntimePersistedFixedSegmentModel openSegment;
+
+        public static RuntimeFixedSegmentBufferStateModel from(FixedSegmentBufferRuntimeState runtimeState) {
+            RuntimeFixedSegmentBufferStateModel model = new RuntimeFixedSegmentBufferStateModel();
+            if (runtimeState == null || runtimeState.isEmpty()) {
+                return model;
+            }
+            model.fixedSegmentMs = runtimeState.getFixedSegmentMs();
+            model.nextSegmentId = runtimeState.getNextSegmentId();
+            if (runtimeState.getSealedSegments() != null) {
+                for (FixedActionSegment segment : runtimeState.getSealedSegments()) {
+                    if (segment == null
+                            || segment.getSegmentId() <= 0L
+                            || segment.getContext() == null
+                            || !segment.getContext().hasAnyContext()) {
+                        continue;
+                    }
+                    model.sealedSegmentContexts.put(segment.getSegmentId(), segment.getContext());
+                }
+            }
+            if (runtimeState.getOpenSegment() != null) {
+                model.openSegment = RuntimePersistedFixedSegmentModel.from(runtimeState.getOpenSegment());
+            }
+            model.normalize();
+            return model;
+        }
+
+        public void normalize() {
+            sealedSegmentContexts = sealedSegmentContexts == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(sealedSegmentContexts);
+            if (sealedSegments != null) {
+                sealedSegments = new ArrayList<>(sealedSegments);
+            }
+        }
+
+        public FixedSegmentBufferRuntimeState toRuntimeState(List<RuntimeFixedSegmentModel> fixedSegments) {
+            ArrayList<FixedActionSegment> restoredSealedSegments = new ArrayList<>();
+            if (sealedSegments != null && !sealedSegments.isEmpty()) {
+                for (RuntimePersistedFixedSegmentModel segmentModel : sealedSegments) {
+                    if (segmentModel == null) {
+                        continue;
+                    }
+                    FixedActionSegment segment = segmentModel.toFixedActionSegment();
+                    if (segment != null) {
+                        restoredSealedSegments.add(segment);
+                    }
+                }
+            } else if (fixedSegments != null) {
+                for (RuntimeFixedSegmentModel segmentModel : fixedSegments) {
+                    if (segmentModel == null) {
+                        continue;
+                    }
+                    FixedActionSegmentContext context = sealedSegmentContexts.getOrDefault(
+                            segmentModel.segmentId,
+                            FixedActionSegmentContext.empty());
+                    restoredSealedSegments.add(segmentModel.toFixedActionSegment(context));
+                }
+            }
+            FixedActionSegment restoredOpenSegment = openSegment == null ? null : openSegment.toFixedActionSegment();
+            long resolvedNextSegmentId = Math.max(1L, nextSegmentId);
+            long maxObservedSegmentId = restoredSealedSegments.stream()
+                    .mapToLong(FixedActionSegment::getSegmentId)
+                    .max()
+                    .orElse(FixedActionSegment.UNASSIGNED_SEGMENT_ID);
+            if (maxObservedSegmentId > 0L) {
+                resolvedNextSegmentId = Math.max(resolvedNextSegmentId, maxObservedSegmentId + 1L);
+            }
+            return new FixedSegmentBufferRuntimeState(
+                    fixedSegmentMs,
+                    resolvedNextSegmentId,
+                    restoredSealedSegments,
+                    restoredOpenSegment);
+        }
+    }
+
+    public static final class RuntimePersistedFixedSegmentModel {
+        public long segmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
+        public long startTimestamp;
+        public long endTimestamp;
+        public int rawStartIndex = -1;
+        public int rawEndIndex = -1;
+        public List<FixedActionSegmentEntry> entries = new ArrayList<>();
+        public FixedActionSegmentContext context = FixedActionSegmentContext.empty();
+
+        public static RuntimePersistedFixedSegmentModel from(FixedActionSegment segment) {
+            RuntimePersistedFixedSegmentModel model = new RuntimePersistedFixedSegmentModel();
+            if (segment == null) {
+                return model;
+            }
+            model.segmentId = segment.getSegmentId();
+            model.startTimestamp = segment.getStartTimestamp();
+            model.endTimestamp = segment.getEndTimestamp();
+            model.rawStartIndex = segment.getRawStartIndex();
+            model.rawEndIndex = segment.getRawEndIndex();
+            model.entries = segment.getEntries() == null ? new ArrayList<>() : new ArrayList<>(segment.getEntries());
+            model.context = segment.getContext() == null ? FixedActionSegmentContext.empty() : segment.getContext();
+            return model;
+        }
+
+        public FixedActionSegment toFixedActionSegment() {
+            return new FixedActionSegment(
+                    segmentId,
+                    startTimestamp,
+                    endTimestamp,
+                    rawStartIndex,
+                    rawEndIndex,
+                    entries,
+                    null,
+                    context);
+        }
+    }
+
     public static final class RuntimeMovingWindowModel implements RuntimeIntentCarrier {
         public long startTimestamp;
         public long endTimestamp;
@@ -491,6 +723,21 @@ public final class StudioRuntimeActionTimelineFile {
         public Map<String, Double> scores = new LinkedHashMap<>();
         public Map<String, List<String>> reasons = new LinkedHashMap<>();
         public List<RuntimeActionEntryModel> entries = new ArrayList<>();
+
+        public void normalize() {
+            headline = headline == null ? "" : headline;
+            summary = summary == null ? "" : summary;
+            dominantIntent = dominantIntent == null ? "" : dominantIntent;
+            runnerUpIntent = runnerUpIntent == null ? "" : runnerUpIntent;
+            scores = scores == null ? new LinkedHashMap<>() : new LinkedHashMap<>(scores);
+            reasons = reasons == null ? new LinkedHashMap<>() : new LinkedHashMap<>(reasons);
+            entries = entries == null ? new ArrayList<>() : new ArrayList<>(entries);
+            for (RuntimeActionEntryModel entry : entries) {
+                if (entry != null) {
+                    entry.normalize();
+                }
+            }
+        }
 
         @Override
         public void setHeadline(String headline) {
@@ -544,5 +791,76 @@ public final class StudioRuntimeActionTimelineFile {
         public List<String> detailTags = new ArrayList<>();
         public boolean folded;
         public List<String> foldedTargets = new ArrayList<>();
+
+        public void normalize() {
+            type = type == null ? "" : type;
+            target = target == null ? "" : target;
+            detailTags = detailTags == null ? new ArrayList<>() : new ArrayList<>(detailTags);
+            foldedTargets = foldedTargets == null ? new ArrayList<>() : new ArrayList<>(foldedTargets);
+        }
+    }
+
+    private static List<FixedActionSegmentEntry> restoreFixedEntries(List<RuntimeActionEntryModel> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<FixedActionSegmentEntry> restored = new ArrayList<>(entries.size());
+        for (RuntimeActionEntryModel entry : entries) {
+            FixedActionSegmentEntry restoredEntry = toFixedEntry(entry);
+            if (restoredEntry != null) {
+                restored.add(restoredEntry);
+            }
+        }
+        return List.copyOf(restored);
+    }
+
+    private static FixedActionSegmentEntry toFixedEntry(RuntimeActionEntryModel entry) {
+        if (entry == null) {
+            return null;
+        }
+        ActionType actionType = parseActionType(entry.type);
+        if (actionType == null) {
+            return null;
+        }
+        return new FixedActionSegmentEntry(
+                actionType,
+                entry.target,
+                entry.count,
+                entry.firstTimestamp,
+                entry.lastTimestamp,
+                entry.rawStartIndex,
+                entry.rawEndIndex,
+                parseDetailTags(entry.detailTags));
+    }
+
+    private static ActionType parseActionType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return ActionType.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static Set<DetailTag> parseDetailTags(List<String> rawDetailTags) {
+        if (rawDetailTags == null || rawDetailTags.isEmpty()) {
+            return Set.of();
+        }
+
+        LinkedHashSet<DetailTag> detailTags = new LinkedHashSet<>();
+        for (String rawDetailTag : rawDetailTags) {
+            if (rawDetailTag == null || rawDetailTag.isBlank()) {
+                continue;
+            }
+            try {
+                detailTags.add(DetailTag.parse(rawDetailTag));
+            } catch (IllegalArgumentException ignored) {
+                // Keep restore tolerant to old / malformed snapshot data.
+            }
+        }
+        return detailTags;
     }
 }

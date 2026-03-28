@@ -42,6 +42,7 @@ public final class ObservedActionTypeSplitter implements EpisodeSplitter {
 
     @Override
     public List<EpisodePendingMark> detect(EpisodeDetectContext context) {
+        EpisodeTimeline timeline = context == null ? null : context.timeline();
         FixedActionSegment latestSegment = context == null ? null : context.latestSegment();
         int latestSegmentIndex = context == null ? -1 : context.latestSegmentIndex();
         if (latestSegment == null
@@ -57,7 +58,9 @@ public final class ObservedActionTypeSplitter implements EpisodeSplitter {
                 ? latestSegment.getEndTimestamp()
                 : latestSegment.getStartTimestamp();
         return List.of(EpisodePendingMark.fromRuntimeConfig(
+                timeline,
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 splitSegmentIndex,
                 splitTimestamp,
                 reason,
@@ -85,11 +88,16 @@ public final class ObservedActionTypeSplitter implements EpisodeSplitter {
                         timeline.segments(),
                         pendingMark.splitSegmentIndex(),
                         latestSegmentIndex));
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
+                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
 
         return Optional.of(new EpisodeSplitPoint(
                 pendingMark.splitSegmentIndex(),
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 pendingMark.reason(),
                 previousRegion != null ? previousRegion.primaryIntent() : null,

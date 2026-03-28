@@ -5,6 +5,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.A
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentUpdate;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -83,6 +84,8 @@ public class AgentMemory {
         this.identity = "";
         this.movingActionBuffer = new MovingActionBuffer();
         this.actionArchive = new ActionArchive(4096);
+        this.actionArchive.restoreFixedSegmentRuntimeState(
+                StudioRuntimeActionTimelineFile.readPersistedFixedSegmentRuntimeState());
         this.stmPool = new STMPool();
         this.episodeTimelineStore = new EpisodeTimelineStore();
         this.ltmRecords = new java.util.ArrayList<>();

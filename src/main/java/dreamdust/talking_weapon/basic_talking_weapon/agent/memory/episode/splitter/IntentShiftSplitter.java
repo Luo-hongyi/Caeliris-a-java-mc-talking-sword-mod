@@ -53,7 +53,9 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
         }
 
         return List.of(EpisodePendingMark.fromRuntimeConfig(
+                timeline,
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegmentIndex,
                 latestSegment.getStartTimestamp(),
                 reason,
@@ -98,10 +100,16 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
             return Optional.empty();
         }
 
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
+                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
+
         return Optional.of(new EpisodeSplitPoint(
                 pendingMark.splitSegmentIndex(),
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
                 latestSegmentIndex,
+                latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 confirmedReason,
                 previousRegion.primaryIntent(),

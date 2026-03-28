@@ -1,9 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.action.task.LLMOutputSchema;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.task.AgentTask;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.task.LLMOutputSchema;
 
 
 import java.util.EnumSet;
