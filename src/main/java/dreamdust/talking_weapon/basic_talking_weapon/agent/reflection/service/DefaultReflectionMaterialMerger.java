@@ -59,7 +59,7 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
 
             mergedSegments.add(new ReflectionSegmentMaterial(
                     rawSegment.localSegmentIndex(),
-                    rawSegment.timelineSegmentIndex(),
+                    rawSegment.timelineIndex(),
                     rawSegment.segmentId(),
                     rawSegment.startTimestamp(),
                     rawSegment.endTimestamp(),
@@ -71,14 +71,14 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
 
         return new ReflectionMaterial(
                 rawMaterial.scope(),
-                rawMaterial.startTimelineSegmentIndex(),
+                rawMaterial.startTimelineIndex(),
                 rawMaterial.startSegmentId(),
-                rawMaterial.endTimelineSegmentIndex(),
+                rawMaterial.endTimelineIndex(),
                 rawMaterial.endSegmentId(),
-                rawMaterial.leftBoundarySplitSegmentIndex(),
+                rawMaterial.leftBoundarySplitTimelineIndex(),
                 rawMaterial.leftBoundaryLeftSegmentId(),
                 rawMaterial.leftBoundaryRightSegmentId(),
-                rawMaterial.rightBoundarySplitSegmentIndex(),
+                rawMaterial.rightBoundarySplitTimelineIndex(),
                 rawMaterial.rightBoundaryLeftSegmentId(),
                 rawMaterial.rightBoundaryRightSegmentId(),
                 rawMaterial.startTimestamp(),

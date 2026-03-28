@@ -7,11 +7,11 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitt
  * Episode v2 中的正式分割点。
  */
 public record EpisodeSplitPoint(
-        int splitSegmentIndex,
+        int splitTimelineIndex,
         long splitLeftSegmentId,
         long splitRightSegmentId,
         long splitTimestamp,
-        int confirmationSegmentIndex,
+        int confirmationTimelineIndex,
         long confirmationSegmentId,
         long confirmationTimestamp,
         EpisodeSplitReason reason,
@@ -21,11 +21,11 @@ public record EpisodeSplitPoint(
         PlayerIntent nextSecondaryIntent) {
 
     public EpisodeSplitPoint {
-        if (splitSegmentIndex < 0) {
-            throw new IllegalArgumentException("splitSegmentIndex must be >= 0");
+        if (splitTimelineIndex < 0) {
+            throw new IllegalArgumentException("splitTimelineIndex must be >= 0");
         }
-        if (confirmationSegmentIndex < 0) {
-            throw new IllegalArgumentException("confirmationSegmentIndex must be >= 0");
+        if (confirmationTimelineIndex < 0) {
+            throw new IllegalArgumentException("confirmationTimelineIndex must be >= 0");
         }
     }
 
@@ -41,7 +41,7 @@ public record EpisodeSplitPoint(
                     && splitTimestamp == other.splitTimestamp
                     && reason == other.reason;
         }
-        return splitSegmentIndex == other.splitSegmentIndex
+        return splitTimelineIndex == other.splitTimelineIndex
                 && splitTimestamp == other.splitTimestamp
                 && reason == other.reason;
     }

@@ -44,11 +44,11 @@ public final class FallbackQuietSplitter implements EpisodeSplitter {
         }
 
         int quietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
-        int latestSegmentIndex = context.latestSegmentIndex();
-        int lastAcceptedDetectIndex = context.lastAcceptedPendingDetectSegmentIndex();
-        int quietSegments = lastAcceptedDetectIndex < 0
-                ? latestSegmentIndex + 1
-                : latestSegmentIndex - lastAcceptedDetectIndex;
+        int latestTimelineIndex = context.latestTimelineIndex();
+        int lastAcceptedDetectTimelineIndex = context.lastAcceptedPendingDetectTimelineIndex();
+        int quietSegments = lastAcceptedDetectTimelineIndex < 0
+                ? latestTimelineIndex + 1
+                : latestTimelineIndex - lastAcceptedDetectTimelineIndex;
         if (quietSegments < quietWindowSegments) {
             return List.of();
         }
@@ -57,9 +57,9 @@ public final class FallbackQuietSplitter implements EpisodeSplitter {
         EpisodeSplitReason reason = EpisodeSplitReason.FALLBACK_QUIET_GAP;
         return List.of(EpisodePendingMark.fromRuntimeConfig(
                 context.timeline(),
-                latestSegmentIndex,
+                latestTimelineIndex,
                 latestSegment.getSegmentId(),
-                latestSegmentIndex + 1,
+                latestTimelineIndex + 1,
                 latestSegment.getEndTimestamp(),
                 reason,
                 id()));
@@ -75,20 +75,20 @@ public final class FallbackQuietSplitter implements EpisodeSplitter {
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
             FixedActionSegment latestSegment,
-            int latestSegmentIndex) {
+            int latestTimelineIndex) {
         if (timeline == null || latestSegment == null || !supports(pendingMark)) {
             return Optional.empty();
         }
 
-        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitSegmentIndex());
+        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitTimelineIndex());
         EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
-                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
+                timeline.boundarySegmentIdsAt(pendingMark.splitTimelineIndex());
         return Optional.of(new EpisodeSplitPoint(
-                pendingMark.splitSegmentIndex(),
+                pendingMark.splitTimelineIndex(),
                 boundarySegmentIds.leftSegmentId(),
                 boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
-                latestSegmentIndex,
+                latestTimelineIndex,
                 latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 pendingMark.reason(),

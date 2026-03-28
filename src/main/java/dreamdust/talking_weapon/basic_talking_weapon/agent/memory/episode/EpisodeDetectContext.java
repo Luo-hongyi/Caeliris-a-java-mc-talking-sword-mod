@@ -20,9 +20,9 @@ import java.util.List;
 public record EpisodeDetectContext(
         EpisodeTimeline timeline,
         FixedActionSegment latestSegment,
-        int latestSegmentIndex,
+        int latestTimelineIndex,
         List<EpisodePendingMark> detectedThisCycle,
-        int lastAcceptedPendingDetectSegmentIndex) {
+        int lastAcceptedPendingDetectTimelineIndex) {
 
     public EpisodeDetectContext {
         timeline = timeline == null ? EpisodeTimeline.empty() : timeline;

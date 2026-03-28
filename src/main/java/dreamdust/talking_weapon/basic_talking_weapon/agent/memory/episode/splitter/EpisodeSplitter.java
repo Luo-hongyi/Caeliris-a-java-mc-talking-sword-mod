@@ -33,5 +33,5 @@ public interface EpisodeSplitter {
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
             FixedActionSegment latestSegment,
-            int latestSegmentIndex);
+            int latestTimelineIndex);
 }

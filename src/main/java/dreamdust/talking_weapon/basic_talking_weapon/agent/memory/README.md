@@ -29,6 +29,36 @@
 - 新 reflection 主线骨架已经存在：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 都已落地；`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`current_situation_update`、`favorability_update`、`emotion_update` 五个 modules。
 - 但这条 reflection 主线还没有正式接回 episode gate，也还没有进入 `AgentRuntime` 的后台队列执行闭环。
 - 继续推进这条主线前，当前先插入一个更底层的前置议题：fixed segment 持久化坐标。原因是 episode / reflection 现在仍把当前数组位置当作正式引用坐标，这会阻塞中间 region 物理删除和 targeted cleanup。
+- action runtime 持久化这一轮已经做过一次性能收尾：sealed fixed segment payload 已拆出高频 timeline snapshot 主路径，当前先不继续围绕写盘做大改，主线重新回到 segment / episode / reflection 的结构调整。
+
+## 当前核心目标
+
+结合当前 `episode` / `reflection` / `segment coordinate` 三份主文档，接下来最核心的目标可以收敛为四条：
+
+1. fixed segment 的正式稳定 identity 要彻底钉住
+
+- `segmentId` 作为唯一正式 identity
+- 由 `FixedActionSegmentBuffer` 在 segment 第一次 sealed 时发号
+- sealed segment 与 `segmentId` 的绑定关系要能跨重启、跨 rebuild 延续
+
+2. episode 侧要把“当前顺序位置”和“正式引用坐标”彻底分开
+
+- `timelineIndex` 只服务 tracker 内部局部算法
+- region / split / signal / material request / exporter 的正式引用，后续都要迁到稳定坐标或 region identity
+- 这样才能真正支持中间 region 删除、targeted cleanup 和异步 task 稳定引用
+
+3. episode owner-side 生命周期要继续收紧为正式主线
+
+- gate 作为独立结构存在
+- `EpisodeRegion` 继续承载 `regionId / gateDecision / lifecycleState`
+- holdback、多 signal、reject cleanup、STM truncate 都由 owner-side 正式推进
+
+4. reflection 主线只在坐标稳定后再重新接回 episode
+
+- `collectEpisodeSynthesisTriggerSignals()` 需要正式产出可提交的 signal
+- internal trigger 只负责提交具体 task
+- task 只负责 material / prompt / LLM / parse / validate / commit
+- resolved / rollback 与 reject cleanup 仍由 owner-side 闭环处理
 
 
 ## 记忆分层

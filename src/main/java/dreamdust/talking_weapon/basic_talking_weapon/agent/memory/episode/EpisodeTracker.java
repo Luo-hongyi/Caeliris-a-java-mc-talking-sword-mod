@@ -38,7 +38,7 @@ public final class EpisodeTracker {
     private final ArrayList<EpisodeSplitPoint> splitPoints = new ArrayList<>();
     private final ArrayList<EpisodeRegion> regions = new ArrayList<>();
     private final LinkedHashMap<Long, EpisodeRegion> seededRegionStates = new LinkedHashMap<>();
-    private int lastAcceptedPendingDetectSegmentIndex = -1;
+    private int lastAcceptedPendingDetectTimelineIndex = -1;
 
     public EpisodeTracker() {
         this(List.of(
@@ -77,7 +77,7 @@ public final class EpisodeTracker {
         splitPoints.clear();
         regions.clear();
         seededRegionStates.clear();
-        lastAcceptedPendingDetectSegmentIndex = -1;
+        lastAcceptedPendingDetectTimelineIndex = -1;
     }
 
     public EpisodeTimeline replaceSegments(List<FixedActionSegment> nextSegments) {
@@ -132,7 +132,7 @@ public final class EpisodeTracker {
     private List<EpisodePendingMark> detectPendingMarks(
             EpisodeTimeline timeline,
             FixedActionSegment latestSegment,
-            int latestSegmentIndex) {
+            int latestTimelineIndex) {
         ArrayList<EpisodePendingMark> detected = new ArrayList<>();
         for (EpisodeSplitter splitter : splitters) {
             if (splitter == null) {
@@ -141,9 +141,9 @@ public final class EpisodeTracker {
             EpisodeDetectContext detectContext = new EpisodeDetectContext(
                     timeline,
                     latestSegment,
-                    latestSegmentIndex,
+                    latestTimelineIndex,
                     detected,
-                    lastAcceptedPendingDetectSegmentIndex);
+                    lastAcceptedPendingDetectTimelineIndex);
             List<EpisodePendingMark> newMarks = splitter.detect(detectContext);
             if (newMarks == null || newMarks.isEmpty()) {
                 continue;
@@ -164,13 +164,13 @@ public final class EpisodeTracker {
 
         EpisodeTimeline currentTimeline = snapshotTimeline();
         int maxSplitIndex = segments.size();
-        int acceptedDetectIndex = lastAcceptedPendingDetectSegmentIndex;
+        int acceptedDetectTimelineIndex = lastAcceptedPendingDetectTimelineIndex;
         boolean acceptedAny = false;
         for (EpisodePendingMark pendingMark : detectedMarks) {
             if (pendingMark == null) {
                 continue;
             }
-            if (pendingMark.splitSegmentIndex() < 0 || pendingMark.splitSegmentIndex() > maxSplitIndex) {
+            if (pendingMark.splitTimelineIndex() < 0 || pendingMark.splitTimelineIndex() > maxSplitIndex) {
                 continue;
             }
             if (currentTimeline.hasPendingMark(pendingMark)) {
@@ -180,11 +180,11 @@ public final class EpisodeTracker {
                 continue;
             }
             pendingMarks.add(pendingMark);
-            acceptedDetectIndex = Math.max(acceptedDetectIndex, pendingMark.detectedAtSegmentIndex());
+            acceptedDetectTimelineIndex = Math.max(acceptedDetectTimelineIndex, pendingMark.detectedAtTimelineIndex());
             acceptedAny = true;
         }
         if (acceptedAny) {
-            lastAcceptedPendingDetectSegmentIndex = acceptedDetectIndex;
+            lastAcceptedPendingDetectTimelineIndex = acceptedDetectTimelineIndex;
         }
         sortPendingMarks();
     }
@@ -201,26 +201,26 @@ public final class EpisodeTracker {
                     existing != null
                             && !existing.sameKey(highMark)
                             && !existing.isHighPriority()
-                            && highMark.coversSplitIndex(existing.splitSegmentIndex()));
+                            && highMark.coversTimelineIndex(existing.splitTimelineIndex()));
         }
         sortPendingMarks();
     }
 
-    private void confirmExpiredMarks(FixedActionSegment latestSegment, int latestSegmentIndex) {
+    private void confirmExpiredMarks(FixedActionSegment latestSegment, int latestTimelineIndex) {
         if (pendingMarks.isEmpty()) {
             return;
         }
 
         ArrayList<EpisodePendingMark> dueMarks = new ArrayList<>();
         for (EpisodePendingMark pendingMark : pendingMarks) {
-            if (pendingMark != null && pendingMark.confirmAtSegmentIndex() <= latestSegmentIndex) {
+            if (pendingMark != null && pendingMark.confirmAtTimelineIndex() <= latestTimelineIndex) {
                 dueMarks.add(pendingMark);
             }
         }
         dueMarks.sort(Comparator
-                .comparingInt(EpisodePendingMark::confirmAtSegmentIndex)
+                .comparingInt(EpisodePendingMark::confirmAtTimelineIndex)
                 .thenComparing((EpisodePendingMark pendingMark) -> pendingMark.isHighPriority() ? 0 : 1)
-                .thenComparingInt(EpisodePendingMark::splitSegmentIndex)
+                .thenComparingInt(EpisodePendingMark::splitTimelineIndex)
                 .thenComparing(mark -> mark.reason() != null ? mark.reason().name() : ""));
 
         for (EpisodePendingMark pendingMark : dueMarks) {
@@ -228,7 +228,7 @@ public final class EpisodeTracker {
                 continue;
             }
             EpisodeTimeline currentTimeline = snapshotTimeline();
-            Optional<EpisodeSplitPoint> confirmed = confirmMark(currentTimeline, pendingMark, latestSegment, latestSegmentIndex);
+            Optional<EpisodeSplitPoint> confirmed = confirmMark(currentTimeline, pendingMark, latestSegment, latestTimelineIndex);
             pendingMarks.remove(pendingMark);
             if (confirmed.isEmpty()) {
                 continue;
@@ -249,12 +249,12 @@ public final class EpisodeTracker {
             EpisodeTimeline currentTimeline,
             EpisodePendingMark pendingMark,
             FixedActionSegment latestSegment,
-            int latestSegmentIndex) {
+            int latestTimelineIndex) {
         for (EpisodeSplitter splitter : splitters) {
             if (splitter != null
                     && splitter.id().equals(pendingMark.ownerSplitterId())
                     && splitter.supports(pendingMark)) {
-                return splitter.confirm(currentTimeline, pendingMark, latestSegment, latestSegmentIndex);
+                return splitter.confirm(currentTimeline, pendingMark, latestSegment, latestTimelineIndex);
             }
         }
         return Optional.empty();
@@ -265,12 +265,12 @@ public final class EpisodeTracker {
             return;
         }
 
-        int minSplitIndex = confirmedMark.splitSegmentIndex() - confirmedMark.coverBeforeSegments();
-        int maxSplitIndex = confirmedMark.splitSegmentIndex() + confirmedMark.coverAfterSegments();
+        int minSplitIndex = confirmedMark.splitTimelineIndex() - confirmedMark.coverBeforeSegments();
+        int maxSplitIndex = confirmedMark.splitTimelineIndex() + confirmedMark.coverAfterSegments();
         pendingMarks.removeIf(pendingMark ->
                 pendingMark != null
-                        && pendingMark.splitSegmentIndex() >= minSplitIndex
-                        && pendingMark.splitSegmentIndex() <= maxSplitIndex);
+                        && pendingMark.splitTimelineIndex() >= minSplitIndex
+                        && pendingMark.splitTimelineIndex() <= maxSplitIndex);
         sortPendingMarks();
     }
 
@@ -290,7 +290,7 @@ public final class EpisodeTracker {
                     && splitPoint.splitRightSegmentId() == pendingMark.splitRightSegmentId()) {
                 return true;
             }
-            if (splitPoint.splitSegmentIndex() == pendingMark.splitSegmentIndex()) {
+            if (splitPoint.splitTimelineIndex() == pendingMark.splitTimelineIndex()) {
                 return true;
             }
         }
@@ -326,9 +326,9 @@ public final class EpisodeTracker {
             if (splitPoint == null) {
                 continue;
             }
-            int splitSegmentIndex = splitPoint.splitSegmentIndex();
-            if (splitSegmentIndex > 0 && splitSegmentIndex <= segments.size()) {
-                boundaries.add(splitSegmentIndex);
+            int splitTimelineIndex = splitPoint.splitTimelineIndex();
+            if (splitTimelineIndex > 0 && splitTimelineIndex <= segments.size()) {
+                boundaries.add(splitTimelineIndex);
             }
         }
         boundaries.sort(Integer::compareTo);
@@ -413,15 +413,15 @@ public final class EpisodeTracker {
 
     private void sortPendingMarks() {
         pendingMarks.sort(Comparator
-                .comparingInt(EpisodePendingMark::confirmAtSegmentIndex)
-                .thenComparingInt(EpisodePendingMark::splitSegmentIndex)
+                .comparingInt(EpisodePendingMark::confirmAtTimelineIndex)
+                .thenComparingInt(EpisodePendingMark::splitTimelineIndex)
                 .thenComparing(mark -> mark.reason() != null ? mark.reason().name() : "")
                 .thenComparing(EpisodePendingMark::ownerSplitterId));
     }
 
     private void sortSplitPoints() {
         splitPoints.sort(Comparator
-                .comparingInt(EpisodeSplitPoint::splitSegmentIndex)
+                .comparingInt(EpisodeSplitPoint::splitTimelineIndex)
                 .thenComparingLong(EpisodeSplitPoint::splitTimestamp)
                 .thenComparing(splitPoint -> splitPoint.reason() != null ? splitPoint.reason().name() : ""));
     }

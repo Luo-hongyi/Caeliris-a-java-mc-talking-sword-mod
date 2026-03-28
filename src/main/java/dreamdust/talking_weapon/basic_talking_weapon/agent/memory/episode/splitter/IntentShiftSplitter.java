@@ -31,7 +31,7 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
     public List<EpisodePendingMark> detect(EpisodeDetectContext context) {
         EpisodeTimeline timeline = context == null ? null : context.timeline();
         FixedActionSegment latestSegment = context == null ? null : context.latestSegment();
-        int latestSegmentIndex = context == null ? -1 : context.latestSegmentIndex();
+        int latestTimelineIndex = context == null ? -1 : context.latestTimelineIndex();
         if (timeline == null || latestSegment == null) {
             return List.of();
         }
@@ -54,9 +54,9 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
 
         return List.of(EpisodePendingMark.fromRuntimeConfig(
                 timeline,
-                latestSegmentIndex,
+                latestTimelineIndex,
                 latestSegment.getSegmentId(),
-                latestSegmentIndex,
+                latestTimelineIndex,
                 latestSegment.getStartTimestamp(),
                 reason,
                 id()));
@@ -76,12 +76,12 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
             FixedActionSegment latestSegment,
-            int latestSegmentIndex) {
+            int latestTimelineIndex) {
         if (timeline == null || pendingMark == null || latestSegment == null || !supports(pendingMark)) {
             return Optional.empty();
         }
 
-        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitSegmentIndex());
+        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitTimelineIndex());
         if (previousRegion == null || previousRegion.segmentCount() < MIN_REGION_SEGMENTS_BEFORE_SHIFT) {
             return Optional.empty();
         }
@@ -89,8 +89,8 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
         EpisodeIntentProfile nextProfile = EpisodeIntentMath.deriveProfile(
                 EpisodeIntentMath.aggregateScores(
                         timeline.segments(),
-                        pendingMark.splitSegmentIndex(),
-                        latestSegmentIndex));
+                        pendingMark.splitTimelineIndex(),
+                        latestTimelineIndex));
         EpisodeSplitReason confirmedReason = classifyShift(previousRegion, nextProfile);
         if (confirmedReason == null) {
             return Optional.empty();
@@ -101,14 +101,14 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
         }
 
         EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
-                timeline.boundarySegmentIdsAt(pendingMark.splitSegmentIndex());
+                timeline.boundarySegmentIdsAt(pendingMark.splitTimelineIndex());
 
         return Optional.of(new EpisodeSplitPoint(
-                pendingMark.splitSegmentIndex(),
+                pendingMark.splitTimelineIndex(),
                 boundarySegmentIds.leftSegmentId(),
                 boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
-                latestSegmentIndex,
+                latestTimelineIndex,
                 latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 confirmedReason,

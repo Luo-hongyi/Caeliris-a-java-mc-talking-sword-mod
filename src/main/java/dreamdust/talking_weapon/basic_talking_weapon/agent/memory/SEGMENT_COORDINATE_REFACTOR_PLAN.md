@@ -93,12 +93,12 @@
 它已经扩散到：
 
 - `EpisodePendingMark`
-  - `detectedAtSegmentIndex`
-  - `splitSegmentIndex`
-  - `confirmAtSegmentIndex`
+  - `detectedAtTimelineIndex`
+  - `splitTimelineIndex`
+  - `confirmAtTimelineIndex`
 - `EpisodeSplitPoint`
-  - `splitSegmentIndex`
-  - `confirmationSegmentIndex`
+  - `splitTimelineIndex`
+  - `confirmationTimelineIndex`
 - `EpisodeRegion`
   - `startSegmentIndex`
   - `endSegmentIndex`
@@ -126,15 +126,15 @@
 这一套其实是把 episode timeline 位置坐标跨异步边界泄露出去了：
 
 - `EpisodeSynthesisTriggerSignal`
-  - `leftBoundarySplitSegmentIndex`
-  - `regionStartSegmentIndex`
-  - `regionEndSegmentIndex`
-  - `rightBoundarySplitSegmentIndex`
+  - `leftBoundarySplitTimelineIndex`
+  - `regionStartTimelineIndex`
+  - `regionEndTimelineIndex`
+  - `rightBoundarySplitTimelineIndex`
 - `ReflectionMaterialRequest`
-  - `startTimelineSegmentIndex`
-  - `endTimelineSegmentIndex`
-  - `leftBoundarySplitSegmentIndex`
-  - `rightBoundarySplitSegmentIndex`
+  - `startTimelineIndex`
+  - `endTimelineIndex`
+  - `leftBoundarySplitTimelineIndex`
+  - `rightBoundarySplitTimelineIndex`
 - `ReflectionRawMaterial` / `ReflectionMaterial`
   - 继续保存这些 index
 - `DefaultReflectionMaterialExporter`
@@ -182,21 +182,21 @@
 当前直接依赖 segment index 的正式结构包括：
 
 - `EpisodePendingMark`
-  - `detectedAtSegmentIndex`
-  - `splitSegmentIndex`
-  - `confirmAtSegmentIndex`
+  - `detectedAtTimelineIndex`
+  - `splitTimelineIndex`
+  - `confirmAtTimelineIndex`
 - `EpisodeSplitPoint`
-  - `splitSegmentIndex`
-  - `confirmationSegmentIndex`
+  - `splitTimelineIndex`
+  - `confirmationTimelineIndex`
 - `EpisodeRegion`
   - `startSegmentIndex`
   - `endSegmentIndex`
   - 当前 `regionId` 也混入了 index 推导
 - `EpisodeSynthesisTriggerSignal`
-  - `leftBoundarySplitSegmentIndex`
-  - `regionStartSegmentIndex`
-  - `regionEndSegmentIndex`
-  - `rightBoundarySplitSegmentIndex`
+  - `leftBoundarySplitTimelineIndex`
+  - `regionStartTimelineIndex`
+  - `regionEndTimelineIndex`
+  - `rightBoundarySplitTimelineIndex`
 - `ReflectionMaterialRequest`
 - `ReflectionRawMaterial`
 - `ReflectionMaterial`
@@ -623,3 +623,104 @@
 - fixed segment runtime state 的最小字段集合
 - buffer 恢复时 sealed / open segment 的最小恢复语义
 - `segmentId` 接回 `FixedActionSegment`、episode 和 reflection 的迁移顺序
+
+## 11. 本阶段性能优化收尾
+
+在上面的工程断点之后，这一轮实际先处理的是 runtime 持久化写盘成本问题。
+
+当时观测到的现象不是单纯“写盘过于频繁”，而是：
+
+- 单次写盘本身过重
+- 写入时不仅游戏主线程会卡顿
+- 整台机器也会感受到明显的 I/O / 序列化抖动
+
+因此这一轮优化的目标固定为：
+
+- 先降低单次持久化成本
+- 先把最大 payload 从高频 snapshot 主路径里拆出去
+- 再决定是否还需要继续做更激进的频率节流
+
+### 11.1 已完成的优化
+
+1. action runtime 持久化拆成“两层文件”
+
+- `studio_runtime_action_timeline.json`
+  - 保留轻量 runtime state
+  - 保留 moving window、计数、sequence token 等摘要信息
+- `studio_runtime_action_segments.json`
+  - 只保留 segment store meta
+- `studio_runtime_action_segments.data.jsonl`
+  - 正式承载 sealed fixed segment 的大 payload
+
+这样做的直接结果是：
+
+- 高频 action timeline snapshot 不再每次带整份 sealed segment 列表
+
+2. sealed fixed segment 主体不再总是整文件重写
+
+- 当 sealed segments 只是尾部新增时：
+  - `studio_runtime_action_segments.data.jsonl` 走 append-only
+- 只有在不是“纯追加”的情况下：
+  - 才回退为整文件重写
+
+这一步是本轮最关键的减负点，因为最大的 payload 已经从“每次全量重写”降成了“常见路径下只追加新段”。
+
+3. action timeline 不再把 embedded fixed segments 当正式真源
+
+- sealed fixed segments 的恢复改为从独立 segment store 读取
+- action timeline 自己只承载轻量运行时信息
+- Studio 前端也同步切到同一条新主线，不再优先消费 timeline 里内嵌的 fixed segment 列表
+
+4. 增加 cheap token / signature 检查，避免无意义重建与写出
+
+- action timeline 新增 `fixedSegmentSequenceToken`
+  - sealed fixed segments 未变化时，直接复用已有 segment 视图，不重新构造重 payload model
+- episode timeline 新增 `timelineSignatureToken`
+  - timeline 未变化时，直接跳过一次 snapshot 写出
+
+5. 去掉高频 runtime JSON 的 pretty printing
+
+当前已改为紧凑 JSON 的文件包括：
+
+- `studio_runtime_action_timeline.json`
+- `studio_runtime_episode_timeline.json`
+- `studio_workspace.manifest.json`
+
+这一步不是主收益来源，但它进一步降低了：
+
+- 单次序列化体积
+- 磁盘写入量
+- Studio 文件热更新时的前端读取负担
+
+6. 清理新旧双轨兼容路径
+
+- action timeline / segment store / Studio 导入逻辑已收口到新格式主线
+- 不再保留“timeline 内嵌 fixedSegments 兜底恢复”的长期兼容语义
+
+这样做的收益是：
+
+- 性能链路更干净
+- 后续继续定位写盘热点时，不再被旧格式兼容分支干扰
+
+### 11.2 当前收尾结论
+
+当前这一轮性能优化之后，已经可以先得出下面的阶段性结论：
+
+- 当前卡顿频率已经明显下降
+- 最大的 sealed segment payload 已经脱离高频 snapshot 主路径
+- 当前仍然存在的整文件重写，主要是轻量 JSON：
+  - `studio_runtime_action_timeline.json`
+  - `studio_runtime_action_segments.json`
+  - `studio_runtime_episode_timeline.json`
+  - `studio_workspace.manifest.json`
+
+因此这轮性能处理先在这里收尾：
+
+- 不继续为了“可能还可以更快一点”而暂停 segment / episode 主线
+- 先回到固定坐标、episode region 生命周期和 reflection 接线这些主问题
+
+后续如果又出现新的明显卡顿，再单独回看：
+
+- manifest 是否需要再批处理
+- 轻量 timeline JSON 是否还需要进一步降频
+- episode timeline 是否需要进一步拆 payload

@@ -211,7 +211,7 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 当前 tracker 还会在第一条 fixed segment 进入时自动写入一个 bootstrap split：
 
-- `splitSegmentIndex = 0`
+- `splitTimelineIndex = 0`
 - `reason = null`
 - 只作为左边界锚点使用
 - 不属于任何 splitter，也不进入 tuning 配置
@@ -231,11 +231,11 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 [EpisodePendingMark.java](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/memory/episode/EpisodePendingMark.java) 当前包含：
 
-- `detectedAtSegmentIndex`
-- `splitSegmentIndex`
+- `detectedAtTimelineIndex`
+- `splitTimelineIndex`
 - `splitTimestamp`
 - `reason`
-- `confirmAtSegmentIndex`
+- `confirmAtTimelineIndex`
 - `ownerSplitterId`
 - `highPriority`
 - `coverBeforeSegments`
@@ -277,7 +277,7 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 
 确认逻辑：
 
-- 回看 `splitSegmentIndex .. latestSegmentIndex` 的 aggregate scores
+- 回看 `splitTimelineIndex .. latestTimelineIndex` 的 aggregate scores
 - 再次判断 shift 是否成立
 - hard shift 的 pending 如果最后只剩 soft，不会 confirm
 
@@ -290,7 +290,7 @@ segment 上下文结构在 [FixedActionSegmentContext.java](/Users/jackluo/Docum
 检测逻辑：
 
 - 只要 segment 中出现 `ActionType.DEATH`
-- 就挂一个 `splitSegmentIndex = latestSegmentIndex + 1` 的 pending mark
+- 就挂一个 `splitTimelineIndex = latestTimelineIndex + 1` 的 pending mark
 
 确认逻辑：
 

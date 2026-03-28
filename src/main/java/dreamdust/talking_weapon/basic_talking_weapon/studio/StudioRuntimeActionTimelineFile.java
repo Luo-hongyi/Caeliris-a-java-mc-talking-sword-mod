@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Map;
 import java.util.Set;
 
@@ -37,13 +38,12 @@ import java.util.Set;
 public final class StudioRuntimeActionTimelineFile {
 
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
     public static final String FILENAME = "studio_runtime_action_timeline.json";
     public static final String VERSION_KEY = "runtimeActionTimeline";
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 7;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -94,6 +94,12 @@ public final class StudioRuntimeActionTimelineFile {
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
         RuntimeActionTimelineFileModel previous = readOrEmpty();
         RuntimeActionTimelineFileModel file = build(memory, previous);
+        boolean externalizedSegments = StudioRuntimeActionSegmentStoreFile.writeCurrentSegments(
+                file.fixedSegmentSequenceToken,
+                file.fixedSegments);
+        if (externalizedSegments) {
+            file.fixedSegments = new ArrayList<>();
+        }
         write(file);
     }
 
@@ -120,7 +126,8 @@ public final class StudioRuntimeActionTimelineFile {
             return FixedSegmentBufferRuntimeState.empty();
         }
         file.normalize();
-        return file.runtimeState.toRuntimeState(file.fixedSegments);
+        List<RuntimeFixedSegmentModel> fixedSegments = StudioRuntimeActionSegmentStoreFile.readFixedSegmentsOrEmpty();
+        return file.runtimeState.toRuntimeState(fixedSegments);
     }
 
     private static RuntimeActionTimelineFileModel build(
@@ -142,6 +149,7 @@ public final class StudioRuntimeActionTimelineFile {
         FixedSegmentBufferRuntimeState bufferRuntimeState =
                 memory.getActionArchive().snapshotFixedSegmentRuntimeState(ActionTimelineRuntimeSettings.getFixedSegmentMs());
         List<FixedActionSegment> fixedSegments = bufferRuntimeState.getSealedSegments();
+        file.fixedSegmentSequenceToken = fixedSegmentSequenceTokenOf(fixedSegments);
         MovingActionSegment movingWindow = memory.getMovingActionBuffer().snapshotPromptWindowSegment();
         SegmentIntentSignals movingAnalysis = movingWindow == null || movingWindow.getEntries().isEmpty()
                 ? null
@@ -149,9 +157,16 @@ public final class StudioRuntimeActionTimelineFile {
 
         file.rawActionCount = memory.getActionArchive().size();
         file.fixedSegmentCount = fixedSegments.size();
-        file.fixedSegments = buildFixedSegmentModels(
-                fixedSegments,
-                previous == null ? List.of() : previous.fixedSegments);
+        if (previous != null
+                && Objects.equals(previous.fixedSegmentSequenceToken, file.fixedSegmentSequenceToken)) {
+            file.fixedSegments = StudioRuntimeActionSegmentStoreFile.readFixedSegmentsViewOrEmpty();
+        } else {
+            List<RuntimeFixedSegmentModel> previousFixedSegmentModels =
+                    StudioRuntimeActionSegmentStoreFile.readFixedSegmentsViewOrEmpty();
+            file.fixedSegments = buildFixedSegmentModels(
+                    fixedSegments,
+                    previousFixedSegmentModels);
+        }
         file.runtimeState = RuntimeFixedSegmentBufferStateModel.from(bufferRuntimeState);
 
         file.movingWindow = toMovingWindowModel(movingWindow, movingAnalysis);
@@ -198,6 +213,28 @@ public final class StudioRuntimeActionTimelineFile {
                 && previous.endTimestamp == current.getEndTimestamp()
                 && previous.rawStartIndex == current.getRawStartIndex()
                 && previous.rawEndIndex == current.getRawEndIndex();
+    }
+
+    private static String fixedSegmentSequenceTokenOf(List<FixedActionSegment> fixedSegments) {
+        if (fixedSegments == null || fixedSegments.isEmpty()) {
+            return "empty";
+        }
+        FixedActionSegment first = fixedSegments.get(0);
+        FixedActionSegment last = fixedSegments.get(fixedSegments.size() - 1);
+        return fixedSegments.size()
+                + "|" + segmentIdentityTokenOf(first)
+                + "|" + segmentIdentityTokenOf(last);
+    }
+
+    private static String segmentIdentityTokenOf(FixedActionSegment segment) {
+        if (segment == null) {
+            return "null";
+        }
+        return segment.getSegmentId()
+                + ":" + segment.getStartTimestamp()
+                + ":" + segment.getEndTimestamp()
+                + ":" + segment.getRawStartIndex()
+                + ":" + segment.getRawEndIndex();
     }
 
     private static RuntimeFixedSegmentModel toFixedSegmentModel(
@@ -464,11 +501,13 @@ public final class StudioRuntimeActionTimelineFile {
                 new ArrayList<>(ActionTimelineRuntimeSettings.getMajorStructureWhitelist());
         public int rawActionCount;
         public int fixedSegmentCount;
-        public List<RuntimeFixedSegmentModel> fixedSegments = new ArrayList<>();
+        public String fixedSegmentSequenceToken = "";
+        public transient List<RuntimeFixedSegmentModel> fixedSegments = new ArrayList<>();
         public RuntimeFixedSegmentBufferStateModel runtimeState = new RuntimeFixedSegmentBufferStateModel();
         public RuntimeMovingWindowModel movingWindow = new RuntimeMovingWindowModel();
 
         public void normalize() {
+            fixedSegmentSequenceToken = fixedSegmentSequenceToken == null ? "" : fixedSegmentSequenceToken;
             majorStructureWhitelist = majorStructureWhitelist == null ? new ArrayList<>() : new ArrayList<>(majorStructureWhitelist);
             fixedSegments = fixedSegments == null ? new ArrayList<>() : new ArrayList<>(fixedSegments);
             for (RuntimeFixedSegmentModel fixedSegment : fixedSegments) {
@@ -595,7 +634,6 @@ public final class StudioRuntimeActionTimelineFile {
         public long fixedSegmentMs = -1L;
         public long nextSegmentId = 1L;
         public Map<Long, FixedActionSegmentContext> sealedSegmentContexts = new LinkedHashMap<>();
-        public List<RuntimePersistedFixedSegmentModel> sealedSegments;
         public RuntimePersistedFixedSegmentModel openSegment;
 
         public static RuntimeFixedSegmentBufferStateModel from(FixedSegmentBufferRuntimeState runtimeState) {
@@ -627,24 +665,11 @@ public final class StudioRuntimeActionTimelineFile {
             sealedSegmentContexts = sealedSegmentContexts == null
                     ? new LinkedHashMap<>()
                     : new LinkedHashMap<>(sealedSegmentContexts);
-            if (sealedSegments != null) {
-                sealedSegments = new ArrayList<>(sealedSegments);
-            }
         }
 
         public FixedSegmentBufferRuntimeState toRuntimeState(List<RuntimeFixedSegmentModel> fixedSegments) {
             ArrayList<FixedActionSegment> restoredSealedSegments = new ArrayList<>();
-            if (sealedSegments != null && !sealedSegments.isEmpty()) {
-                for (RuntimePersistedFixedSegmentModel segmentModel : sealedSegments) {
-                    if (segmentModel == null) {
-                        continue;
-                    }
-                    FixedActionSegment segment = segmentModel.toFixedActionSegment();
-                    if (segment != null) {
-                        restoredSealedSegments.add(segment);
-                    }
-                }
-            } else if (fixedSegments != null) {
+            if (fixedSegments != null) {
                 for (RuntimeFixedSegmentModel segmentModel : fixedSegments) {
                     if (segmentModel == null) {
                         continue;

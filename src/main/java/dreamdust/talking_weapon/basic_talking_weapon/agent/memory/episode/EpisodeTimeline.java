@@ -76,13 +76,13 @@ public record EpisodeTimeline(
         return index < 0 ? null : getSegment(index);
     }
 
-    public BoundarySegmentIds boundarySegmentIdsAt(int splitSegmentIndex) {
-        long leftSegmentId = splitSegmentIndex <= 0
+    public BoundarySegmentIds boundarySegmentIdsAt(int splitTimelineIndex) {
+        long leftSegmentId = splitTimelineIndex <= 0
                 ? UNASSIGNED_SEGMENT_ID
-                : getSegmentId(splitSegmentIndex - 1);
-        long rightSegmentId = splitSegmentIndex >= segments.size()
+                : getSegmentId(splitTimelineIndex - 1);
+        long rightSegmentId = splitTimelineIndex >= segments.size()
                 ? UNASSIGNED_SEGMENT_ID
-                : getSegmentId(splitSegmentIndex);
+                : getSegmentId(splitTimelineIndex);
         return new BoundarySegmentIds(leftSegmentId, rightSegmentId);
     }
 
@@ -106,8 +106,8 @@ public record EpisodeTimeline(
         return splitPoints.isEmpty() ? null : splitPoints.get(splitPoints.size() - 1);
     }
 
-    public EpisodeRegion regionBeforeSplit(int splitSegmentIndex) {
-        if (splitSegmentIndex <= 0 || segments.isEmpty()) {
+    public EpisodeRegion regionBeforeSplit(int splitTimelineIndex) {
+        if (splitTimelineIndex <= 0 || segments.isEmpty()) {
             return null;
         }
 
@@ -116,13 +116,13 @@ public record EpisodeTimeline(
             if (splitPoint == null) {
                 continue;
             }
-            int boundary = splitPoint.splitSegmentIndex();
-            if (boundary >= splitSegmentIndex) {
+            int boundary = splitPoint.splitTimelineIndex();
+            if (boundary >= splitTimelineIndex) {
                 break;
             }
             regionStart = Math.max(regionStart, Math.min(boundary, segments.size()));
         }
-        return EpisodeIntentMath.buildRegion(segments, regionStart, splitSegmentIndex - 1);
+        return EpisodeIntentMath.buildRegion(segments, regionStart, splitTimelineIndex - 1);
     }
 
     public boolean hasPendingMark(EpisodePendingMark candidate) {

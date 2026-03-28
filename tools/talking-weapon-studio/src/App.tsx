@@ -15,6 +15,7 @@ import {
   pickDirectoryHandle,
   readFileFromDirectoryPath,
   readJsonFileFromDirectory,
+  readTextFileFromDirectoryPath,
   startDesktopWorkspaceWatcher,
   stopDesktopWorkspaceWatcher,
   supportsDirectoryAccessApi,
@@ -37,6 +38,7 @@ import {
   NativeCatalogEntry,
   PersonaEntry,
   PromptRegistryFile,
+  RuntimeActionSegmentStoreFile,
   RuntimeActionTimelineFile,
   RuntimeRecallTraceFile,
   RuntimeRecentInteractionsFile,
@@ -244,6 +246,7 @@ type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
   runtimeInteractions?: RuntimeRecentInteractionsFile | null;
   runtimeActionTimeline?: RuntimeActionTimelineFile | null;
+  runtimeActionSegmentStore?: RuntimeActionSegmentStoreFile | null;
   runtimeRecallTrace?: RuntimeRecallTraceFile | null;
   actionTimelineTuning?: ActionTimelineTuningFile | null;
   importance?: ImportanceRegistryFile | null;
@@ -265,6 +268,7 @@ type WorkspaceManifestVersions = {
   runtimeTagView: string;
   runtimeInteractions: string;
   runtimeActionTimeline: string;
+  runtimeActionSegmentStore: string;
   runtimeRecallTrace: string;
   actionTimelineTuning: string;
   memoryRecallTuning: string;
@@ -628,7 +632,7 @@ function createEmptyActionTimelineTuningFile(): ActionTimelineTuningFile {
 
 function createEmptyRuntimeActionTimelineFile(): RuntimeActionTimelineFile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 7,
     generatedAt: "",
     fixedSegmentSeconds: 60,
     movingWindowSeconds: 180,
@@ -978,7 +982,7 @@ function normalizeActionTimelineTuningFile(value: unknown): ActionTimelineTuning
   const rawWhitelist = Array.from(new Set(stringArrayOf(value.majorStructureWhitelist)));
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 6,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     fixedSegmentSeconds:
       typeof value.fixedSegmentSeconds === "number"
@@ -1087,6 +1091,7 @@ function normalizeRuntimeActionTimelineFixedSegment(value: unknown): RuntimeActi
   return {
     ...carrier,
     index: typeof value.index === "number" ? value.index : -1,
+    segmentId: typeof value.segmentId === "number" ? value.segmentId : -1,
     startTimestamp: typeof value.startTimestamp === "number" ? value.startTimestamp : 0,
     endTimestamp: typeof value.endTimestamp === "number" ? value.endTimestamp : 0,
     rawStartIndex: typeof value.rawStartIndex === "number" ? value.rawStartIndex : -1,
@@ -1132,7 +1137,7 @@ function normalizeRuntimeActionTimelineFile(value: unknown): RuntimeActionTimeli
       : 24;
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 3,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 7,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     fixedSegmentSeconds:
       typeof value.fixedSegmentSeconds === "number"
@@ -1154,12 +1159,65 @@ function normalizeRuntimeActionTimelineFile(value: unknown): RuntimeActionTimeli
     majorStructureWhitelist: Array.from(new Set(stringArrayOf(value.majorStructureWhitelist))),
     rawActionCount: typeof value.rawActionCount === "number" ? value.rawActionCount : 0,
     fixedSegmentCount: typeof value.fixedSegmentCount === "number" ? value.fixedSegmentCount : 0,
-    fixedSegments: Array.isArray(value.fixedSegments)
-      ? value.fixedSegments
-          .map((segment) => normalizeRuntimeActionTimelineFixedSegment(segment))
-          .filter((segment): segment is NonNullable<typeof segment> => segment !== null)
-      : [],
+    fixedSegments: [],
     movingWindow: normalizeRuntimeActionTimelineMovingWindow(value.movingWindow)
+  };
+}
+
+function normalizeRuntimeActionSegmentStoreFile(value: unknown): RuntimeActionSegmentStoreFile | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 2,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    sequenceToken: typeof value.sequenceToken === "string" ? value.sequenceToken : "",
+    fixedSegmentCount: typeof value.fixedSegmentCount === "number" ? value.fixedSegmentCount : 0,
+    dataFilename: typeof value.dataFilename === "string" ? value.dataFilename : "",
+    fixedSegments: []
+  };
+}
+
+function parseRuntimeActionSegmentStoreData(
+  text: string | null | undefined
+): RuntimeActionTimelineFile["fixedSegments"] {
+  if (!text) {
+    return [];
+  }
+
+  const segments: RuntimeActionTimelineFile["fixedSegments"] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      const normalized = normalizeRuntimeActionTimelineFixedSegment(parsed);
+      if (normalized) {
+        segments.push(normalized);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return segments;
+}
+
+function hydrateRuntimeActionTimeline(
+  timeline: RuntimeActionTimelineFile,
+  segmentStore?: RuntimeActionSegmentStoreFile | null,
+  currentTimeline?: RuntimeActionTimelineFile | null
+): RuntimeActionTimelineFile {
+  const preferredSegments = segmentStore
+    ? segmentStore.fixedSegments
+    : currentTimeline?.fixedSegments ?? [];
+
+  return {
+    ...timeline,
+    fixedSegmentCount: Math.max(timeline.fixedSegmentCount, preferredSegments.length),
+    fixedSegments: preferredSegments
   };
 }
 
@@ -1586,6 +1644,7 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     runtimeTagView: "missing",
     runtimeInteractions: "missing",
     runtimeActionTimeline: "missing",
+    runtimeActionSegmentStore: "missing",
     runtimeRecallTrace: "missing",
     actionTimelineTuning: "missing",
     memoryRecallTuning: "missing",
@@ -1623,6 +1682,8 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
         typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
       runtimeActionTimeline:
         typeof rawVersions.runtimeActionTimeline === "string" ? rawVersions.runtimeActionTimeline : "missing",
+      runtimeActionSegmentStore:
+        typeof rawVersions.runtimeActionSegmentStore === "string" ? rawVersions.runtimeActionSegmentStore : "missing",
       runtimeRecallTrace:
         typeof rawVersions.runtimeRecallTrace === "string" ? rawVersions.runtimeRecallTrace : "missing",
       actionTimelineTuning:
@@ -1669,7 +1730,16 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
     assign: (importedData, value) => {
       importedData.runtimeActionTimeline = value as RuntimeActionTimelineFile;
     },
-    describe: (value) => `timeline ${(value as RuntimeActionTimelineFile).fixedSegments.length} 个 fixed segments`
+    describe: (value) => `timeline ${(value as RuntimeActionTimelineFile).fixedSegmentCount} 个 fixed segments`
+  },
+  {
+    filename: "studio_runtime_action_segments.json",
+    versionKey: "runtimeActionSegmentStore",
+    normalize: normalizeRuntimeActionSegmentStoreFile,
+    assign: (importedData, value) => {
+      importedData.runtimeActionSegmentStore = value as RuntimeActionSegmentStoreFile;
+    },
+    describe: (value) => `segment store ${(value as RuntimeActionSegmentStoreFile).fixedSegmentCount} 个 fixed segments`
   },
   {
     filename: "action_timeline_tuning.json",
@@ -1825,6 +1895,16 @@ async function loadWorkspaceDataFromDirectory(
     importedParts.push(descriptor.describe(normalized));
   }
 
+  if (importedData.runtimeActionSegmentStore?.dataFilename) {
+    const rawData = await readTextFileFromDirectoryPath(handle, importedData.runtimeActionSegmentStore.dataFilename);
+    if (rawData !== null) {
+      importedData.runtimeActionSegmentStore = {
+        ...importedData.runtimeActionSegmentStore,
+        fixedSegments: parseRuntimeActionSegmentStoreData(rawData)
+      };
+    }
+  }
+
   return { importedData, importedParts };
 }
 
@@ -1844,9 +1924,9 @@ async function loadWorkspaceDataFromFolderFiles(
   for (const file of files) {
     const relativePath = normalizeWorkspaceRelativePath(file.webkitRelativePath || file.name);
     const basename = basenameOfPath(relativePath);
+    workspaceFiles.set(relativePath, file);
 
     if (relativePath.startsWith("native_catalog_icons/") && relativePath.toLowerCase().endsWith(".png")) {
-      workspaceFiles.set(relativePath, file);
       continue;
     }
     if (!basename.toLowerCase().endsWith(".json")) {
@@ -1867,6 +1947,18 @@ async function loadWorkspaceDataFromFolderFiles(
 
     descriptor.assign(importedData, normalized);
     importedParts.push(descriptor.describe(normalized));
+  }
+
+  if (importedData.runtimeActionSegmentStore?.dataFilename) {
+    const normalizedDataPath = normalizeWorkspaceRelativePath(importedData.runtimeActionSegmentStore.dataFilename);
+    const dataFile = workspaceFiles.get(normalizedDataPath)
+      ?? workspaceFiles.get(basenameOfPath(normalizedDataPath));
+    if (dataFile) {
+      importedData.runtimeActionSegmentStore = {
+        ...importedData.runtimeActionSegmentStore,
+        fixedSegments: parseRuntimeActionSegmentStoreData(await dataFile.text())
+      };
+    }
   }
 
   return { importedData, importedParts, ignoredFiles, workspaceFiles };
@@ -3856,8 +3948,11 @@ function App() {
     if (importedData.runtimeInteractions) {
       setRuntimeInteractions(importedData.runtimeInteractions);
     }
-    if (importedData.runtimeActionTimeline) {
-      setRuntimeActionTimeline(importedData.runtimeActionTimeline);
+    if (importedData.runtimeActionTimeline || importedData.runtimeActionSegmentStore) {
+      const baseTimeline = importedData.runtimeActionTimeline ?? runtimeActionTimeline;
+      setRuntimeActionTimeline(
+        hydrateRuntimeActionTimeline(baseTimeline, importedData.runtimeActionSegmentStore, runtimeActionTimeline)
+      );
     }
     if (importedData.actionTimelineTuning) {
       setActionTimelineTuningFile(importedData.actionTimelineTuning);

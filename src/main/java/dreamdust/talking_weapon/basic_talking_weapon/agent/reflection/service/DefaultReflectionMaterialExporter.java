@@ -33,9 +33,17 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
         Objects.requireNonNull(memory, "memory");
 
         EpisodeTimeline timeline = memory.getEpisodeTimelineStore().snapshot();
-        List<FixedActionSegment> segments = timeline.sliceSegments(
-                request.startTimelineSegmentIndex(),
-                request.endTimelineSegmentIndex());
+        int startTimelineIndex = resolveTimelineIndex(
+                timeline,
+                request.startSegmentId(),
+                request.startTimelineIndex());
+        int endTimelineIndex = resolveTimelineIndex(
+                timeline,
+                request.endSegmentId(),
+                request.endTimelineIndex());
+        List<FixedActionSegment> segments = startTimelineIndex > endTimelineIndex
+                ? List.of()
+                : timeline.sliceSegments(startTimelineIndex, endTimelineIndex);
         STMPool.TimeSlice stmSlice = memory.getSTMPool().snapshotBefore(request.interactionSliceExclusiveTimestamp());
 
         List<ReflectionRawSegmentMaterial> rawSegments = new ArrayList<>();
@@ -46,21 +54,21 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
             }
             rawSegments.add(toRawSegment(
                     i,
-                    request.startTimelineSegmentIndex() + i,
+                    startTimelineIndex + i,
                     segment,
                     bucketInteractions(segments, i, stmSlice, request.startTimestamp(), request.interactionSliceExclusiveTimestamp())));
         }
 
         return new ReflectionRawMaterial(
                 request.scope(),
-                request.startTimelineSegmentIndex(),
+                startTimelineIndex,
                 request.startSegmentId(),
-                request.endTimelineSegmentIndex(),
+                endTimelineIndex,
                 request.endSegmentId(),
-                request.leftBoundarySplitSegmentIndex(),
+                request.leftBoundarySplitTimelineIndex(),
                 request.leftBoundaryLeftSegmentId(),
                 request.leftBoundaryRightSegmentId(),
-                request.rightBoundarySplitSegmentIndex(),
+                request.rightBoundarySplitTimelineIndex(),
                 request.rightBoundaryLeftSegmentId(),
                 request.rightBoundaryRightSegmentId(),
                 request.startTimestamp(),
@@ -71,7 +79,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
 
     private ReflectionRawSegmentMaterial toRawSegment(
             int localSegmentIndex,
-            int timelineSegmentIndex,
+            int timelineIndex,
             FixedActionSegment segment,
             List<InteractionTurn> interactionTurns) {
         FixedActionSegmentContext context = segment.getContext();
@@ -109,7 +117,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
 
         return new ReflectionRawSegmentMaterial(
                 localSegmentIndex,
-                timelineSegmentIndex,
+                timelineIndex,
                 segment.getSegmentId(),
                 segment.getStartTimestamp(),
                 segment.getEndTimestamp(),
@@ -146,5 +154,16 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
             }
         }
         return List.copyOf(bucket);
+    }
+
+    private int resolveTimelineIndex(
+            EpisodeTimeline timeline,
+            long requestedSegmentId,
+            int fallbackTimelineIndex) {
+        if (timeline == null) {
+            return fallbackTimelineIndex;
+        }
+        int resolved = timeline.indexOfSegmentId(requestedSegmentId);
+        return resolved >= 0 ? resolved : fallbackTimelineIndex;
     }
 }

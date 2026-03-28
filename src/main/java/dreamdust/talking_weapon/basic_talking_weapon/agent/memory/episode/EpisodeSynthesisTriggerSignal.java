@@ -11,14 +11,14 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
  */
 public record EpisodeSynthesisTriggerSignal(
         long regionId,
-        int leftBoundarySplitSegmentIndex,
+        int leftBoundarySplitTimelineIndex,
         long leftBoundaryLeftSegmentId,
         long leftBoundaryRightSegmentId,
-        int regionStartSegmentIndex,
+        int regionStartTimelineIndex,
         long regionStartSegmentId,
-        int regionEndSegmentIndex,
+        int regionEndTimelineIndex,
         long regionEndSegmentId,
-        int rightBoundarySplitSegmentIndex,
+        int rightBoundarySplitTimelineIndex,
         long rightBoundaryLeftSegmentId,
         long rightBoundaryRightSegmentId,
         long regionStartTimestamp,
@@ -29,17 +29,17 @@ public record EpisodeSynthesisTriggerSignal(
         if (regionId <= 0L) {
             throw new IllegalArgumentException("regionId must be > 0");
         }
-        if (leftBoundarySplitSegmentIndex < 0) {
-            throw new IllegalArgumentException("leftBoundarySplitSegmentIndex must be >= 0");
+        if (leftBoundarySplitTimelineIndex < 0) {
+            throw new IllegalArgumentException("leftBoundarySplitTimelineIndex must be >= 0");
         }
-        if (regionStartSegmentIndex < 0) {
-            throw new IllegalArgumentException("regionStartSegmentIndex must be >= 0");
+        if (regionStartTimelineIndex < 0) {
+            throw new IllegalArgumentException("regionStartTimelineIndex must be >= 0");
         }
-        if (regionEndSegmentIndex < regionStartSegmentIndex) {
-            throw new IllegalArgumentException("regionEndSegmentIndex must be >= regionStartSegmentIndex");
+        if (regionEndTimelineIndex < regionStartTimelineIndex) {
+            throw new IllegalArgumentException("regionEndTimelineIndex must be >= regionStartTimelineIndex");
         }
-        if (rightBoundarySplitSegmentIndex <= regionEndSegmentIndex) {
-            throw new IllegalArgumentException("rightBoundarySplitSegmentIndex must be after regionEndSegmentIndex");
+        if (rightBoundarySplitTimelineIndex <= regionEndTimelineIndex) {
+            throw new IllegalArgumentException("rightBoundarySplitTimelineIndex must be after regionEndTimelineIndex");
         }
         if (stmSliceExclusiveTimestamp < 0L) {
             throw new IllegalArgumentException("stmSliceExclusiveTimestamp must be >= 0");

@@ -43,13 +43,12 @@ import java.util.Map;
 public final class StudioRuntimeEpisodeTimelineFile {
 
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
     public static final String FILENAME = "studio_runtime_episode_timeline.json";
     public static final String VERSION_KEY = "runtimeEpisodeTimeline";
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -109,27 +108,46 @@ public final class StudioRuntimeEpisodeTimelineFile {
         if (now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
             return false;
         }
-        writeCurrentSnapshot(memory);
+        RuntimeEpisodeTimelineFileModel previous = readOrEmpty();
+        EpisodeTimeline timeline = memory == null
+                ? EpisodeTimeline.empty()
+                : memory.getEpisodeTimelineStore().snapshot();
+        String timelineSignatureToken = timelineSignatureTokenOf(timeline);
+        if (previous != null && timelineSignatureToken.equals(previous.timelineSignatureToken)) {
+            lastWriteAt = now;
+            return true;
+        }
+        writeCurrentSnapshot(memory, previous, timeline, timelineSignatureToken);
         return true;
     }
 
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
         RuntimeEpisodeTimelineFileModel previous = readOrEmpty();
-        RuntimeEpisodeTimelineFileModel current = build(memory, previous);
+        EpisodeTimeline timeline = memory == null
+                ? EpisodeTimeline.empty()
+                : memory.getEpisodeTimelineStore().snapshot();
+        writeCurrentSnapshot(memory, previous, timeline, timelineSignatureTokenOf(timeline));
+    }
+
+    private static void writeCurrentSnapshot(
+            AgentMemory memory,
+            RuntimeEpisodeTimelineFileModel previous,
+            EpisodeTimeline timeline,
+            String timelineSignatureToken) {
+        RuntimeEpisodeTimelineFileModel current = build(memory, previous, timeline, timelineSignatureToken);
         write(current);
     }
 
     private static RuntimeEpisodeTimelineFileModel build(
             AgentMemory memory,
-            RuntimeEpisodeTimelineFileModel previous) {
+            RuntimeEpisodeTimelineFileModel previous,
+            EpisodeTimeline timeline,
+            String timelineSignatureToken) {
         RuntimeEpisodeTimelineFileModel file = new RuntimeEpisodeTimelineFileModel();
         file.generatedAt = OffsetDateTime.now().toString();
         file.fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
         file.reasonConfigs = createReasonConfigModels(EpisodeRuntimeSettings.snapshotConfigs());
-
-        EpisodeTimeline timeline = memory == null
-                ? EpisodeTimeline.empty()
-                : memory.getEpisodeTimelineStore().snapshot();
+        file.timelineSignatureToken = timelineSignatureToken == null ? "" : timelineSignatureToken;
         file.segmentCount = timeline.segmentCount();
         file.pendingMarkCount = timeline.pendingMarks().size();
         file.splitPointCount = timeline.splitPoints().size();
@@ -157,6 +175,83 @@ public final class StudioRuntimeEpisodeTimelineFile {
         file.lastUpdate = RuntimeEpisodeUpdateModel.diff(previous, file);
         file.normalize();
         return file;
+    }
+
+    private static String timelineSignatureTokenOf(EpisodeTimeline timeline) {
+        if (timeline == null) {
+            return "empty";
+        }
+
+        StringBuilder token = new StringBuilder();
+        token.append(timeline.segmentCount())
+                .append("|").append(timeline.pendingMarks().size())
+                .append("|").append(timeline.splitPoints().size())
+                .append("|").append(timeline.regions().size());
+
+        FixedActionSegment firstSegment = timeline.segments().isEmpty() ? null : timeline.segments().get(0);
+        FixedActionSegment lastSegment = timeline.segments().isEmpty() ? null : timeline.segments().get(timeline.segments().size() - 1);
+        token.append("|").append(segmentTokenOf(firstSegment))
+                .append("|").append(segmentTokenOf(lastSegment));
+
+        EpisodePendingMark lastPendingMark = timeline.pendingMarks().isEmpty()
+                ? null
+                : timeline.pendingMarks().get(timeline.pendingMarks().size() - 1);
+        token.append("|").append(pendingMarkTokenOf(lastPendingMark));
+
+        EpisodeSplitPoint lastSplitPoint = timeline.splitPoints().isEmpty()
+                ? null
+                : timeline.splitPoints().get(timeline.splitPoints().size() - 1);
+        token.append("|").append(splitPointTokenOf(lastSplitPoint));
+
+        EpisodeRegion lastRegion = timeline.regions().isEmpty()
+                ? null
+                : timeline.regions().get(timeline.regions().size() - 1);
+        token.append("|").append(regionTokenOf(lastRegion));
+        return token.toString();
+    }
+
+    private static String segmentTokenOf(FixedActionSegment segment) {
+        if (segment == null) {
+            return "null";
+        }
+        return segment.getSegmentId()
+                + ":" + segment.getStartTimestamp()
+                + ":" + segment.getEndTimestamp()
+                + ":" + segment.getRawStartIndex()
+                + ":" + segment.getRawEndIndex();
+    }
+
+    private static String pendingMarkTokenOf(EpisodePendingMark pendingMark) {
+        if (pendingMark == null) {
+            return "null";
+        }
+        return pendingMark.splitTimelineIndex()
+                + ":" + pendingMark.splitLeftSegmentId()
+                + ":" + pendingMark.splitRightSegmentId()
+                + ":" + pendingMark.reason()
+                + ":" + pendingMark.confirmAtTimelineIndex();
+    }
+
+    private static String splitPointTokenOf(EpisodeSplitPoint splitPoint) {
+        if (splitPoint == null) {
+            return "null";
+        }
+        return splitPoint.splitTimelineIndex()
+                + ":" + splitPoint.splitLeftSegmentId()
+                + ":" + splitPoint.splitRightSegmentId()
+                + ":" + splitPoint.reason()
+                + ":" + splitPoint.confirmationTimelineIndex();
+    }
+
+    private static String regionTokenOf(EpisodeRegion region) {
+        if (region == null) {
+            return "null";
+        }
+        return region.regionId()
+                + ":" + region.startSegmentId()
+                + ":" + region.endSegmentId()
+                + ":" + region.gateDecision()
+                + ":" + region.lifecycleState();
     }
 
     private static LinkedHashMap<String, RuntimeEpisodeReasonConfigModel> createReasonConfigModels(
@@ -283,6 +378,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public int schemaVersion = SCHEMA_VERSION;
         public String generatedAt = "";
         public int fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
+        public String timelineSignatureToken = "";
         public int segmentCount;
         public int pendingMarkCount;
         public int splitPointCount;
@@ -300,6 +396,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
             }
             if (generatedAt == null) {
                 generatedAt = "";
+            }
+            if (timelineSignatureToken == null) {
+                timelineSignatureToken = "";
             }
             fallbackQuietWindowSegments = Math.max(1, fallbackQuietWindowSegments);
             if (reasonConfigs == null) {
@@ -374,14 +473,14 @@ public final class StudioRuntimeEpisodeTimelineFile {
     }
 
     public static final class RuntimeEpisodePendingMarkModel {
-        public int detectedAtSegmentIndex;
+        public int detectedAtTimelineIndex;
         public long detectedAtSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
-        public int splitSegmentIndex;
+        public int splitTimelineIndex;
         public long splitLeftSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitRightSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitTimestamp;
         public String reason = "";
-        public int confirmAtSegmentIndex;
+        public int confirmAtTimelineIndex;
         public String ownerSplitterId = "";
         public boolean highPriority;
         public int coverBeforeSegments;
@@ -389,14 +488,14 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
         public static RuntimeEpisodePendingMarkModel from(EpisodePendingMark pendingMark) {
             RuntimeEpisodePendingMarkModel model = new RuntimeEpisodePendingMarkModel();
-            model.detectedAtSegmentIndex = pendingMark.detectedAtSegmentIndex();
+            model.detectedAtTimelineIndex = pendingMark.detectedAtTimelineIndex();
             model.detectedAtSegmentId = pendingMark.detectedAtSegmentId();
-            model.splitSegmentIndex = pendingMark.splitSegmentIndex();
+            model.splitTimelineIndex = pendingMark.splitTimelineIndex();
             model.splitLeftSegmentId = pendingMark.splitLeftSegmentId();
             model.splitRightSegmentId = pendingMark.splitRightSegmentId();
             model.splitTimestamp = pendingMark.splitTimestamp();
             model.reason = nameOf(pendingMark.reason());
-            model.confirmAtSegmentIndex = pendingMark.confirmAtSegmentIndex();
+            model.confirmAtTimelineIndex = pendingMark.confirmAtTimelineIndex();
             model.ownerSplitterId = pendingMark.ownerSplitterId();
             model.highPriority = pendingMark.highPriority();
             model.coverBeforeSegments = pendingMark.coverBeforeSegments();
@@ -406,24 +505,24 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
         String signature() {
             if (splitLeftSegmentId > 0L || splitRightSegmentId > 0L) {
-                return splitLeftSegmentId + "|" + splitRightSegmentId + "|" + confirmAtSegmentIndex + "|" + reason + "|" + ownerSplitterId;
+                return splitLeftSegmentId + "|" + splitRightSegmentId + "|" + confirmAtTimelineIndex + "|" + reason + "|" + ownerSplitterId;
             }
-            return splitSegmentIndex + "|" + confirmAtSegmentIndex + "|" + reason + "|" + ownerSplitterId;
+            return splitTimelineIndex + "|" + confirmAtTimelineIndex + "|" + reason + "|" + ownerSplitterId;
         }
 
         String summary() {
-            return reason + "@split=" + splitSegmentIndex
-                    + " confirm@" + confirmAtSegmentIndex
+            return reason + "@split=" + splitTimelineIndex
+                    + " confirm@" + confirmAtTimelineIndex
                     + " owner=" + ownerSplitterId;
         }
     }
 
     public static final class RuntimeEpisodeSplitPointModel {
-        public int splitSegmentIndex;
+        public int splitTimelineIndex;
         public long splitLeftSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitRightSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long splitTimestamp;
-        public int confirmationSegmentIndex;
+        public int confirmationTimelineIndex;
         public long confirmationSegmentId = FixedActionSegment.UNASSIGNED_SEGMENT_ID;
         public long confirmationTimestamp;
         public String reason = "";
@@ -434,11 +533,11 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
         public static RuntimeEpisodeSplitPointModel from(EpisodeSplitPoint splitPoint) {
             RuntimeEpisodeSplitPointModel model = new RuntimeEpisodeSplitPointModel();
-            model.splitSegmentIndex = splitPoint.splitSegmentIndex();
+            model.splitTimelineIndex = splitPoint.splitTimelineIndex();
             model.splitLeftSegmentId = splitPoint.splitLeftSegmentId();
             model.splitRightSegmentId = splitPoint.splitRightSegmentId();
             model.splitTimestamp = splitPoint.splitTimestamp();
-            model.confirmationSegmentIndex = splitPoint.confirmationSegmentIndex();
+            model.confirmationTimelineIndex = splitPoint.confirmationTimelineIndex();
             model.confirmationSegmentId = splitPoint.confirmationSegmentId();
             model.confirmationTimestamp = splitPoint.confirmationTimestamp();
             model.reason = nameOf(splitPoint.reason());
@@ -453,12 +552,12 @@ public final class StudioRuntimeEpisodeTimelineFile {
             if (splitLeftSegmentId > 0L || splitRightSegmentId > 0L) {
                 return splitLeftSegmentId + "|" + splitRightSegmentId + "|" + splitTimestamp + "|" + reason;
             }
-            return splitSegmentIndex + "|" + splitTimestamp + "|" + reason;
+            return splitTimelineIndex + "|" + splitTimestamp + "|" + reason;
         }
 
         String summary() {
-            return reason + "@split=" + splitSegmentIndex
-                    + " confirm@" + confirmationSegmentIndex;
+            return reason + "@split=" + splitTimelineIndex
+                    + " confirm@" + confirmationTimelineIndex;
         }
     }
 

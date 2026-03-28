@@ -34,10 +34,10 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
 
         draft.append("[Reflection Material]\n");
         draft.append("scope: ").append(material.scope()).append("\n");
-        draft.append("timeline segment range: ")
-                .append(material.startTimelineSegmentIndex())
+        draft.append("timeline index range: ")
+                .append(material.startTimelineIndex())
                 .append(" -> ")
-                .append(material.endTimelineSegmentIndex())
+                .append(material.endTimelineIndex())
                 .append("\n");
         if (material.startSegmentId() > 0L || material.endSegmentId() > 0L) {
             draft.append("segment id range: ")
@@ -57,13 +57,13 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             }
             indexMap.append(segment.localSegmentIndex())
                     .append(" -> timeline#")
-                    .append(segment.timelineSegmentIndex());
+                    .append(segment.timelineIndex());
             if (segment.segmentId() > 0L) {
                 indexMap.append(" (segmentId=").append(segment.segmentId()).append(")");
             }
 
             draft.append("[Segment ").append(segment.localSegmentIndex()).append("]\n");
-            draft.append("timeline index: ").append(segment.timelineSegmentIndex()).append("\n");
+            draft.append("timeline index: ").append(segment.timelineIndex()).append("\n");
             if (segment.segmentId() > 0L) {
                 draft.append("segment id: ").append(segment.segmentId()).append("\n");
             }

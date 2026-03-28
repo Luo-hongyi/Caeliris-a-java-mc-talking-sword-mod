@@ -77,7 +77,7 @@ public record EpisodeRegion(
                 primaryScore,
                 secondaryIntent,
                 secondaryScore,
-                deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp, startSegmentIndex, endSegmentIndex),
+                deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp),
                 EpisodeRegionGateDecision.UNSET,
                 EpisodeRegionLifecycleState.ACTIVE);
     }
@@ -136,7 +136,7 @@ public record EpisodeRegion(
                 primaryScore,
                 secondaryIntent,
                 secondaryScore,
-                deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp, startSegmentIndex, endSegmentIndex),
+                deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp),
                 gateDecision,
                 lifecycleState);
     }
@@ -149,7 +149,7 @@ public record EpisodeRegion(
         }
         aggregateIntentScores = Collections.unmodifiableMap(copy);
         if (regionId <= 0L) {
-            regionId = deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp, startSegmentIndex, endSegmentIndex);
+            regionId = deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp);
         }
         if (gateDecision == null) {
             gateDecision = EpisodeRegionGateDecision.UNSET;
@@ -209,9 +209,7 @@ public record EpisodeRegion(
             long startSegmentId,
             long endSegmentId,
             long startTimestamp,
-            long endTimestamp,
-            int startSegmentIndex,
-            int endSegmentIndex) {
+            long endTimestamp) {
         long hash = 1469598103934665603L;
         if (startSegmentId > 0L || endSegmentId > 0L) {
             hash = mix(hash, startSegmentId);
@@ -219,8 +217,6 @@ public record EpisodeRegion(
         }
         hash = mix(hash, startTimestamp);
         hash = mix(hash, endTimestamp);
-        hash = mix(hash, startSegmentIndex);
-        hash = mix(hash, endSegmentIndex);
         return hash == 0L ? 1L : hash;
     }
 

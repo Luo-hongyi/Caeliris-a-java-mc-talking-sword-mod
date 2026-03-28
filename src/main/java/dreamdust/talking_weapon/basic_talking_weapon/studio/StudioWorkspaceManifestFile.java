@@ -27,7 +27,6 @@ import java.util.Map;
 public final class StudioWorkspaceManifestFile {
 
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
 
@@ -42,6 +41,7 @@ public final class StudioWorkspaceManifestFile {
             "runtimeTagView",
             "runtimeInteractions",
             "runtimeActionTimeline",
+            "runtimeActionSegmentStore",
             "runtimeEpisodeTimeline",
             "runtimeRecallTrace",
             "actionTimelineTuning",

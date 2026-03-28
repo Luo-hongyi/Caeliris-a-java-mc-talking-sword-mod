@@ -154,24 +154,24 @@ public final class EpisodeTimelineStore {
         }
 
         ArrayList<BoundaryAnchor> boundaries = new ArrayList<>();
-        Integer lastSplitSegmentIndex = null;
+        Integer lastSplitTimelineIndex = null;
         for (EpisodeSplitPoint splitPoint : timeline.splitPoints()) {
             if (splitPoint == null) {
                 continue;
             }
-            int splitSegmentIndex = splitPoint.splitSegmentIndex();
-            if (splitSegmentIndex < 0 || splitSegmentIndex > timeline.segmentCount()) {
+            int splitTimelineIndex = splitPoint.splitTimelineIndex();
+            if (splitTimelineIndex < 0 || splitTimelineIndex > timeline.segmentCount()) {
                 continue;
             }
-            if (lastSplitSegmentIndex != null && splitSegmentIndex == lastSplitSegmentIndex) {
+            if (lastSplitTimelineIndex != null && splitTimelineIndex == lastSplitTimelineIndex) {
                 continue;
             }
             boundaries.add(new BoundaryAnchor(
-                    splitSegmentIndex,
+                    splitTimelineIndex,
                     splitPoint.splitLeftSegmentId(),
                     splitPoint.splitRightSegmentId(),
                     Math.max(0L, splitPoint.splitTimestamp())));
-            lastSplitSegmentIndex = splitSegmentIndex;
+            lastSplitTimelineIndex = splitTimelineIndex;
         }
         return List.copyOf(boundaries);
     }
@@ -182,14 +182,14 @@ public final class EpisodeTimelineStore {
         if (leftBoundary == null || rightBoundary == null) {
             return Optional.empty();
         }
-        if (rightBoundary.splitSegmentIndex() <= leftBoundary.splitSegmentIndex()) {
+        if (rightBoundary.splitTimelineIndex() <= leftBoundary.splitTimelineIndex()) {
             return Optional.empty();
         }
 
-        int regionStartSegmentIndex = leftBoundary.splitSegmentIndex();
-        int regionEndSegmentIndex = rightBoundary.splitSegmentIndex() - 1;
-        FixedActionSegment startSegment = timeline.getSegment(regionStartSegmentIndex);
-        FixedActionSegment endSegment = timeline.getSegment(regionEndSegmentIndex);
+        int regionStartTimelineIndex = leftBoundary.splitTimelineIndex();
+        int regionEndTimelineIndex = rightBoundary.splitTimelineIndex() - 1;
+        FixedActionSegment startSegment = timeline.getSegment(regionStartTimelineIndex);
+        FixedActionSegment endSegment = timeline.getSegment(regionEndTimelineIndex);
         if (startSegment == null || endSegment == null) {
             return Optional.empty();
         }
@@ -197,20 +197,20 @@ public final class EpisodeTimelineStore {
         long stmSliceExclusiveTimestamp = rightBoundary.splitTimestamp() > 0L
                 ? rightBoundary.splitTimestamp()
                 : Math.max(endSegment.getEndTimestamp(), startSegment.getStartTimestamp());
-        long regionId = resolveRegionId(regionStartSegmentIndex, regionEndSegmentIndex);
+        long regionId = resolveRegionId(regionStartTimelineIndex, regionEndTimelineIndex);
         if (regionId <= 0L) {
             return Optional.empty();
         }
         return Optional.of(new EpisodeSynthesisTriggerSignal(
                 regionId,
-                leftBoundary.splitSegmentIndex(),
+                leftBoundary.splitTimelineIndex(),
                 leftBoundary.leftSegmentId(),
                 leftBoundary.rightSegmentId(),
-                regionStartSegmentIndex,
+                regionStartTimelineIndex,
                 startSegment.getSegmentId(),
-                regionEndSegmentIndex,
+                regionEndTimelineIndex,
                 endSegment.getSegmentId(),
-                rightBoundary.splitSegmentIndex(),
+                rightBoundary.splitTimelineIndex(),
                 rightBoundary.leftSegmentId(),
                 rightBoundary.rightSegmentId(),
                 startSegment.getStartTimestamp(),
@@ -219,15 +219,19 @@ public final class EpisodeTimelineStore {
     }
 
     private record BoundaryAnchor(
-            int splitSegmentIndex,
+            int splitTimelineIndex,
             long leftSegmentId,
             long rightSegmentId,
             long splitTimestamp) {
     }
 
-    private long resolveRegionId(int regionStartSegmentIndex, int regionEndSegmentIndex) {
-        long startSegmentId = timeline.getSegmentId(regionStartSegmentIndex);
-        long endSegmentId = timeline.getSegmentId(regionEndSegmentIndex);
+    private long resolveRegionId(int regionStartTimelineIndex, int regionEndTimelineIndex) {
+        FixedActionSegment startSegment = timeline.getSegment(regionStartTimelineIndex);
+        FixedActionSegment endSegment = timeline.getSegment(regionEndTimelineIndex);
+        long startSegmentId = startSegment == null ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID : startSegment.getSegmentId();
+        long endSegmentId = endSegment == null ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID : endSegment.getSegmentId();
+        long startTimestamp = startSegment == null ? -1L : startSegment.getStartTimestamp();
+        long endTimestamp = endSegment == null ? -1L : endSegment.getEndTimestamp();
         for (EpisodeRegion region : timeline.regions()) {
             if (region == null) {
                 continue;
@@ -238,8 +242,10 @@ public final class EpisodeTimelineStore {
                     && region.endSegmentId() == endSegmentId) {
                 return region.regionId();
             }
-            if (region.startSegmentIndex() == regionStartSegmentIndex
-                    && region.endSegmentIndex() == regionEndSegmentIndex) {
+            if (startTimestamp >= 0L
+                    && endTimestamp >= startTimestamp
+                    && region.startTimestamp() == startTimestamp
+                    && region.endTimestamp() == endTimestamp) {
                 return region.regionId();
             }
         }

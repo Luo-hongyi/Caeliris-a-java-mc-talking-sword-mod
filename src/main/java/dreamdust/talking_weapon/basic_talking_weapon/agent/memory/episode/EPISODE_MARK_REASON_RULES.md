@@ -26,15 +26,15 @@ episode 分析的最小单位仍然是：
 
 `EpisodePendingMark` 只表达：
 
-- `splitSegmentIndex`
+- `splitTimelineIndex`
 - `splitTimestamp`
 - `reason`
-- `confirmAtSegmentIndex`
+- `confirmAtTimelineIndex`
 - `ownerSplitterId`
 
 不再公开：
 
-- `detectedSegmentIndex`
+- `detectedAtTimelineIndex`
 - `detectedTimestamp`
 
 这些“系统是在什么时候发现这个候选边界”的信息，只保留在 tracker 内部。

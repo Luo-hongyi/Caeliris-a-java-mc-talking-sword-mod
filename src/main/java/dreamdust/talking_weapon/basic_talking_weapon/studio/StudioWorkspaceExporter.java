@@ -183,6 +183,7 @@ public final class StudioWorkspaceExporter {
         versions.put("runtimeTagView", lastModifiedToken(getWorkspaceRoot().resolve("studio_runtime_tag_view.json")));
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
         versions.put("runtimeActionTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionTimelineFile.FILENAME)));
+        versions.put("runtimeActionSegmentStore", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionSegmentStoreFile.FILENAME)));
         versions.put("runtimeEpisodeTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeEpisodeTimelineFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
         versions.put("actionTimelineTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioActionTimelineTuningFile.FILENAME)));

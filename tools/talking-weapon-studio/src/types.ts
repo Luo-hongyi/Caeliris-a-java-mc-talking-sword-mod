@@ -366,6 +366,7 @@ export interface RuntimeActionTimelineIntentCarrier {
 
 export interface RuntimeActionTimelineFixedSegment extends RuntimeActionTimelineIntentCarrier {
   index: number;
+  segmentId: number;
   startTimestamp: number;
   endTimestamp: number;
   rawStartIndex: number;
@@ -395,4 +396,13 @@ export interface RuntimeActionTimelineFile {
   fixedSegmentCount: number;
   fixedSegments: RuntimeActionTimelineFixedSegment[];
   movingWindow: RuntimeActionTimelineMovingWindow;
+}
+
+export interface RuntimeActionSegmentStoreFile {
+  schemaVersion: number;
+  generatedAt: string;
+  sequenceToken: string;
+  fixedSegmentCount: number;
+  dataFilename: string;
+  fixedSegments: RuntimeActionTimelineFixedSegment[];
 }

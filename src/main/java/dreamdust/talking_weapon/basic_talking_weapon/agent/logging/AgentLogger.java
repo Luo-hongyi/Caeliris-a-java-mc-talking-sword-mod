@@ -564,9 +564,9 @@ public final class AgentLogger {
                 continue;
             }
             w.println(indent + "  - reason=" + (mark.reason() == null ? "(none)" : mark.reason().name())
-                    + " | split@" + mark.splitSegmentIndex()
-                    + " | detected@" + mark.detectedAtSegmentIndex()
-                    + " | confirm@" + mark.confirmAtSegmentIndex()
+                    + " | split@" + mark.splitTimelineIndex()
+                    + " | detected@" + mark.detectedAtTimelineIndex()
+                    + " | confirm@" + mark.confirmAtTimelineIndex()
                     + " | owner=" + mark.ownerSplitterId()
                     + (mark.highPriority() ? " | HIGH" : "")
                     + " | cover=" + mark.coverBeforeSegments() + "/" + mark.coverAfterSegments());
@@ -584,8 +584,8 @@ public final class AgentLogger {
                 continue;
             }
             w.println(indent + "  - reason=" + (splitPoint.reason() == null ? "(none)" : splitPoint.reason().name())
-                    + " | split@" + splitPoint.splitSegmentIndex()
-                    + " | confirm@" + splitPoint.confirmationSegmentIndex()
+                    + " | split@" + splitPoint.splitTimelineIndex()
+                    + " | confirm@" + splitPoint.confirmationTimelineIndex()
                     + " | prev=" + safeIntentName(splitPoint.previousPrimaryIntent())
                     + " / " + safeIntentName(splitPoint.previousSecondaryIntent())
                     + " | next=" + safeIntentName(splitPoint.nextPrimaryIntent())

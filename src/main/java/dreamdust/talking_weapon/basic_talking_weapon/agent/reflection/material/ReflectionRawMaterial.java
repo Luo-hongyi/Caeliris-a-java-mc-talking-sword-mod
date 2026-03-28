@@ -12,14 +12,14 @@ import java.util.List;
  */
 public record ReflectionRawMaterial(
         ReflectionScope scope,
-        int startTimelineSegmentIndex,
+        int startTimelineIndex,
         long startSegmentId,
-        int endTimelineSegmentIndex,
+        int endTimelineIndex,
         long endSegmentId,
-        int leftBoundarySplitSegmentIndex,
+        int leftBoundarySplitTimelineIndex,
         long leftBoundaryLeftSegmentId,
         long leftBoundaryRightSegmentId,
-        int rightBoundarySplitSegmentIndex,
+        int rightBoundarySplitTimelineIndex,
         long rightBoundaryLeftSegmentId,
         long rightBoundaryRightSegmentId,
         long startTimestamp,
@@ -31,17 +31,17 @@ public record ReflectionRawMaterial(
         if (scope == null) {
             throw new IllegalArgumentException("scope must not be null");
         }
-        if (startTimelineSegmentIndex < 0) {
-            throw new IllegalArgumentException("startTimelineSegmentIndex must be >= 0");
+        if (startTimelineIndex < 0) {
+            throw new IllegalArgumentException("startTimelineIndex must be >= 0");
         }
-        if (endTimelineSegmentIndex < startTimelineSegmentIndex) {
-            throw new IllegalArgumentException("endTimelineSegmentIndex must be >= startTimelineSegmentIndex");
+        if (endTimelineIndex < startTimelineIndex) {
+            throw new IllegalArgumentException("endTimelineIndex must be >= startTimelineIndex");
         }
-        if (leftBoundarySplitSegmentIndex < 0) {
-            throw new IllegalArgumentException("leftBoundarySplitSegmentIndex must be >= 0");
+        if (leftBoundarySplitTimelineIndex < 0) {
+            throw new IllegalArgumentException("leftBoundarySplitTimelineIndex must be >= 0");
         }
-        if (rightBoundarySplitSegmentIndex <= endTimelineSegmentIndex) {
-            throw new IllegalArgumentException("rightBoundarySplitSegmentIndex must be > endTimelineSegmentIndex");
+        if (rightBoundarySplitTimelineIndex <= endTimelineIndex) {
+            throw new IllegalArgumentException("rightBoundarySplitTimelineIndex must be > endTimelineIndex");
         }
         if (startTimestamp < 0L) {
             throw new IllegalArgumentException("startTimestamp must be >= 0");

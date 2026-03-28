@@ -147,6 +147,40 @@ export async function readJsonFileFromDirectory(
   }
 }
 
+export async function readTextFileFromDirectoryPath(
+  handle: WorkspaceDirectoryHandle,
+  relativePath: string
+): Promise<string | null> {
+  try {
+    if (isDesktopDirectoryHandle(handle)) {
+      const desktopBridge = getDesktopBridge();
+      if (!desktopBridge) {
+        throw new Error("Desktop workspace bridge is unavailable.");
+      }
+      return await desktopBridge.readTextFile(handle.path, relativePath);
+    }
+
+    const segments = relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
+    if (!segments.length) {
+      return null;
+    }
+
+    let currentDirectory = handle;
+    for (const segment of segments.slice(0, -1)) {
+      currentDirectory = await currentDirectory.getDirectoryHandle(segment);
+    }
+
+    const fileHandle = await currentDirectory.getFileHandle(segments[segments.length - 1]);
+    const file = await fileHandle.getFile();
+    return await file.text();
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === "NotFoundError" || error.name === "TypeMismatchError")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function readFileFromDirectoryPath(
   handle: WorkspaceDirectoryHandle,
   relativePath: string
