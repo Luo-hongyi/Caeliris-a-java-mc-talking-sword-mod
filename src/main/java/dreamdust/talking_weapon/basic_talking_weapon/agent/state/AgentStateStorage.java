@@ -65,6 +65,10 @@ public final class AgentStateStorage {
         return StudioWorkspacePaths.getAuthoredFilePath(CONFIG_FILENAME);
     }
 
+    public static void ensureWorkspaceFileExists(AgentState state, AgentPersona persona) {
+        ensureConfigExists(getConfigPath(), state, persona);
+    }
+
     public static void loadIntoRuntime(AgentState state, AgentPersona persona) {
         Path configPath = getConfigPath();
         ensureConfigExists(configPath, state, persona);

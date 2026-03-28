@@ -42,6 +42,7 @@ public final class StudioWorkspaceManifestFile {
             "runtimeInteractions",
             "runtimeActionTimeline",
             "runtimeActionSegmentStore",
+            "runtimeActionDiscardLog",
             "runtimeEpisodeTimeline",
             "runtimeRecallTrace",
             "actionTimelineTuning",

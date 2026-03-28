@@ -44,7 +44,7 @@ public final class StudioRuntimeActionTimelineFile {
 
     public static final String FILENAME = "studio_runtime_action_timeline.json";
     public static final String VERSION_KEY = "runtimeActionTimeline";
-    public static final int SCHEMA_VERSION = 8;
+    public static final int SCHEMA_VERSION = 9;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -95,13 +95,19 @@ public final class StudioRuntimeActionTimelineFile {
     public static synchronized void writeCurrentSnapshot(AgentMemory memory) {
         RuntimeActionTimelineFileModel previous = readOrEmpty();
         RuntimeActionTimelineFileModel file = build(memory, previous);
-        boolean externalizedSegments = StudioRuntimeActionSegmentStoreFile.writeCurrentSegments(
+        boolean segmentStoreReady = StudioRuntimeActionSegmentStoreFile.writeCurrentSegments(
                 file.fixedSegmentSequenceToken,
                 file.fixedSegments);
-        if (externalizedSegments) {
-            file.fixedSegments = new ArrayList<>();
+        if (!segmentStoreReady) {
+            System.err.println("[TalkingWeapon/StudioRuntimeActionTimeline] 跳过 snapshot：segment store 未成功写入");
+            return;
         }
-        StudioRuntimeActionDiscardLogFile.syncCurrentDiscardWindows(file.discardWindows);
+        boolean discardLogReady = StudioRuntimeActionDiscardLogFile.syncCurrentDiscardWindows(file.discardWindows);
+        if (!discardLogReady) {
+            System.err.println("[TalkingWeapon/StudioRuntimeActionTimeline] 跳过 snapshot：discard log 未成功写入");
+            return;
+        }
+        file.fixedSegments = new ArrayList<>();
         write(file);
     }
 

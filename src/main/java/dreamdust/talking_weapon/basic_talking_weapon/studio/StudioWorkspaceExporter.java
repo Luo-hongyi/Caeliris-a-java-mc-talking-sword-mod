@@ -33,7 +33,7 @@ public final class StudioWorkspaceExporter {
     }
 
     public static ExportResult exportWorkspace() {
-        AgentStateStorage.flushSaveRuntimeState(
+        AgentStateStorage.ensureWorkspaceFileExists(
                 AgentRuntime.getInstance().getState(),
                 AgentRuntime.getInstance().getPersona());
         CustomTagRegistry.getInstance();
@@ -83,11 +83,11 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(StudioRuntimeEpisodeTimelineFile.getPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecallTraceFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecallTraceFile.getPath().getFileName()), exportedFiles);
-            StudioActionTimelineTuningFile.writeCurrent();
+            StudioActionTimelineTuningFile.ensureWorkspaceFileExists();
             exportedFiles.add(StudioActionTimelineTuningFile.FILENAME);
-            StudioMemoryRecallTuningFile.writeCurrent();
+            StudioMemoryRecallTuningFile.ensureWorkspaceFileExists();
             exportedFiles.add(StudioMemoryRecallTuningFile.FILENAME);
-            StudioEpisodeTuningFile.writeCurrent();
+            StudioEpisodeTuningFile.ensureWorkspaceFileExists();
             exportedFiles.add(StudioEpisodeTuningFile.FILENAME);
 
             writeManifest(StudioWorkspaceManifestFile.getPath(), snapshot, runtimeTagView, icons, exportedFiles);
@@ -184,6 +184,7 @@ public final class StudioWorkspaceExporter {
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
         versions.put("runtimeActionTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionTimelineFile.FILENAME)));
         versions.put("runtimeActionSegmentStore", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionSegmentStoreFile.FILENAME)));
+        versions.put("runtimeActionDiscardLog", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionDiscardLogFile.FILENAME)));
         versions.put("runtimeEpisodeTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeEpisodeTimelineFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
         versions.put("actionTimelineTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioActionTimelineTuningFile.FILENAME)));

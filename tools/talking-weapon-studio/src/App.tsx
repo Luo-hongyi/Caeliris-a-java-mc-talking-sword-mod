@@ -2779,6 +2779,8 @@ function App() {
   });
   const workspaceDirectoryRequestRef = useRef<Promise<FileSystemDirectoryHandle | null> | null>(null);
   const workspaceWatcherRefreshRef = useRef(false);
+  const pendingEditorLabelRef = useRef<string | null>(null);
+  const deferredWorkspaceImportRef = useRef(false);
   const [relationFeedback, setRelationFeedback] = useState<ImportFeedback>({
     tone: "neutral",
     message: "联动标签默认仅用于程序侧扩展引用，不会直接写入 LLM Prompt；图必须保持无环。"
@@ -3934,6 +3936,7 @@ function App() {
     }
     return null;
   };
+  pendingEditorLabelRef.current = getPendingEditorLabel();
 
   const workspacePathHint = ".minecraft/config/talking_weapon/studio_workspace/";
 
@@ -4144,6 +4147,17 @@ function App() {
           if (cancelled || workspaceWatcherRefreshRef.current) {
             return;
           }
+          const pendingEditorLabel = pendingEditorLabelRef.current;
+          if (pendingEditorLabel) {
+            deferredWorkspaceImportRef.current = true;
+            if (!cancelled) {
+              setImportFeedback({
+                tone: "neutral",
+                message: `检测到工作区外部变更，但当前有未保存的 ${pendingEditorLabel} 草稿，已暂停自动同步。保存或取消后会自动补同步。`
+              });
+            }
+            return;
+          }
           workspaceWatcherRefreshRef.current = true;
           try {
             await importWorkspaceFromDirectoryHandle(workspaceDirectoryHandle);
@@ -4188,6 +4202,50 @@ function App() {
   }, [workspaceDirectoryHandle]);
 
   useEffect(() => {
+    if (
+      !workspaceDirectoryHandle ||
+      !isDesktopWorkspaceHandle(workspaceDirectoryHandle) ||
+      !deferredWorkspaceImportRef.current ||
+      workspaceWatcherRefreshRef.current ||
+      pendingEditorLabelRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const flushDeferredWorkspaceImport = async () => {
+      workspaceWatcherRefreshRef.current = true;
+      try {
+        await importWorkspaceFromDirectoryHandle(workspaceDirectoryHandle);
+        deferredWorkspaceImportRef.current = false;
+        if (!cancelled) {
+          setImportFeedback({
+            tone: "good",
+            message: "已在草稿关闭后自动补同步之前挂起的工作区变化。"
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error);
+          setImportFeedback({
+            tone: "bad",
+            message: `补同步挂起的工作区变化失败：${message}`
+          });
+        }
+      } finally {
+        workspaceWatcherRefreshRef.current = false;
+      }
+    };
+
+    void flushDeferredWorkspaceImport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceDirectoryHandle, catalogMode, descriptionMode, relationMode, personaMode, memoryMode, locationMode]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const probeBridge = async () => {
@@ -4225,6 +4283,15 @@ function App() {
 
   const importWorkspace = async () => {
     try {
+      const pendingEditorLabel = getPendingEditorLabel();
+      if (pendingEditorLabel) {
+        setImportFeedback({
+          tone: "bad",
+          message: `当前有未保存的 ${pendingEditorLabel} 草稿。请先点击当前编辑页的“保存”，再导入工作区。`
+        });
+        return;
+      }
+
       if (supportsDirectoryAccessApi()) {
         const directoryHandle = await requestWorkspaceDirectory("read");
         if (!directoryHandle) {
