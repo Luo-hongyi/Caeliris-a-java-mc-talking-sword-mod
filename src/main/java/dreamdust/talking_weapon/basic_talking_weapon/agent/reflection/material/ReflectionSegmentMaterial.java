@@ -9,7 +9,6 @@ import java.util.List;
  */
 public record ReflectionSegmentMaterial(
         int localSegmentIndex,
-        int timelineIndex,
         long segmentId,
         long startTimestamp,
         long endTimestamp,
@@ -22,8 +21,8 @@ public record ReflectionSegmentMaterial(
         if (localSegmentIndex < 0) {
             throw new IllegalArgumentException("localSegmentIndex must be >= 0");
         }
-        if (timelineIndex < 0) {
-            throw new IllegalArgumentException("timelineIndex must be >= 0");
+        if (segmentId <= 0L) {
+            throw new IllegalArgumentException("segmentId must be > 0");
         }
         if (startTimestamp < 0L) {
             throw new IllegalArgumentException("startTimestamp must be >= 0");

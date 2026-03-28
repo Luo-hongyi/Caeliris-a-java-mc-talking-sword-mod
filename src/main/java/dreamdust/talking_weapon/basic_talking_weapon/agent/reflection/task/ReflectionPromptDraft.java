@@ -7,10 +7,10 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task;
  */
 public record ReflectionPromptDraft(
         String draftText,
-        String segmentTimelineMap) {
+        String segmentReferenceMap) {
 
     public ReflectionPromptDraft {
         draftText = draftText == null ? "" : draftText;
-        segmentTimelineMap = segmentTimelineMap == null ? "" : segmentTimelineMap;
+        segmentReferenceMap = segmentReferenceMap == null ? "" : segmentReferenceMap;
     }
 }

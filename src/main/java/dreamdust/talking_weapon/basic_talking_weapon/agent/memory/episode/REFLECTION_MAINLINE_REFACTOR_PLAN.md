@@ -242,13 +242,22 @@ episode 不应对一整段历史只发一个总 signal。
 
 当前实现状态：
 
-- `EpisodeSynthesisTriggerSignal` 已经补入 `regionId`
+- `EpisodeSynthesisTriggerSignal` 已经切到稳定字段：
+  - `regionId`
+  - `regionStartSegmentId / regionEndSegmentId`
+  - boundary segment ids
+  - `stmSliceStartTimestamp / stmSliceExclusiveTimestamp`
 - `EpisodeTimelineStore` 已经补入 owner-side 回调骨架：
   - `markEpisodeSynthesisResolved(long regionId)`
   - `rollbackEpisodeSynthesisToHolding(long regionId)`
 - `EpisodeSynthesisReflectionTask` 当前已经把 `regionId` 写入 task context extras
 - `EpisodeSynthesisGate` 独立骨架已落地
 - `STMPool` 已补出 `snapshotBetween(...)`，为 gate 提供 region 内 STM 切片能力
+- `STMPool` 已补出 `discardBetween(...)`，为后续 owner-side cleanup 提供 STM 截断入口
+- `MemorySourceMaterialCleanupPlan` 已落地：
+  - `forEpisodeGateReject(...)`
+  - `forEpisodeSynthesisConsumed(...)`
+  - 后续 reject cleanup 与 synthesis consumed cleanup 共用同一套 plan 负载
 
 这里要明确一个当前未完成点：
 

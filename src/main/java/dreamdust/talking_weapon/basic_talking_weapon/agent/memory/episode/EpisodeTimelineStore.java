@@ -194,6 +194,7 @@ public final class EpisodeTimelineStore {
             return Optional.empty();
         }
 
+        long stmSliceStartTimestamp = Math.max(0L, startSegment.getStartTimestamp());
         long stmSliceExclusiveTimestamp = rightBoundary.splitTimestamp() > 0L
                 ? rightBoundary.splitTimestamp()
                 : Math.max(endSegment.getEndTimestamp(), startSegment.getStartTimestamp());
@@ -203,18 +204,15 @@ public final class EpisodeTimelineStore {
         }
         return Optional.of(new EpisodeSynthesisTriggerSignal(
                 regionId,
-                leftBoundary.splitTimelineIndex(),
                 leftBoundary.leftSegmentId(),
                 leftBoundary.rightSegmentId(),
-                regionStartTimelineIndex,
                 startSegment.getSegmentId(),
-                regionEndTimelineIndex,
                 endSegment.getSegmentId(),
-                rightBoundary.splitTimelineIndex(),
                 rightBoundary.leftSegmentId(),
                 rightBoundary.rightSegmentId(),
                 startSegment.getStartTimestamp(),
                 endSegment.getEndTimestamp(),
+                stmSliceStartTimestamp,
                 stmSliceExclusiveTimestamp));
     }
 

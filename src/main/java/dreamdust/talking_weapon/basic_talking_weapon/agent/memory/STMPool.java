@@ -166,6 +166,27 @@ public final class STMPool {
     }
 
     /**
+     * 丢弃某个时间区间内的 STM 数据。
+     * <p>
+     * 这是后续 episode reject cleanup / synthesis consumed cleanup 的正式入口之一，
+     * 语义固定为删除 `[startInclusiveTimestamp, endExclusiveTimestamp)` 内的记录。
+     */
+    public synchronized void discardBetween(long startInclusiveTimestamp, long endExclusiveTimestamp) {
+        long safeStart = Math.max(0L, startInclusiveTimestamp);
+        if (endExclusiveTimestamp <= safeStart) {
+            return;
+        }
+        contextEntries.removeIf(entry ->
+                entry != null
+                        && entry.getTimestamp() >= safeStart
+                        && entry.getTimestamp() < endExclusiveTimestamp);
+        interactionTurns.removeIf(turn ->
+                turn != null
+                        && turn.getTimestamp() >= safeStart
+                        && turn.getTimestamp() < endExclusiveTimestamp);
+    }
+
+    /**
      * 上下文条目总数。
      */
     public synchronized int contextSize() {

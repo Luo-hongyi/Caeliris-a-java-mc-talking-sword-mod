@@ -123,28 +123,32 @@
 
 #### D. Reflection 异步引用坐标
 
-这一套其实是把 episode timeline 位置坐标跨异步边界泄露出去了：
+这条链在旧设计里，确实把 episode timeline 位置坐标跨异步边界泄露出去了。
+
+当前已经完成一轮正式清理：
 
 - `EpisodeSynthesisTriggerSignal`
-  - `leftBoundarySplitTimelineIndex`
-  - `regionStartTimelineIndex`
-  - `regionEndTimelineIndex`
-  - `rightBoundarySplitTimelineIndex`
+  - 只保留 `regionId`
+  - `regionStartSegmentId / regionEndSegmentId`
+  - 左右 boundary 的 segment ids
+  - `regionStartTimestamp / regionEndTimestamp`
+  - `stmSliceStartTimestamp / stmSliceExclusiveTimestamp`
 - `ReflectionMaterialRequest`
-  - `startTimelineIndex`
-  - `endTimelineIndex`
-  - `leftBoundarySplitTimelineIndex`
-  - `rightBoundarySplitTimelineIndex`
 - `ReflectionRawMaterial` / `ReflectionMaterial`
-  - 继续保存这些 index
+- `ReflectionRawSegmentMaterial` / `ReflectionSegmentMaterial`
+  - 都已经拔除了 `timelineIndex`
 - `DefaultReflectionMaterialExporter`
-  - 直接按 `timeline.sliceSegments(startIndex, endIndex)` 取 segment
+  - 现在只按 `segmentId` 解析正式 segment range
+  - 如果引用的 segment 已经不存在，会直接 fail fast，而不是 fallback 到 timeline index
 
-这套坐标的风险最高，因为：
+这意味着：
 
-- signal 发出后，task 未必立刻执行
-- 如果执行前 timeline 发生了中间删除或重排
-- 那么 task 在真正 exporter 阶段就会读错 segment
+- “异步 task 因 index 漂移而读错 segment” 这一层已经被切掉
+- 但“异步 task 执行时引用的 segment 已被 owner 清理掉”这个问题仍然存在
+- 这个剩余问题后续要靠：
+  - source material cleanup plan
+  - owner-side task cancel / consume / stale check
+  来闭环
 
 #### E. 伪稳定 identity
 
@@ -192,22 +196,12 @@
   - `startSegmentIndex`
   - `endSegmentIndex`
   - 当前 `regionId` 也混入了 index 推导
-- `EpisodeSynthesisTriggerSignal`
-  - `leftBoundarySplitTimelineIndex`
-  - `regionStartTimelineIndex`
-  - `regionEndTimelineIndex`
-  - `rightBoundarySplitTimelineIndex`
-- `ReflectionMaterialRequest`
-- `ReflectionRawMaterial`
-- `ReflectionMaterial`
-- `DefaultReflectionMaterialExporter`
-  - 现在仍按 `timeline.sliceSegments(startIndex, endIndex)` 取数据
 
 因此，如果直接删除中间 region，对后续会造成四类破坏：
 
 1. 后面的 region / split / pending mark 坐标整体失效
-2. 已经发出去的 signal 指向错误范围
-3. 已入队但尚未执行的 reflection task 在执行时读取到错误 segment
+2. 已经发出去但尚未消费的 signal / cleanup plan 会变成 stale 引用
+3. 已入队但尚未执行的 reflection task 会在 exporter 阶段因为 segmentId 不存在而 fail fast
 4. runtime 持久化中的 region state 会和当前内存 timeline 脱节
 
 ### 2.4 当前“统一”的目标到底是什么

@@ -52,6 +52,7 @@
 - gate 作为独立结构存在
 - `EpisodeRegion` 继续承载 `regionId / gateDecision / lifecycleState`
 - holdback、多 signal、reject cleanup、STM truncate 都由 owner-side 正式推进
+- `MemorySourceMaterialCleanupPlan` 作为 reject / synthesis consumed 共用的 cleanup payload 已冻结
 
 4. reflection 主线只在坐标稳定后再重新接回 episode
 

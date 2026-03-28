@@ -30,43 +30,41 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
         }
 
         StringBuilder draft = new StringBuilder();
-        StringBuilder indexMap = new StringBuilder();
+        StringBuilder referenceMap = new StringBuilder();
 
         draft.append("[Reflection Material]\n");
         draft.append("scope: ").append(material.scope()).append("\n");
-        draft.append("timeline index range: ")
-                .append(material.startTimelineIndex())
+        draft.append("region id: ").append(material.regionId()).append("\n");
+        draft.append("segment id range: ")
+                .append(material.startSegmentId())
                 .append(" -> ")
-                .append(material.endTimelineIndex())
+                .append(material.endSegmentId())
                 .append("\n");
-        if (material.startSegmentId() > 0L || material.endSegmentId() > 0L) {
-            draft.append("segment id range: ")
-                    .append(material.startSegmentId())
-                    .append(" -> ")
-                    .append(material.endSegmentId())
-                    .append("\n");
-        }
+        draft.append("time range: ")
+                .append(material.startTimestamp())
+                .append(" -> ")
+                .append(material.endTimestamp())
+                .append("\n");
+        draft.append("stm slice: ")
+                .append(material.stmSliceStartTimestamp())
+                .append(" -> ")
+                .append(material.stmSliceExclusiveTimestamp())
+                .append("\n");
         draft.append("segment count: ").append(material.segments().size()).append("\n\n");
 
         for (ReflectionSegmentMaterial segment : material.segments()) {
             if (segment == null) {
                 continue;
             }
-            if (!indexMap.isEmpty()) {
-                indexMap.append('\n');
+            if (!referenceMap.isEmpty()) {
+                referenceMap.append('\n');
             }
-            indexMap.append(segment.localSegmentIndex())
-                    .append(" -> timeline#")
-                    .append(segment.timelineIndex());
-            if (segment.segmentId() > 0L) {
-                indexMap.append(" (segmentId=").append(segment.segmentId()).append(")");
-            }
+            referenceMap.append(segment.localSegmentIndex())
+                    .append(" -> segmentId=")
+                    .append(segment.segmentId());
 
             draft.append("[Segment ").append(segment.localSegmentIndex()).append("]\n");
-            draft.append("timeline index: ").append(segment.timelineIndex()).append("\n");
-            if (segment.segmentId() > 0L) {
-                draft.append("segment id: ").append(segment.segmentId()).append("\n");
-            }
+            draft.append("segment id: ").append(segment.segmentId()).append("\n");
             draft.append("range: ").append(segment.startTimestamp()).append(" -> ").append(segment.endTimestamp()).append("\n");
             appendSnapshot(draft, "start snapshot", segment.startSnapshot());
             draft.append("timeline:\n");
@@ -87,7 +85,7 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             draft.append("\n");
         }
 
-        return new ReflectionPromptDraft(draft.toString().trim(), indexMap.toString().trim());
+        return new ReflectionPromptDraft(draft.toString().trim(), referenceMap.toString().trim());
     }
 
     private void appendSnapshot(StringBuilder sb, String label, ReflectionContextSnapshot snapshot) {
