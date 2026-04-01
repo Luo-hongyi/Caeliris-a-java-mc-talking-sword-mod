@@ -79,7 +79,7 @@
   - `segmentId`
   - boundary segment ids
   - region / STM 的时间窗
-- `DefaultReflectionMaterialExporter` 已改成只按 `segmentId` 解析正式 segment range
+- `DefaultReflectionMaterialExporter` 已改成走 owner-side `snapshotSourceMaterial(...)`
 - `STMPool` 已具备：
   - `snapshotBetween(...)`
   - `discardBetween(...)`

@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialWindow;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 
 /**
@@ -63,5 +64,21 @@ public record ReflectionMaterialRequest(
                 signal.regionEndTimestamp(),
                 signal.stmSliceStartTimestamp(),
                 signal.stmSliceExclusiveTimestamp());
+    }
+
+    public MemorySourceMaterialWindow toSourceMaterialWindow() {
+        return new MemorySourceMaterialWindow(
+                startSegmentId,
+                endSegmentId,
+                startTimestamp,
+                endTimestamp,
+                exclusiveUpperBoundAfter(endTimestamp),
+                stmSliceStartTimestamp,
+                stmSliceExclusiveTimestamp);
+    }
+
+    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
+        long safeInclusive = Math.max(0L, inclusiveTimestamp);
+        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
     }
 }

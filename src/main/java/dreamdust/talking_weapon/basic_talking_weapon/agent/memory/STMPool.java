@@ -337,6 +337,10 @@ public final class STMPool {
                     : Collections.unmodifiableList(new ArrayList<>(interactionTurns));
         }
 
+        public static TimeSlice empty() {
+            return new TimeSlice(List.of(), List.of());
+        }
+
         public List<TaggedContextEntry> getContextEntries() {
             return contextEntries;
         }

@@ -1,10 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service;
 
-import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry;
@@ -23,7 +22,8 @@ import java.util.Objects;
 /**
  * 第一版 raw material exporter。
  * <p>
- * 当前仍以 episode segment 为地基，再从 STMPool 中按时间分桶取 interaction trace。
+ * 当前直接走 owner-side source material snapshot，
+ * 避免 reflection 自己重复推导 segment range / STM window。
  */
 public final class DefaultReflectionMaterialExporter implements ReflectionMaterialExporter {
 
@@ -32,11 +32,17 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(memory, "memory");
 
-        EpisodeTimeline timeline = memory.getEpisodeTimelineStore().snapshot();
-        List<FixedActionSegment> segments = resolveRequiredSegmentRange(timeline, request);
-        STMPool.TimeSlice stmSlice = memory.getSTMPool().snapshotBetween(
-                request.stmSliceStartTimestamp(),
-                request.stmSliceExclusiveTimestamp());
+        MemorySourceMaterialSnapshot snapshot = memory.snapshotSourceMaterial(request.toSourceMaterialWindow());
+        if (snapshot.stale()) {
+            throw new IllegalStateException(
+                    "Failed to resolve active source material for reflection export"
+                            + " regionId=" + request.regionId()
+                            + " startSegmentId=" + request.startSegmentId()
+                            + " endSegmentId=" + request.endSegmentId());
+        }
+
+        List<FixedActionSegment> segments = snapshot.segments();
+        STMPool.TimeSlice stmSlice = snapshot.stmSlice();
 
         List<ReflectionRawSegmentMaterial> rawSegments = new ArrayList<>();
         for (int i = 0; i < segments.size(); i++) {
@@ -136,23 +142,5 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
             }
         }
         return List.copyOf(bucket);
-    }
-
-    private List<FixedActionSegment> resolveRequiredSegmentRange(
-            EpisodeTimeline timeline,
-            ReflectionMaterialRequest request) {
-        if (timeline == null) {
-            throw new IllegalStateException("Episode timeline is unavailable for reflection export");
-        }
-        int startIndex = timeline.indexOfSegmentId(request.startSegmentId());
-        int endIndex = timeline.indexOfSegmentId(request.endSegmentId());
-        if (startIndex < 0 || endIndex < 0 || endIndex < startIndex) {
-            throw new IllegalStateException(
-                    "Failed to resolve stable segment range for reflection export"
-                            + " regionId=" + request.regionId()
-                            + " startSegmentId=" + request.startSegmentId()
-                            + " endSegmentId=" + request.endSegmentId());
-        }
-        return timeline.sliceSegments(startIndex, endIndex);
     }
 }

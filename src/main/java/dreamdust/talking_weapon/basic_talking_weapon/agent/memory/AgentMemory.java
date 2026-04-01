@@ -179,6 +179,31 @@ public class AgentMemory {
     }
 
     /**
+     * source material 的统一 owner-side snapshot 入口。
+     * <p>
+     * 当前输出：
+     * - active fixed segment range
+     * - 同 window 对应的 STM local slice
+     */
+    public MemorySourceMaterialSnapshot snapshotSourceMaterial(MemorySourceMaterialWindow requestedWindow) {
+        if (requestedWindow == null) {
+            throw new IllegalArgumentException("requestedWindow must not be null");
+        }
+
+        synchronized (sourceMaterialLock) {
+            ResolvedSourceMaterial resolved = resolveActiveSourceMaterial(requestedWindow);
+            if (resolved == null) {
+                return MemorySourceMaterialSnapshot.stale(requestedWindow);
+            }
+            return new MemorySourceMaterialSnapshot(
+                    resolved.window(),
+                    false,
+                    resolved.segments(),
+                    stmPool.snapshotForWindow(resolved.window()));
+        }
+    }
+
+    /**
      * source material 的统一 owner-side cleanup 入口。
      * <p>
      * 当前先统一串起：
@@ -195,10 +220,11 @@ public class AgentMemory {
         }
 
         synchronized (sourceMaterialLock) {
-            MemorySourceMaterialWindow resolvedWindow = resolveActiveCleanupWindow(plan.window());
-            if (resolvedWindow == null) {
+            ResolvedSourceMaterial resolved = resolveActiveSourceMaterial(plan.window());
+            if (resolved == null) {
                 return MemorySourceMaterialCleanupResult.stale(plan);
             }
+            MemorySourceMaterialWindow resolvedWindow = resolved.window();
 
             int beforeRawActionCount = actionArchive.size();
             int beforeEpisodeSegmentCount = episodeTimelineStore.snapshot().segmentCount();
@@ -251,6 +277,20 @@ public class AgentMemory {
             throw new IllegalArgumentException("signal must not be null");
         }
         return cleanupSourceMaterial(MemorySourceMaterialCleanupPlan.forEpisodeSynthesisConsumed(signal));
+    }
+
+    public MemorySourceMaterialSnapshot snapshotEpisodeGateSourceMaterial(EpisodeSynthesisGateInput input) {
+        if (input == null) {
+            throw new IllegalArgumentException("input must not be null");
+        }
+        return snapshotSourceMaterial(MemorySourceMaterialWindow.forEpisodeGateInput(input));
+    }
+
+    public MemorySourceMaterialSnapshot snapshotEpisodeSynthesisSourceMaterial(EpisodeSynthesisTriggerSignal signal) {
+        if (signal == null) {
+            throw new IllegalArgumentException("signal must not be null");
+        }
+        return snapshotSourceMaterial(MemorySourceMaterialWindow.forEpisodeSignal(signal));
     }
 
     /**
@@ -366,7 +406,7 @@ public class AgentMemory {
         return recallRuntimeState;
     }
 
-    private MemorySourceMaterialWindow resolveActiveCleanupWindow(MemorySourceMaterialWindow requestedWindow) {
+    private ResolvedSourceMaterial resolveActiveSourceMaterial(MemorySourceMaterialWindow requestedWindow) {
         if (requestedWindow == null) {
             return null;
         }
@@ -389,7 +429,7 @@ public class AgentMemory {
             return null;
         }
 
-        return new MemorySourceMaterialWindow(
+        MemorySourceMaterialWindow resolvedWindow = new MemorySourceMaterialWindow(
                 startSegment.getSegmentId(),
                 endSegment.getSegmentId(),
                 startSegment.getStartTimestamp(),
@@ -397,6 +437,9 @@ public class AgentMemory {
                 exclusiveUpperBoundAfter(endSegment.getEndTimestamp()),
                 requestedWindow.stmSliceStartTimestamp(),
                 requestedWindow.stmSliceExclusiveTimestamp());
+        return new ResolvedSourceMaterial(
+                resolvedWindow,
+                timeline.sliceSegments(startIndex, endIndex));
     }
 
     private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
@@ -451,5 +494,10 @@ public class AgentMemory {
                 + ", recentRecall=" + recentRecallSuppressionTable.size()
                 + ", recallRuntimeState=true"
                 + "}";
+    }
+
+    private record ResolvedSourceMaterial(
+            MemorySourceMaterialWindow window,
+            List<FixedActionSegment> segments) {
     }
 }
