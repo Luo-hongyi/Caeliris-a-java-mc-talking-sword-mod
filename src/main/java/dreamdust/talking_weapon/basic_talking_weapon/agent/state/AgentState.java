@@ -48,6 +48,14 @@ public class AgentState {
      */
     private volatile String playerAddress;
 
+    /**
+     * 阶段性前情提要。
+     * <p>
+     * 这不是“绝对当前时刻”的即时状态，而是由 reflection 基于过去一段 episode
+     * 提炼出的阶段性摘要，用于帮助后续交互理解最近的大背景。
+     */
+    private volatile String recap;
+
     // ═══════════════════════════════════════════════════════════
     // 思维特性（低中频，可在设置界面或 LLM 更新）
     // ═══════════════════════════════════════════════════════════
@@ -136,6 +144,7 @@ public class AgentState {
         this.currentDesireTag = null;
         this.desireDescription = "";
         this.playerAddress = "主人";
+        this.recap = "";
     }
 
     // ── PrimaryEmotion ───────────────────────────────────────────────
@@ -195,6 +204,16 @@ public class AgentState {
 
     public void setPlayerAddress(String address) {
         this.playerAddress = address != null && !address.isBlank() ? address.trim() : "主人";
+    }
+
+    // ── Recap ────────────────────────────────────────────────────────
+
+    public String getRecap() {
+        return recap != null ? recap : "";
+    }
+
+    public void setRecap(String recap) {
+        this.recap = recap != null ? recap.trim() : "";
     }
 
     // ── Concentration ──────────────────────────────────────────────────
@@ -306,6 +325,9 @@ public class AgentState {
                 .append(", nostalgia=").append(String.format("%.2f", nostalgia))
                 .append(", recallPreset=").append(recallPreset != null ? recallPreset.name() : "HYBRID")
                 .append(", 对玩家称呼=").append(getPlayerAddress());
+        if (!getRecap().isBlank()) {
+            sb.append("\n阶段前情提要: ").append(getRecap());
+        }
 
         return sb.toString();
     }

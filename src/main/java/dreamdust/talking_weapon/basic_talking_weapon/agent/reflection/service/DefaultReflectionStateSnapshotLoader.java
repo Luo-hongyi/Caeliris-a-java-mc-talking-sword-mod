@@ -40,7 +40,6 @@ public final class DefaultReflectionStateSnapshotLoader implements ReflectionSta
                 request.includeCurrentDesire() ? state.getDesireDescription() : "",
                 request.includeFavorability() ? persona.getFavorability() : null,
                 request.includePlayerProfile() ? persona.getPlayerProfile() : "",
-                // TODO: currentSituationSummary 还没有接到 runtime owner，第一版先留空。
-                request.includeCurrentSituationSummary() ? "" : "");
+                request.includeRecap() ? state.getRecap() : "");
     }
 }

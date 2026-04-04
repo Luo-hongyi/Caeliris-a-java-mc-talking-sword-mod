@@ -2,10 +2,16 @@
 
 旧的 internal reflection trigger 骨架已经清除。
 
+当前实现状态：
+
+- `EpisodeSynthesisInternalTrigger` 已落地
+- 它会在 `TickEventWatcher` 的低频轮询中运行
+- 它只负责读取 owner 已准备好的 ready signals，并逐个提交后台 `EpisodeSynthesisReflectionTask`
+- 若后台提交失败，会立即把对应 region 回滚到 `HOLDING`
+
 当前结论：
 
 - 不再保留旧 `EpisodeSynthesisTrigger -> EpisodeSynthesisTask` 链路
-- internal trigger 会在新的 reflection task 主线稳定后重建
 - 重建后的内部 trigger 仍然只负责“把 owner 已经准备好的内部 signal 显式包装成后台任务”
 - 对于 episode synthesis，这些 signal 应按 closed region 多个产出，并由 internal trigger 逐个提交
 

@@ -206,3 +206,13 @@ publishing {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
+
+tasks.register('previewEpisodeSynthesisPrompt', JavaExec) {
+    group = 'verification'
+    description = 'Generates a mock episode synthesis reflection prompt preview under testdata/reflection_prompt_mock_preview.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.EpisodeSynthesisPromptMockPreview'
+    workingDir = project.projectDir
+    args project.file('testdata/reflection_prompt_mock_preview').absolutePath
+}

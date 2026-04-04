@@ -21,7 +21,6 @@ public class ActionRegistry {
     static {
         register(new LLMActionType("inner_monologue", "{ \"type\": \"inner_monologue\", \"content\": \"(剑灵的内心独白，对持有者不可见)\" }"));
         register(new LLMActionType("speech", "{ \"type\": \"speech\", \"content\": \"(对持有者说出口的话)\" }"));
-        register(new LLMActionType("favorability_update", "{ \"type\": \"favorability_update\", \"change_amount\": (变动量) } [注：高频行为反馈。提供一个单次事件的基础变动范围（例如：-5到+5，0表示无明显改变）。变动分配与防沉迷约束由系统自动执行]"));
     }
 
     /**

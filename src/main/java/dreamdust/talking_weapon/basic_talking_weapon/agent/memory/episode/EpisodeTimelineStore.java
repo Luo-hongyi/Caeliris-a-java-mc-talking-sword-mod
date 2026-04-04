@@ -1,10 +1,12 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialCleanupPlan;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialCleanupReason;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialWindow;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGate;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateInput;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateResult;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitter.EpisodeIntentMath;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 
@@ -41,20 +43,45 @@ public final class EpisodeTimelineStore {
     /**
      * episode 对外的正式 signal 输出接口。
      * <p>
-     * 最终语义应为：
+     * 当前只放行已经满足下面条件的 region：
      * <ul>
-     * <li>由 episode 内部判断哪些 closed region 已 ready</li>
-     * <li>一次输出多个 region 级 signal，而不是一个总 signal</li>
-     * <li>当前 region 模型下，默认 signal 数量应等于 {@code regions.size() - 2}</li>
-     * <li>这个 holdback 数量后续应可调，用于保留最近一部分 region / STM 不立即推出，以维持上下文连贯性</li>
-     * <li>也就是说，默认至少保留最后两个 region 窗口不直接发 signal</li>
-     * <li>后续由对应 internal trigger 逐个提交后台 task</li>
+     * <li>`gateDecision = PASS`</li>
+     * <li>`lifecycleState = HOLDING`</li>
+     * <li>已经越过 holdback 窗口</li>
      * </ul>
-     * <p>
-     * 当前 gate / pending / consumed / holdback 机制还没接回，因此先保留空列表骨架。
+     * signal 发出后，对应 region 会立即推进为 `PENDING`，避免重复发出。
      */
     public synchronized List<EpisodeSynthesisTriggerSignal> collectEpisodeSynthesisTriggerSignals() {
-        return List.of();
+        if (timeline.regions().isEmpty()) {
+            return List.of();
+        }
+
+        List<EpisodeRegion> regionSnapshot = timeline.regions();
+        int holdbackRegionCount = EpisodeRuntimeSettings.getSignalHoldbackRegionCount();
+        int readyRegionExclusive = Math.max(0, regionSnapshot.size() - holdbackRegionCount);
+        if (readyRegionExclusive <= 0) {
+            return List.of();
+        }
+
+        ArrayList<EpisodeSynthesisTriggerSignal> signals = new ArrayList<>();
+        for (int i = 0; i < readyRegionExclusive; i++) {
+            EpisodeRegion region = regionSnapshot.get(i);
+            if (!isReadyForSynthesisSignal(region)) {
+                continue;
+            }
+
+            EpisodeSynthesisTriggerSignal signal = buildSynthesisTriggerSignal(region);
+            if (signal == null) {
+                continue;
+            }
+
+            signals.add(signal);
+            updateRegionRuntimeState(
+                    region.regionId(),
+                    null,
+                    EpisodeRegionLifecycleState.PENDING);
+        }
+        return List.copyOf(signals);
     }
 
     /**
@@ -134,6 +161,29 @@ public final class EpisodeTimelineStore {
                 EpisodeRegionLifecycleState.HOLDING);
     }
 
+    public synchronized boolean hasRegion(long regionId) {
+        return findRegion(regionId) != null;
+    }
+
+    public synchronized boolean canApplySourceMaterialCleanupPlan(MemorySourceMaterialCleanupPlan plan) {
+        if (plan == null || plan.window() == null) {
+            return false;
+        }
+        EpisodeRegion region = findRegion(plan.regionId());
+        if (region == null || !matchesRegionWindow(region, plan.window())) {
+            return false;
+        }
+        if (plan.reason() == MemorySourceMaterialCleanupReason.EPISODE_GATE_REJECT) {
+            return region.gateDecision() == EpisodeRegionGateDecision.REJECT
+                    && region.lifecycleState() == EpisodeRegionLifecycleState.HOLDING;
+        }
+        if (plan.reason() == MemorySourceMaterialCleanupReason.EPISODE_SYNTHESIS_CONSUMED) {
+            return region.gateDecision() == EpisodeRegionGateDecision.PASS
+                    && region.lifecycleState() == EpisodeRegionLifecycleState.PENDING;
+        }
+        return false;
+    }
+
     public synchronized EpisodeTimeline replaceFixedSegments(List<FixedActionSegment> segments) {
         if (segments == null || segments.isEmpty()) {
             tracker.reset();
@@ -197,106 +247,89 @@ public final class EpisodeTimelineStore {
         return StudioRuntimeEpisodeTimelineFile.readPersistedRegions();
     }
 
-    private List<BoundaryAnchor> collectUniqueBoundaries() {
-        if (timeline.segments().isEmpty() || timeline.splitPoints().isEmpty()) {
-            return List.of();
+    private boolean isReadyForSynthesisSignal(EpisodeRegion region) {
+        if (region == null) {
+            return false;
+        }
+        if (region.gateDecision() != EpisodeRegionGateDecision.PASS) {
+            return false;
+        }
+        return region.lifecycleState() == EpisodeRegionLifecycleState.HOLDING;
+    }
+
+    private EpisodeSynthesisTriggerSignal buildSynthesisTriggerSignal(EpisodeRegion region) {
+        if (region == null) {
+            return null;
         }
 
-        ArrayList<BoundaryAnchor> boundaries = new ArrayList<>();
-        Integer lastSplitTimelineIndex = null;
+        if (timeline.indexOfSegmentId(region.startSegmentId()) < 0
+                || timeline.indexOfSegmentId(region.endSegmentId()) < 0) {
+            return null;
+        }
+
+        BoundaryAnchor leftBoundary = resolveBoundaryAt(
+                timeline.boundaryBeforeSegment(region.startSegmentId()),
+                Math.max(0L, region.startTimestamp()));
+        BoundaryAnchor rightBoundary = resolveBoundaryAt(
+                timeline.boundaryAfterSegment(region.endSegmentId()),
+                Math.max(0L, region.endTimestamp()));
+        if (leftBoundary == null || rightBoundary == null) {
+            return null;
+        }
+
+        long stmSliceStartTimestamp = Math.max(0L, region.startTimestamp());
+        long stmSliceExclusiveTimestamp = Math.max(
+                stmSliceStartTimestamp,
+                rightBoundary.splitTimestamp());
+        return new EpisodeSynthesisTriggerSignal(
+                region.regionId(),
+                leftBoundary.leftSegmentId(),
+                leftBoundary.rightSegmentId(),
+                region.startSegmentId(),
+                region.endSegmentId(),
+                rightBoundary.leftSegmentId(),
+                rightBoundary.rightSegmentId(),
+                region.startTimestamp(),
+                region.endTimestamp(),
+                stmSliceStartTimestamp,
+                stmSliceExclusiveTimestamp);
+    }
+
+    private BoundaryAnchor resolveBoundaryAt(
+            EpisodeTimeline.BoundarySegmentIds boundarySegmentIds,
+            long fallbackTimestamp) {
+        if (boundarySegmentIds == null) {
+            return null;
+        }
+        EpisodeSplitPoint splitPoint = findSplitPointAt(
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId());
+        if (splitPoint != null) {
+            long safeTimestamp = splitPoint.splitTimestamp() > 0L
+                    ? splitPoint.splitTimestamp()
+                    : Math.max(0L, fallbackTimestamp);
+            return new BoundaryAnchor(
+                    splitPoint.splitLeftSegmentId(),
+                    splitPoint.splitRightSegmentId(),
+                    safeTimestamp);
+        }
+        return new BoundaryAnchor(
+                boundarySegmentIds.leftSegmentId(),
+                boundarySegmentIds.rightSegmentId(),
+                Math.max(0L, fallbackTimestamp));
+    }
+
+    private EpisodeSplitPoint findSplitPointAt(long leftSegmentId, long rightSegmentId) {
         for (EpisodeSplitPoint splitPoint : timeline.splitPoints()) {
             if (splitPoint == null) {
                 continue;
             }
-            int splitTimelineIndex = splitPoint.splitTimelineIndex();
-            if (splitTimelineIndex < 0 || splitTimelineIndex > timeline.segmentCount()) {
-                continue;
-            }
-            if (lastSplitTimelineIndex != null && splitTimelineIndex == lastSplitTimelineIndex) {
-                continue;
-            }
-            boundaries.add(new BoundaryAnchor(
-                    splitTimelineIndex,
-                    splitPoint.splitLeftSegmentId(),
-                    splitPoint.splitRightSegmentId(),
-                    Math.max(0L, splitPoint.splitTimestamp())));
-            lastSplitTimelineIndex = splitTimelineIndex;
-        }
-        return List.copyOf(boundaries);
-    }
-
-    private Optional<EpisodeSynthesisTriggerSignal> buildClosedRegionSignal(
-            BoundaryAnchor leftBoundary,
-            BoundaryAnchor rightBoundary) {
-        if (leftBoundary == null || rightBoundary == null) {
-            return Optional.empty();
-        }
-        if (rightBoundary.splitTimelineIndex() <= leftBoundary.splitTimelineIndex()) {
-            return Optional.empty();
-        }
-
-        int regionStartTimelineIndex = leftBoundary.splitTimelineIndex();
-        int regionEndTimelineIndex = rightBoundary.splitTimelineIndex() - 1;
-        FixedActionSegment startSegment = timeline.getSegment(regionStartTimelineIndex);
-        FixedActionSegment endSegment = timeline.getSegment(regionEndTimelineIndex);
-        if (startSegment == null || endSegment == null) {
-            return Optional.empty();
-        }
-
-        long stmSliceStartTimestamp = Math.max(0L, startSegment.getStartTimestamp());
-        long stmSliceExclusiveTimestamp = rightBoundary.splitTimestamp() > 0L
-                ? rightBoundary.splitTimestamp()
-                : Math.max(endSegment.getEndTimestamp(), startSegment.getStartTimestamp());
-        long regionId = resolveRegionId(regionStartTimelineIndex, regionEndTimelineIndex);
-        if (regionId <= 0L) {
-            return Optional.empty();
-        }
-        return Optional.of(new EpisodeSynthesisTriggerSignal(
-                regionId,
-                leftBoundary.leftSegmentId(),
-                leftBoundary.rightSegmentId(),
-                startSegment.getSegmentId(),
-                endSegment.getSegmentId(),
-                rightBoundary.leftSegmentId(),
-                rightBoundary.rightSegmentId(),
-                startSegment.getStartTimestamp(),
-                endSegment.getEndTimestamp(),
-                stmSliceStartTimestamp,
-                stmSliceExclusiveTimestamp));
-    }
-
-    private record BoundaryAnchor(
-            int splitTimelineIndex,
-            long leftSegmentId,
-            long rightSegmentId,
-            long splitTimestamp) {
-    }
-
-    private long resolveRegionId(int regionStartTimelineIndex, int regionEndTimelineIndex) {
-        FixedActionSegment startSegment = timeline.getSegment(regionStartTimelineIndex);
-        FixedActionSegment endSegment = timeline.getSegment(regionEndTimelineIndex);
-        long startSegmentId = startSegment == null ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID : startSegment.getSegmentId();
-        long endSegmentId = endSegment == null ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID : endSegment.getSegmentId();
-        long startTimestamp = startSegment == null ? -1L : startSegment.getStartTimestamp();
-        long endTimestamp = endSegment == null ? -1L : endSegment.getEndTimestamp();
-        for (EpisodeRegion region : timeline.regions()) {
-            if (region == null) {
-                continue;
-            }
-            if (startSegmentId > 0L
-                    && endSegmentId > 0L
-                    && region.startSegmentId() == startSegmentId
-                    && region.endSegmentId() == endSegmentId) {
-                return region.regionId();
-            }
-            if (startTimestamp >= 0L
-                    && endTimestamp >= startTimestamp
-                    && region.startTimestamp() == startTimestamp
-                    && region.endTimestamp() == endTimestamp) {
-                return region.regionId();
+            if (splitPoint.splitLeftSegmentId() == leftSegmentId
+                    && splitPoint.splitRightSegmentId() == rightSegmentId) {
+                return splitPoint;
             }
         }
-        return 0L;
+        return null;
     }
 
     private EpisodeSynthesisGateInput buildGateInput(
@@ -306,9 +339,10 @@ public final class EpisodeTimelineStore {
         if (region == null || stmPool == null) {
             return null;
         }
-        int startIndex = timeline.indexOfSegmentId(region.startSegmentId());
-        int endIndex = timeline.indexOfSegmentId(region.endSegmentId());
-        if (startIndex < 0 || endIndex < startIndex) {
+        List<FixedActionSegment> regionSegments = timeline.sliceSegmentsById(
+                region.startSegmentId(),
+                region.endSegmentId());
+        if (regionSegments.isEmpty()) {
             return null;
         }
 
@@ -317,20 +351,43 @@ public final class EpisodeTimelineStore {
         if (nextRegion != null && nextRegion.startTimestamp() > region.startTimestamp()) {
             stmSliceExclusiveTimestamp = nextRegion.startTimestamp();
         } else {
-            stmSliceExclusiveTimestamp = exclusiveUpperBoundAfter(region.endTimestamp());
+            stmSliceExclusiveTimestamp = Math.max(0L, region.endTimestamp());
         }
 
         return new EpisodeSynthesisGateInput(
                 region,
-                timeline.sliceSegments(startIndex, endIndex),
+                regionSegments,
                 stmPool.snapshotBetween(stmSliceStartTimestamp, stmSliceExclusiveTimestamp),
                 stmSliceStartTimestamp,
                 stmSliceExclusiveTimestamp);
     }
 
-    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
-        long safeInclusive = Math.max(0L, inclusiveTimestamp);
-        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
+    private EpisodeRegion findRegion(long regionId) {
+        if (regionId <= 0L || timeline.regions().isEmpty()) {
+            return null;
+        }
+        for (EpisodeRegion region : timeline.regions()) {
+            if (region != null && region.regionId() == regionId) {
+                return region;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesRegionWindow(EpisodeRegion region, MemorySourceMaterialWindow window) {
+        if (region == null || window == null) {
+            return false;
+        }
+        return region.startSegmentId() == window.startSegmentId()
+                && region.endSegmentId() == window.endSegmentId()
+                && region.startTimestamp() == window.startTimestamp()
+                && region.endTimestamp() == window.endTimestamp();
+    }
+
+    private record BoundaryAnchor(
+            long leftSegmentId,
+            long rightSegmentId,
+            long splitTimestamp) {
     }
 
     private boolean updateRegionRuntimeState(

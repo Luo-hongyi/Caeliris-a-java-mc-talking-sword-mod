@@ -44,7 +44,7 @@
 
 > **记忆召回方向：**长期记忆不会从隐藏条目反向解锁上下文，而是只从已经进入 `visibleContexts` 的条目出发；随后由当前 Focus 压力与随想值影响联想方向和采样随机性，时间衰退则由 recall 配置中的合成记忆半衰期控制，并且只按游戏内时间推进。植入记忆本身不参与时间衰退。若 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回未命中任何 `occurredGameTime < 0` 的植入记忆，系统会复用本轮 cue 池，对这类植入记忆做一次轻量保底抽取。
 
-> **当前进度说明：**这条“上下文进入 Prompt / Persona / LTM Recall”的链已经按新设计落地；但与之配套的新版 LTM 生成闭环仍未完成。旧 `ReflectionTask` 已移除；新的 episode-driven reflection 骨架已经存在，但还没有正式接回 gate、后台入队和 task-owned commit。
+> **当前进度说明：**这条“上下文进入 Prompt / Persona / LTM Recall”的链已经按新设计落地；与之配套的新 reflection 主线也已经接回了 episode gate、后台入队、单次 LLM 调用和第一版 task-owned commit。`recap_update` 现在会写回 `AgentState.recap`，作为阶段性前情提要继续参与后续 prompt；新版 LTM 生成闭环仍未完全完成，当前主要剩余问题是 synthesized LTM 的 tag / 时间锚点质量还在继续收紧。
 
 ### 3. 注意力过滤 (AttentionFilter)
 

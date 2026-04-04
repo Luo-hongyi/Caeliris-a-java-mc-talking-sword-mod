@@ -1,0 +1,13 @@
+episode_synthesis prompt mock preview
+
+regionId: 1001
+segmentRange: 41 -> 42
+timeRange: 120000 -> 180000
+stmSlice: 120000 -> 180000
+segmentCount: 2
+
+generated files:
+- system_prompt.txt
+- user_prompt.txt
+- prompt_draft.txt
+- segment_reference_map.txt

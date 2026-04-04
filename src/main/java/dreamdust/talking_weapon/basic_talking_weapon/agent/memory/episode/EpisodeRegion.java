@@ -12,10 +12,10 @@ import java.util.Map;
  * <p>
  * 当前 region 自身就是正式状态载体，
  * 后续会随 episode timeline 一起持久化到 workspace runtime state 文件。
+ * <p>
+ * 正式时间范围语义固定为 `[startTimestamp, endTimestamp)`。
  */
 public record EpisodeRegion(
-        int startSegmentIndex,
-        int endSegmentIndex,
         long startSegmentId,
         long endSegmentId,
         long startTimestamp,
@@ -30,8 +30,6 @@ public record EpisodeRegion(
         EpisodeRegionLifecycleState lifecycleState) {
 
     public EpisodeRegion(
-            int startSegmentIndex,
-            int endSegmentIndex,
             long startTimestamp,
             long endTimestamp,
             Map<PlayerIntent, Double> aggregateIntentScores,
@@ -40,8 +38,6 @@ public record EpisodeRegion(
             PlayerIntent secondaryIntent,
             double secondaryScore) {
         this(
-                startSegmentIndex,
-                endSegmentIndex,
                 EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 startTimestamp,
@@ -54,8 +50,6 @@ public record EpisodeRegion(
     }
 
     public EpisodeRegion(
-            int startSegmentIndex,
-            int endSegmentIndex,
             long startSegmentId,
             long endSegmentId,
             long startTimestamp,
@@ -66,8 +60,6 @@ public record EpisodeRegion(
             PlayerIntent secondaryIntent,
             double secondaryScore) {
         this(
-                startSegmentIndex,
-                endSegmentIndex,
                 startSegmentId,
                 endSegmentId,
                 startTimestamp,
@@ -83,8 +75,6 @@ public record EpisodeRegion(
     }
 
     public EpisodeRegion(
-            int startSegmentIndex,
-            int endSegmentIndex,
             long startTimestamp,
             long endTimestamp,
             Map<PlayerIntent, Double> aggregateIntentScores,
@@ -95,8 +85,6 @@ public record EpisodeRegion(
             EpisodeRegionGateDecision gateDecision,
             EpisodeRegionLifecycleState lifecycleState) {
         this(
-                startSegmentIndex,
-                endSegmentIndex,
                 EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 startTimestamp,
@@ -111,8 +99,6 @@ public record EpisodeRegion(
     }
 
     public EpisodeRegion(
-            int startSegmentIndex,
-            int endSegmentIndex,
             long startSegmentId,
             long endSegmentId,
             long startTimestamp,
@@ -125,8 +111,6 @@ public record EpisodeRegion(
             EpisodeRegionGateDecision gateDecision,
             EpisodeRegionLifecycleState lifecycleState) {
         this(
-                startSegmentIndex,
-                endSegmentIndex,
                 startSegmentId,
                 endSegmentId,
                 startTimestamp,
@@ -159,10 +143,6 @@ public record EpisodeRegion(
         }
     }
 
-    public int segmentCount() {
-        return Math.max(0, endSegmentIndex - startSegmentIndex + 1);
-    }
-
     public boolean hasIntentSignal() {
         return primaryIntent != null && primaryScore > 0.0;
     }
@@ -189,8 +169,6 @@ public record EpisodeRegion(
             EpisodeRegionGateDecision nextGateDecision,
             EpisodeRegionLifecycleState nextLifecycleState) {
         return new EpisodeRegion(
-                startSegmentIndex,
-                endSegmentIndex,
                 startSegmentId,
                 endSegmentId,
                 startTimestamp,

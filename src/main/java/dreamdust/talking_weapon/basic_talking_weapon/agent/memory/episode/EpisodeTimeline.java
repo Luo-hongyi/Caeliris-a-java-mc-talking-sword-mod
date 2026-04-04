@@ -76,14 +76,55 @@ public record EpisodeTimeline(
         return index < 0 ? null : getSegment(index);
     }
 
-    public BoundarySegmentIds boundarySegmentIdsAt(int splitTimelineIndex) {
-        long leftSegmentId = splitTimelineIndex <= 0
+    public int segmentCountBetween(long startSegmentId, long endSegmentId) {
+        int startIndex = indexOfSegmentId(startSegmentId);
+        int endIndex = indexOfSegmentId(endSegmentId);
+        if (startIndex < 0 || endIndex < startIndex) {
+            return 0;
+        }
+        return endIndex - startIndex + 1;
+    }
+
+    public int segmentCountOf(EpisodeRegion region) {
+        if (region == null) {
+            return 0;
+        }
+        return segmentCountBetween(region.startSegmentId(), region.endSegmentId());
+    }
+
+    public BoundarySegmentIds boundaryBeforeSegment(long rightSegmentId) {
+        int rightIndex = indexOfSegmentId(rightSegmentId);
+        if (rightIndex < 0) {
+            return new BoundarySegmentIds(UNASSIGNED_SEGMENT_ID, UNASSIGNED_SEGMENT_ID);
+        }
+        long leftSegmentId = rightIndex <= 0
                 ? UNASSIGNED_SEGMENT_ID
-                : getSegmentId(splitTimelineIndex - 1);
-        long rightSegmentId = splitTimelineIndex >= segments.size()
-                ? UNASSIGNED_SEGMENT_ID
-                : getSegmentId(splitTimelineIndex);
+                : getSegmentId(rightIndex - 1);
         return new BoundarySegmentIds(leftSegmentId, rightSegmentId);
+    }
+
+    public BoundarySegmentIds boundaryAfterSegment(long leftSegmentId) {
+        int leftIndex = indexOfSegmentId(leftSegmentId);
+        if (leftIndex < 0) {
+            return new BoundarySegmentIds(UNASSIGNED_SEGMENT_ID, UNASSIGNED_SEGMENT_ID);
+        }
+        long rightSegmentId = leftIndex + 1 >= segments.size()
+                ? UNASSIGNED_SEGMENT_ID
+                : getSegmentId(leftIndex + 1);
+        return new BoundarySegmentIds(leftSegmentId, rightSegmentId);
+    }
+
+    public BoundarySegmentIds resolveBoundarySegmentIds(long splitLeftSegmentId, long splitRightSegmentId) {
+        if (splitLeftSegmentId > 0L && splitRightSegmentId > 0L) {
+            return new BoundarySegmentIds(splitLeftSegmentId, splitRightSegmentId);
+        }
+        if (splitLeftSegmentId > 0L) {
+            return boundaryAfterSegment(splitLeftSegmentId);
+        }
+        if (splitRightSegmentId > 0L) {
+            return boundaryBeforeSegment(splitRightSegmentId);
+        }
+        return new BoundarySegmentIds(UNASSIGNED_SEGMENT_ID, UNASSIGNED_SEGMENT_ID);
     }
 
     public List<FixedActionSegment> sliceSegments(int startInclusive, int endInclusive) {
@@ -98,6 +139,15 @@ public record EpisodeTimeline(
         return Collections.unmodifiableList(new ArrayList<>(segments.subList(safeStart, safeEnd + 1)));
     }
 
+    public List<FixedActionSegment> sliceSegmentsById(long startSegmentId, long endSegmentId) {
+        int startIndex = indexOfSegmentId(startSegmentId);
+        int endIndex = indexOfSegmentId(endSegmentId);
+        if (startIndex < 0 || endIndex < startIndex) {
+            return List.of();
+        }
+        return sliceSegments(startIndex, endIndex);
+    }
+
     public EpisodeRegion latestRegion() {
         return regions.isEmpty() ? null : regions.get(regions.size() - 1);
     }
@@ -106,23 +156,35 @@ public record EpisodeTimeline(
         return splitPoints.isEmpty() ? null : splitPoints.get(splitPoints.size() - 1);
     }
 
-    public EpisodeRegion regionBeforeSplit(int splitTimelineIndex) {
-        if (splitTimelineIndex <= 0 || segments.isEmpty()) {
+    public EpisodeRegion regionBeforeBoundary(long splitLeftSegmentId, long splitRightSegmentId) {
+        BoundarySegmentIds boundary = resolveBoundarySegmentIds(splitLeftSegmentId, splitRightSegmentId);
+        if (boundary.leftSegmentId() <= 0L || segments.isEmpty()) {
             return null;
         }
 
+        int regionEnd = indexOfSegmentId(boundary.leftSegmentId());
+        if (regionEnd < 0) {
+            return null;
+        }
         int regionStart = 0;
         for (EpisodeSplitPoint splitPoint : splitPoints) {
             if (splitPoint == null) {
                 continue;
             }
-            int boundary = splitPoint.splitTimelineIndex();
-            if (boundary >= splitTimelineIndex) {
+            long regionRightSegmentId = splitPoint.splitRightSegmentId();
+            if (regionRightSegmentId <= 0L) {
+                continue;
+            }
+            int candidateStart = indexOfSegmentId(regionRightSegmentId);
+            if (candidateStart < 0) {
+                continue;
+            }
+            if (candidateStart > regionEnd) {
                 break;
             }
-            regionStart = Math.max(regionStart, Math.min(boundary, segments.size()));
+            regionStart = Math.max(regionStart, candidateStart);
         }
-        return EpisodeIntentMath.buildRegion(segments, regionStart, splitTimelineIndex - 1);
+        return EpisodeIntentMath.buildRegion(segments, regionStart, regionEnd);
     }
 
     public boolean hasPendingMark(EpisodePendingMark candidate) {

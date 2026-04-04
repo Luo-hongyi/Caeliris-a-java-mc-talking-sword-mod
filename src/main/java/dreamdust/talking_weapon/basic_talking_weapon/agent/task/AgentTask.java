@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.task;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Agent 任务基类：所有后台任务的抽象父类。
@@ -12,11 +13,16 @@ import java.util.UUID;
  */
 public abstract class AgentTask implements Comparable<AgentTask> {
 
+    private static final AtomicLong NEXT_ORDER = new AtomicLong(0L);
+
     /** 任务唯一标识 */
     private final String taskId;
 
     /** 任务优先级 (数字越小越优先) */
     private final int priority;
+
+    /** 同优先级任务的稳定顺序号。 */
+    private final long order;
 
     /** 任务创建时的上下文快照 */
     private final AgentContext context;
@@ -27,6 +33,7 @@ public abstract class AgentTask implements Comparable<AgentTask> {
     protected AgentTask(int priority, AgentContext context) {
         this.taskId = UUID.randomUUID().toString().substring(0, 8);
         this.priority = priority;
+        this.order = NEXT_ORDER.getAndIncrement();
         this.context = context;
     }
 
@@ -49,13 +56,18 @@ public abstract class AgentTask implements Comparable<AgentTask> {
 
     public String getTaskId() { return taskId; }
     public int getPriority() { return priority; }
+    public long getOrder() { return order; }
     public AgentContext getContext() { return context; }
 
     // ---- Comparable (优先级队列排序) ----
 
     @Override
     public int compareTo(AgentTask other) {
-        return Integer.compare(this.priority, other.priority);
+        int priorityCompare = Integer.compare(this.priority, other.priority);
+        if (priorityCompare != 0) {
+            return priorityCompare;
+        }
+        return Long.compare(this.order, other.order);
     }
 
     @Override

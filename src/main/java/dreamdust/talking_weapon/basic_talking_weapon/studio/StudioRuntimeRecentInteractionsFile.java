@@ -15,8 +15,10 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 将最近的交互回合持久化到 Studio workspace。
@@ -126,6 +128,7 @@ public final class StudioRuntimeRecentInteractionsFile {
         public String userPrompt = "";
         public boolean hasImage;
         public List<String> actionTypes = new ArrayList<>();
+        public Map<String, String> contextExtras = new LinkedHashMap<>();
         public List<RuntimeInteractionVisibleContextEntry> visibleContexts = new ArrayList<>();
         public List<RuntimeInteractionOutputEntry> outputs = new ArrayList<>();
 
@@ -136,6 +139,8 @@ public final class StudioRuntimeRecentInteractionsFile {
             entry.userPrompt = turn.getUserPrompt() != null ? turn.getUserPrompt() : "";
             entry.hasImage = turn.hasImage();
             entry.actionTypes = new ArrayList<>(turn.getActionTypes() != null ? turn.getActionTypes() : Collections.emptyList());
+            entry.contextExtras = new LinkedHashMap<>(
+                    turn.getContextExtras() != null ? turn.getContextExtras() : Collections.emptyMap());
             for (TaggedContextEntry visibleContext : turn.getVisibleContexts()) {
                 if (visibleContext == null) {
                     continue;
@@ -171,6 +176,9 @@ public final class StudioRuntimeRecentInteractionsFile {
             if (actionTypes == null) {
                 actionTypes = new ArrayList<>();
             }
+            if (contextExtras == null) {
+                contextExtras = new LinkedHashMap<>();
+            }
             if (visibleContexts == null) {
                 visibleContexts = new ArrayList<>();
             }
@@ -178,6 +186,11 @@ public final class StudioRuntimeRecentInteractionsFile {
                 outputs = new ArrayList<>();
             }
             actionTypes.removeIf(type -> type == null || type.isBlank());
+            contextExtras.entrySet().removeIf(entry ->
+                    entry == null
+                            || entry.getKey() == null
+                            || entry.getKey().isBlank()
+                            || entry.getValue() == null);
             for (RuntimeInteractionVisibleContextEntry visibleContext : visibleContexts) {
                 if (visibleContext != null) {
                     visibleContext.normalize();

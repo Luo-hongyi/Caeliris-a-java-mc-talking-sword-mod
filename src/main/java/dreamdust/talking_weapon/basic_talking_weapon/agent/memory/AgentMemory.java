@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.memory;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimelineStore;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
@@ -193,6 +194,9 @@ public class AgentMemory {
         synchronized (sourceMaterialLock) {
             ResolvedSourceMaterial resolved = resolveActiveSourceMaterial(requestedWindow);
             if (resolved == null) {
+                logSourceMaterialStale(
+                        "snapshotSourceMaterial stale"
+                                + " window=" + formatSourceMaterialWindow(requestedWindow));
                 return MemorySourceMaterialSnapshot.stale(requestedWindow);
             }
             return new MemorySourceMaterialSnapshot(
@@ -220,8 +224,17 @@ public class AgentMemory {
         }
 
         synchronized (sourceMaterialLock) {
+            if (!episodeTimelineStore.canApplySourceMaterialCleanupPlan(plan)) {
+                logSourceMaterialStale(
+                        "cleanupSourceMaterial stale (lifecycle/window validation failed)"
+                                + " plan=" + formatCleanupPlan(plan));
+                return MemorySourceMaterialCleanupResult.stale(plan);
+            }
             ResolvedSourceMaterial resolved = resolveActiveSourceMaterial(plan.window());
             if (resolved == null) {
+                logSourceMaterialStale(
+                        "cleanupSourceMaterial stale (active source material not found)"
+                                + " plan=" + formatCleanupPlan(plan));
                 return MemorySourceMaterialCleanupResult.stale(plan);
             }
             MemorySourceMaterialWindow resolvedWindow = resolved.window();
@@ -434,7 +447,7 @@ public class AgentMemory {
                 endSegment.getSegmentId(),
                 startSegment.getStartTimestamp(),
                 endSegment.getEndTimestamp(),
-                exclusiveUpperBoundAfter(endSegment.getEndTimestamp()),
+                endSegment.getEndTimestamp(),
                 requestedWindow.stmSliceStartTimestamp(),
                 requestedWindow.stmSliceExclusiveTimestamp());
         return new ResolvedSourceMaterial(
@@ -442,9 +455,29 @@ public class AgentMemory {
                 timeline.sliceSegments(startIndex, endIndex));
     }
 
-    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
-        long safeInclusive = Math.max(0L, inclusiveTimestamp);
-        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
+    private void logSourceMaterialStale(String message) {
+        AgentLogger.logError(message, null);
+        System.err.println("[TalkingWeapon] " + message);
+    }
+
+    private String formatCleanupPlan(MemorySourceMaterialCleanupPlan plan) {
+        if (plan == null) {
+            return "(null)";
+        }
+        return "reason=" + plan.reason()
+                + " regionId=" + plan.regionId()
+                + " " + formatSourceMaterialWindow(plan.window());
+    }
+
+    private String formatSourceMaterialWindow(MemorySourceMaterialWindow window) {
+        if (window == null) {
+            return "(null)";
+        }
+        return "[segments=" + window.startSegmentId() + ".." + window.endSegmentId()
+                + " timestamps=" + window.startTimestamp() + ".." + window.endTimestamp()
+                + " rawExclusive=" + window.rawActionSliceExclusiveTimestamp()
+                + " stm=" + window.stmSliceStartTimestamp() + ".." + window.stmSliceExclusiveTimestamp()
+                + "]";
     }
 
     private void processEpisodeGateRejects() {

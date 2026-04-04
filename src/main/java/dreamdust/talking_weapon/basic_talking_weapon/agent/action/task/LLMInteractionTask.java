@@ -207,10 +207,10 @@ public class LLMInteractionTask extends AgentTask {
                     if (req.type == null)
                         continue;
                     String t = req.type.toLowerCase();
-                    actionTypes.add(t);
 
                     if ("speech".equals(t)) {
                         if (req.content != null) {
+                            actionTypes.add(t);
                             new SpeechAction("剑：" + req.content).perform();
                             AgentLogger.logAction("speech", req.content);
                             records.add(new AgentOutputRecord(AgentOutputRecord.Type.SPEECH, req.content));
@@ -218,28 +218,14 @@ public class LLMInteractionTask extends AgentTask {
                         }
                     } else if ("inner_monologue".equals(t)) {
                         if (req.content != null) {
+                            actionTypes.add(t);
                             AgentLogger.logThinking("[inner_monologue]\n" + req.content);
                             records.add(new AgentOutputRecord(AgentOutputRecord.Type.INNER_MONOLOGUE, req.content));
-                        }
-                    } else if ("favorability_update".equals(t)) {
-                        if (req.change_amount != null && req.change_amount != 0) {
-                            int appliedChange = stmPool.requestFavorabilityChange(req.change_amount,
-                                    this.visibleContexts);
-                            if (appliedChange != 0) {
-                                persona.adjustFavorability(appliedChange);
-                                AgentLogger.logAction("favorability_update",
-                                        String.format("Request: %d, Applied: %d, Total: %d", req.change_amount,
-                                                appliedChange, persona.getFavorability()));
-                                runtimeStateChanged = true;
-                            } else {
-                                AgentLogger.logDebug("好感度变动被限界拦截或截断：" + req.change_amount);
-                            }
                         }
                     } else {
                         AgentLogger.logAction(t,
                                 req.content != null ? req.content
-                                        : (req.change_amount != null ? String.valueOf(req.change_amount)
-                                                : "unknown parameter"));
+                                        : "unknown parameter");
                         // 未来扩展其他 action 会在此做分支，暂只记录日志
                     }
                 }
@@ -255,7 +241,8 @@ public class LLMInteractionTask extends AgentTask {
                     screenshotBase64,
                     records,
                     new java.util.ArrayList<>(actionTypes),
-                    new java.util.ArrayList<>(this.visibleContexts));
+                    new java.util.ArrayList<>(this.visibleContexts),
+                    new java.util.LinkedHashMap<>(ctx.getExtras()));
             stmPool.pushInteractionTurn(turn);
             StudioRuntimeRecentInteractionsFile.recordTurn(turn);
 

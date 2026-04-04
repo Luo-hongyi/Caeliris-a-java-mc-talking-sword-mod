@@ -50,6 +50,18 @@ public final class EpisodeIntentMath {
         return aggregate;
     }
 
+    static EnumMap<PlayerIntent, Double> aggregateScores(
+            EpisodeTimeline timeline,
+            long startSegmentId,
+            long endSegmentId) {
+        if (timeline == null) {
+            return aggregateScores(List.of(), 0, -1);
+        }
+        int startIndex = timeline.indexOfSegmentId(startSegmentId);
+        int endIndex = timeline.indexOfSegmentId(endSegmentId);
+        return aggregateScores(timeline.segments(), startIndex, endIndex);
+    }
+
     static EpisodeIntentProfile deriveProfile(Map<PlayerIntent, Double> scores) {
         PlayerIntent primary = null;
         double primaryScore = 0.0;
@@ -120,8 +132,6 @@ public final class EpisodeIntentMath {
         EnumMap<PlayerIntent, Double> aggregateScores = aggregateScores(segments, safeStart, safeEnd);
         EpisodeIntentProfile profile = deriveProfile(aggregateScores);
         return new EpisodeRegion(
-                safeStart,
-                safeEnd,
                 first != null ? first.getSegmentId() : EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 last != null ? last.getSegmentId() : EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
                 first != null ? first.getStartTimestamp() : 0L,

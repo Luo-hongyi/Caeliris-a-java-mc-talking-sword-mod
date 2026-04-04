@@ -9,6 +9,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.E
  * <p>
  * 这里冻结两套边界：
  * - fixed segment 侧用 `startSegmentId .. endSegmentId`
+ * - 正式时间窗统一用 `[startTimestamp, endTimestamp)`
  * - raw action 侧用 `[startTimestamp, rawActionSliceExclusiveTimestamp)`
  * - STM 侧用 `[stmSliceStartTimestamp, stmSliceExclusiveTimestamp)`
  */
@@ -34,8 +35,8 @@ public record MemorySourceMaterialWindow(
         if (endTimestamp < startTimestamp) {
             throw new IllegalArgumentException("endTimestamp must be >= startTimestamp");
         }
-        if (rawActionSliceExclusiveTimestamp < startTimestamp) {
-            throw new IllegalArgumentException("rawActionSliceExclusiveTimestamp must be >= startTimestamp");
+        if (rawActionSliceExclusiveTimestamp < endTimestamp) {
+            throw new IllegalArgumentException("rawActionSliceExclusiveTimestamp must be >= endTimestamp");
         }
         if (stmSliceStartTimestamp < 0L) {
             throw new IllegalArgumentException("stmSliceStartTimestamp must be >= 0");
@@ -58,7 +59,7 @@ public record MemorySourceMaterialWindow(
                 region.endSegmentId(),
                 region.startTimestamp(),
                 region.endTimestamp(),
-                exclusiveUpperBoundAfter(region.endTimestamp()),
+                region.endTimestamp(),
                 input.stmSliceStartTimestamp(),
                 input.stmSliceExclusiveTimestamp());
     }
@@ -72,13 +73,8 @@ public record MemorySourceMaterialWindow(
                 signal.regionEndSegmentId(),
                 signal.regionStartTimestamp(),
                 signal.regionEndTimestamp(),
-                exclusiveUpperBoundAfter(signal.regionEndTimestamp()),
+                signal.regionEndTimestamp(),
                 signal.stmSliceStartTimestamp(),
                 signal.stmSliceExclusiveTimestamp());
-    }
-
-    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
-        long safeInclusive = Math.max(0L, inclusiveTimestamp);
-        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
     }
 }

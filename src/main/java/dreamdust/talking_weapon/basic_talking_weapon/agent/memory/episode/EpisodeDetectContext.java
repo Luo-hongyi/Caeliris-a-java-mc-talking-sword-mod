@@ -20,9 +20,8 @@ import java.util.List;
 public record EpisodeDetectContext(
         EpisodeTimeline timeline,
         FixedActionSegment latestSegment,
-        int latestTimelineIndex,
         List<EpisodePendingMark> detectedThisCycle,
-        int lastAcceptedPendingDetectTimelineIndex) {
+        long lastAcceptedPendingDetectSegmentId) {
 
     public EpisodeDetectContext {
         timeline = timeline == null ? EpisodeTimeline.empty() : timeline;
@@ -33,5 +32,11 @@ public record EpisodeDetectContext(
 
     public boolean hasDetectedThisCycle() {
         return !detectedThisCycle.isEmpty();
+    }
+
+    public long latestSegmentId() {
+        return latestSegment == null
+                ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID
+                : latestSegment.getSegmentId();
     }
 }

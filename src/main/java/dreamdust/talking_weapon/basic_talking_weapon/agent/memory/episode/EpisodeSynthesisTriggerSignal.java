@@ -8,6 +8,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode;
  * <p>
  * 后续“这个 episode 是否值得生成记忆”的判断，也应优先落在 episode 侧，
  * 由它决定是否产出该 signal。
+ * <p>
+ * 其中 region 时间范围语义固定为 `[regionStartTimestamp, regionEndTimestamp)`。
  */
 public record EpisodeSynthesisTriggerSignal(
         long regionId,

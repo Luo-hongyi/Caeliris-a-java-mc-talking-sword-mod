@@ -1,0 +1,525 @@
+{
+  "schemaVersion": 1,
+  "tags": [
+    {
+      "tag": "custom_specific:health_critical",
+      "kind": "custom_specific",
+      "label": "持有者生命危急（低于 25%）",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:health_low",
+      "kind": "custom_specific",
+      "label": "持有者生命偏低（低于 50%）",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:health_medium",
+      "kind": "custom_specific",
+      "label": "持有者生命略有折损",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:health_full",
+      "kind": "custom_specific",
+      "label": "持有者生命值充盈",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:hungry_critical",
+      "kind": "custom_specific",
+      "label": "持有者极度饥饿",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:hungry_low",
+      "kind": "custom_specific",
+      "label": "持有者有些饥饿",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_sunrise",
+      "kind": "custom_specific",
+      "label": "当前是日出时分",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_morning",
+      "kind": "custom_specific",
+      "label": "当前是早晨",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_noon",
+      "kind": "custom_specific",
+      "label": "当前是中午",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_afternoon",
+      "kind": "custom_specific",
+      "label": "当前是下午",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_sunset",
+      "kind": "custom_specific",
+      "label": "当前是日落时分",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_night",
+      "kind": "custom_specific",
+      "label": "当前是夜晚",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_midnight",
+      "kind": "custom_specific",
+      "label": "当前是深夜",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:time_dawn",
+      "kind": "custom_specific",
+      "label": "当前是凌晨",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:weather_rain",
+      "kind": "custom_specific",
+      "label": "正在下雨",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:weather_thunder",
+      "kind": "custom_specific",
+      "label": "正在打雷，暴雨",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:weather_clear",
+      "kind": "custom_specific",
+      "label": "天气晴朗",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:light_dark",
+      "kind": "custom_specific",
+      "label": "当前光照偏暗，容易生成怪物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:light_bright",
+      "kind": "custom_specific",
+      "label": "光照充足",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:combat_intense",
+      "kind": "custom_generic",
+      "label": "附近有大量敌对生物，战斗激烈",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:monster",
+      "kind": "custom_generic",
+      "label": "敌对怪物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:undead",
+      "kind": "custom_generic",
+      "label": "亡灵生物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:boss",
+      "kind": "custom_generic",
+      "label": "首领级生物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:animal",
+      "kind": "custom_generic",
+      "label": "动物或牲畜",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:friendly",
+      "kind": "custom_generic",
+      "label": "友好生物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:arthropod",
+      "kind": "custom_generic",
+      "label": "节肢动物",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:illager",
+      "kind": "custom_generic",
+      "label": "灾厄村民",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:dangerous",
+      "kind": "custom_generic",
+      "label": "具备高度威胁性",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:epic_encounter",
+      "kind": "custom_generic",
+      "label": "史诗级遭遇",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:exposed",
+      "kind": "custom_specific",
+      "label": "处于露天环境",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:deep_indoors",
+      "kind": "custom_specific",
+      "label": "处于深层遮挡空间或地下建筑内部",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:cave",
+      "kind": "custom_specific",
+      "label": "处于洞穴或地下环境",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:high_altitude",
+      "kind": "custom_specific",
+      "label": "位于高海拔区域",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:lava_nearby",
+      "kind": "custom_specific",
+      "label": "附近存在岩浆危险",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:water_nearby",
+      "kind": "custom_specific",
+      "label": "附近有大量水体",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:pitch_dark",
+      "kind": "custom_specific",
+      "label": "环境漆黑一片",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:cliff",
+      "kind": "custom_specific",
+      "label": "处于悬崖边缘",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:xp_level",
+      "kind": "custom_specific",
+      "label": "持有者当前拥有经验等级",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:bed",
+      "kind": "custom_specific",
+      "label": "床铺",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:nether_portal",
+      "kind": "custom_specific",
+      "label": "下界传送门",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:barrel",
+      "kind": "custom_specific",
+      "label": "木桶",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:blast_furnace",
+      "kind": "custom_specific",
+      "label": "高炉",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:brewing_stand",
+      "kind": "custom_specific",
+      "label": "酿造台",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:cartography_table",
+      "kind": "custom_specific",
+      "label": "制图台",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:cauldron",
+      "kind": "custom_specific",
+      "label": "炼药锅",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:composter",
+      "kind": "custom_specific",
+      "label": "堆肥桶",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:fletching_table",
+      "kind": "custom_specific",
+      "label": "制箭台",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:grindstone",
+      "kind": "custom_specific",
+      "label": "砂轮",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:lectern",
+      "kind": "custom_specific",
+      "label": "讲台",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:loom",
+      "kind": "custom_specific",
+      "label": "织布机",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:smoker",
+      "kind": "custom_specific",
+      "label": "烟熏炉",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:smithing_table",
+      "kind": "custom_specific",
+      "label": "锻造台",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:stonecutter",
+      "kind": "custom_specific",
+      "label": "切石机",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:attack",
+      "kind": "custom_generic",
+      "label": "发动攻击",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:eat",
+      "kind": "custom_generic",
+      "label": "进食",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:mine",
+      "kind": "custom_generic",
+      "label": "挖掘方块",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:craft",
+      "kind": "custom_generic",
+      "label": "制作物品",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:sleep",
+      "kind": "custom_generic",
+      "label": "入睡",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:trade",
+      "kind": "custom_generic",
+      "label": "与村民交易",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:travel",
+      "kind": "custom_generic",
+      "label": "进行长途旅行",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:biome_change",
+      "kind": "custom_generic",
+      "label": "进入新的群系",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:dim_change",
+      "kind": "custom_generic",
+      "label": "穿越了维度",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:forged",
+      "kind": "custom_generic",
+      "label": "初生纪元（武器被锻造时期）",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_generic:current_journey",
+      "kind": "custom_generic",
+      "label": "当前的冒险旅程",
+      "aliases": [],
+      "notes": "",
+      "group": ""
+    },
+    {
+      "tag": "custom_specific:亚尔夫海姆",
+      "kind": "custom_specific",
+      "label": "亚尔夫海姆",
+      "aliases": [],
+      "notes": "",
+      "group": "landmark"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -12,7 +14,8 @@ public record ReflectionRawSegmentMaterial(
         long segmentId,
         long startTimestamp,
         long endTimestamp,
-        ReflectionContextSnapshot startSnapshot,
+        ReflectionContextSnapshot segmentSnapshot,
+        List<TaggedContextEntry> localContextEntries,
         List<ReflectionPlayerAction> playerActions,
         List<ReflectionInteraction> interactions) {
 
@@ -29,9 +32,12 @@ public record ReflectionRawSegmentMaterial(
         if (endTimestamp < startTimestamp) {
             throw new IllegalArgumentException("endTimestamp must be >= startTimestamp");
         }
-        if (startSnapshot == null) {
-            throw new IllegalArgumentException("startSnapshot must not be null");
+        if (segmentSnapshot == null) {
+            throw new IllegalArgumentException("segmentSnapshot must not be null");
         }
+        localContextEntries = localContextEntries == null
+                ? List.of()
+                : Collections.unmodifiableList(new ArrayList<>(localContextEntries));
         playerActions = playerActions == null
                 ? List.of()
                 : Collections.unmodifiableList(new ArrayList<>(playerActions));

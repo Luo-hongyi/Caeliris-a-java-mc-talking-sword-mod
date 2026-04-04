@@ -1,5 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialSnapshot;
@@ -16,8 +17,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.R
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.function.ToLongFunction;
 
 /**
  * 第一版 raw material exporter。
@@ -53,7 +54,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
             rawSegments.add(toRawSegment(
                     i,
                     segment,
-                    bucketInteractions(segments, i, stmSlice)));
+                    stmSlice));
         }
 
         return new ReflectionRawMaterial(
@@ -75,11 +76,15 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
     private ReflectionRawSegmentMaterial toRawSegment(
             int localSegmentIndex,
             FixedActionSegment segment,
-            List<InteractionTurn> interactionTurns) {
+            STMPool.TimeSlice stmSlice) {
         FixedActionSegmentContext context = segment.getContext();
-        ReflectionContextSnapshot startSnapshot = new ReflectionContextSnapshot(
-                context.getDefaultVisibleContextEntries(),
-                context.getDefaultContextExtras());
+        ReflectionContextSnapshot segmentSnapshot = new ReflectionContextSnapshot(
+                context.getEffectiveVisibleContextEntries(),
+                context.getEffectiveContextExtras());
+        List<TaggedContextEntry> localContextEntries = bucketByTimestamp(
+                stmSlice == null ? List.of() : stmSlice.getContextEntries(),
+                segment,
+                TaggedContextEntry::getTimestamp);
 
         List<ReflectionPlayerAction> playerActions = new ArrayList<>();
         for (FixedActionSegmentEntry entry : segment.getEntries()) {
@@ -95,18 +100,19 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
         }
 
         List<ReflectionInteraction> interactions = new ArrayList<>();
-        for (InteractionTurn turn : interactionTurns) {
+        for (InteractionTurn turn : bucketByTimestamp(
+                stmSlice == null ? List.of() : stmSlice.getInteractionTurns(),
+                segment,
+                InteractionTurn::getTimestamp)) {
             if (turn == null) {
                 continue;
             }
-            // TODO: 当前 InteractionTurn 只持久化了 visibleContexts，
-            // 还没有把当时的 extra context 一起带出来。
             interactions.add(new ReflectionInteraction(
                     turn.getTimestamp(),
                     turn.getTriggerSource(),
                     turn.getUserPrompt(),
                     turn.getAgentActions(),
-                    new ReflectionContextSnapshot(turn.getVisibleContexts(), Map.of())));
+                    new ReflectionContextSnapshot(turn.getVisibleContexts(), turn.getContextExtras())));
         }
 
         return new ReflectionRawSegmentMaterial(
@@ -114,31 +120,27 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
                 segment.getSegmentId(),
                 segment.getStartTimestamp(),
                 segment.getEndTimestamp(),
-                startSnapshot,
+                segmentSnapshot,
+                localContextEntries,
                 playerActions,
                 interactions);
     }
 
-    private List<InteractionTurn> bucketInteractions(
-            List<FixedActionSegment> segments,
-            int localSegmentIndex,
-            STMPool.TimeSlice stmSlice) {
-        if (stmSlice == null || segments.isEmpty() || localSegmentIndex < 0 || localSegmentIndex >= segments.size()) {
+    private <T> List<T> bucketByTimestamp(
+            List<T> records,
+            FixedActionSegment segment,
+            ToLongFunction<T> timestampReader) {
+        if (segment == null || records == null || records.isEmpty() || timestampReader == null) {
             return List.of();
         }
-        FixedActionSegment segment = segments.get(localSegmentIndex);
-        if (segment == null) {
-            return List.of();
-        }
-
-        List<InteractionTurn> bucket = new ArrayList<>();
-        for (InteractionTurn turn : stmSlice.getInteractionTurns()) {
-            if (turn == null) {
+        List<T> bucket = new ArrayList<>();
+        for (T record : records) {
+            if (record == null) {
                 continue;
             }
-            long timestamp = turn.getTimestamp();
+            long timestamp = timestampReader.applyAsLong(record);
             if (timestamp >= segment.getStartTimestamp() && timestamp < segment.getEndTimestamp()) {
-                bucket.add(turn);
+                bucket.add(record);
             }
         }
         return List.copyOf(bucket);

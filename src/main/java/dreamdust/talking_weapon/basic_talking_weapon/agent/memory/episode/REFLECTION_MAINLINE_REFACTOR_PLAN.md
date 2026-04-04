@@ -250,6 +250,14 @@ episode 不应对一整段历史只发一个总 signal。
 - `EpisodeTimelineStore` 已经补入 owner-side 回调骨架：
   - `markEpisodeSynthesisResolved(long regionId)`
   - `rollbackEpisodeSynthesisToHolding(long regionId)`
+- `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 已接回第一版 ready signal 产出：
+  - 只放行 `PASS + HOLDING` 且已越过 holdback 的 region
+  - signal 发出后会立即将 region 推进为 `PENDING`
+  - holdback 数量当前已进入 `EpisodeRuntimeSettings / episode_tuning.json`，默认值为 `2`
+- `EpisodeSynthesisInternalTrigger` 已接回第一版后台提交：
+  - 在 `TickEventWatcher` 的低频轮询里拉取 ready signals
+  - 按顺序逐个调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`
+  - 若提交失败，会立即把对应 region 回滚到 `HOLDING`
 - `EpisodeSynthesisReflectionTask` 当前已经把 `regionId` 写入 task context extras
 - `EpisodeSynthesisGate` 独立骨架已落地
 - `DefaultEpisodeSynthesisGate` 第一版已落地：
@@ -265,7 +273,7 @@ episode 不应对一整段历史只发一个总 signal。
 - reject cleanup 第一阶段已接回：
   - `EpisodeTimelineStore` 现在会先做 closed region gate 判定
   - `REJECT` 会立即回到 owner-side cleanup
-  - `PASS` 当前只缓存 gate 结果，后续 signal / task 提交链路再接
+  - `PASS` 当前会先缓存 gate 结果；越过 holdback 后由 `collectEpisodeSynthesisTriggerSignals()` 正式放行
 
 这里要明确一个当前未完成点：
 
@@ -298,19 +306,19 @@ episode 不应对一整段历史只发一个总 signal。
 
 ### 2.2 旧好感度链路直接拆除
 
-当前旧设计里，好感度仍然绑在：
+旧设计里，好感度曾经绑在：
 
 - 高频 `LLMInteractionTask`
 - `STMPool` 内部旧账本
 
-这两条链路都已经不符合当前主线。
+这两条链路都不符合当前主线，并且当前已经从运行时代码里拆除。
 
 当前结论：
 
-- 旧好感度链路全部拆除
-- 后续再按两条平行链路重建
-- `action` 侧预留高频、小幅更新
-- `reflection` 侧预留低频、大幅更新
+- action 侧不再暴露 `favorability_update`
+- `LLMInteractionTask` 不再执行好感度写入
+- `STMPool` 不再维护好感度账本
+- 当前好感度更新职责只保留在 reflection 主线模块
 
 ### 2.3 高频情绪更新不纳入这一轮
 
@@ -323,6 +331,12 @@ episode 不应对一整段历史只发一个总 signal。
 - 重建 episode synthesis 这条主任务
 
 情绪高频更新以后单独研究。
+
+补一条当前约束：
+
+- `emotion_update` 模块已经接入可热更新的情绪类型说明文本
+- 但真正允许的情绪类型集合仍然固定为 `AgentState.PrimaryEmotion`
+- 也就是说，当前只能动态改“描述”，不能动态改“类型集合”
 
 ### 2.4 不保留兼容和过渡层
 
@@ -633,11 +647,17 @@ module 明确不负责：
 - 将结果肢解成正式提交内容
 - 提交与该 task 绑定的后续信号
 
+当前设计结论是：
+
+- `EpisodeSynthesisReflectionTask` 应装载当前 reflection 包里全部现有 modules
+- 也就是说，它现在不是“局部子任务”，而是第一条正式的“全量总任务”
+- module 仍然保持可复用，但在这条 task 上先整体启用
+
 当前固定 modules 为：
 
 - `memory_synthesis`
 - `player_profile_update`
-- `current_situation_update`
+- `recap_update`
 - `favorability_update`
 - `emotion_update`
 
@@ -647,7 +667,7 @@ module 明确不负责：
 
 - 写入 LTM
 - 更新玩家画像 / 对玩家的看法
-- 更新 `currentSituationSummary`
+- 更新 `AgentState.recap`
 - 如果该 task 启用了关系模块，则更新好感度
 - 发出“消费并截断 STM 已消费部分”的信号
 - 发出“推出并移除 episode 已消费部分”的信号
@@ -672,8 +692,19 @@ module 明确不负责：
   - 已内建按 module 分发的 parse / validate 骨架
 - `EpisodeSynthesisReflectionTask`
   - 已冻结固定 modules
+  - 当前固定 modules 已经等于 reflection 包里全部现有 modules
   - 已冻结 material / state / persona 请求边界
-  - 当前 `executePreparedTask(...)` 仍只做 prepared 日志，不发 LLM、不提交结果
+  - `executePreparedTask(...)` 第一版已经能跑通：
+    - task-owned prompt 拼装
+    - 单次 LLM 调用
+    - root JSON 提取
+    - module parse / validate
+    - LTM / 玩家画像 / 好感度 / 情绪的 owner-side commit
+    - consumed cleanup + region resolved / rollback
+  - 当前仍未完全闭合的点：
+    - `recap_update` 已写回 `AgentState.recap`
+    - validate 失败后的 LLM 重试链路还没接
+    - synthesized LTM 的 tag / 时间锚点仍只是第一版
 - `ReflectionModule`
   - 当前职责已经和实现对齐为：
     - module instruction prompt
@@ -684,7 +715,7 @@ module 明确不负责：
 因此当前准确表述不是“reflection 还没有任何新实现”，而是：
 
 - 新 reflection 主线骨架已经落地
-- 但 episode gate -> task 提交、单次 LLM 调用、task-owned commit、owner consumption signal 还没有接回
+- episode gate -> task 提交、单次 LLM 调用、task-owned commit、owner consumption signal 已经接回第一版闭环
 
 ### 6.5 当前后台任务队列语义
 
@@ -700,8 +731,9 @@ module 明确不负责：
 当前还要明确一点：
 
 - 代码里已经存在 `EpisodeSynthesisReflectionTask`
-- 但还没有 internal trigger 把 episode signal 逐个提交到 `AgentRuntime.submitBackground(...)`
-- 所以 reflection 目前仍未真正进入后台执行队列
+- `EpisodeSynthesisInternalTrigger` 已经会把 ready episode signal 逐个提交到 `AgentRuntime.submitBackground(...)`
+- 提交失败时会立刻把对应 region 从 `PENDING` 回滚到 `HOLDING`
+- 所以 reflection task 现在已经能真正进入后台执行队列
 
 ## 7. 工程约束
 

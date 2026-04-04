@@ -9,28 +9,26 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitt
  * 区别只在于它尚未被某个 splitter confirm。
  */
 public record EpisodePendingMark(
-        int detectedAtTimelineIndex,
         long detectedAtSegmentId,
-        int splitTimelineIndex,
         long splitLeftSegmentId,
         long splitRightSegmentId,
         long splitTimestamp,
         EpisodeSplitReason reason,
-        int confirmAtTimelineIndex,
+        long confirmAtSegmentId,
         String ownerSplitterId,
         boolean highPriority,
         int coverBeforeSegments,
         int coverAfterSegments) {
 
     public EpisodePendingMark {
-        if (detectedAtTimelineIndex < 0) {
-            throw new IllegalArgumentException("detectedAtTimelineIndex must be >= 0");
+        if (detectedAtSegmentId <= 0L) {
+            throw new IllegalArgumentException("detectedAtSegmentId must be > 0");
         }
-        if (splitTimelineIndex < 0) {
-            throw new IllegalArgumentException("splitTimelineIndex must be >= 0");
+        if (splitLeftSegmentId <= 0L && splitRightSegmentId <= 0L) {
+            throw new IllegalArgumentException("split boundary must reference at least one segment id");
         }
-        if (confirmAtTimelineIndex < splitTimelineIndex) {
-            throw new IllegalArgumentException("confirmAtTimelineIndex must be >= splitTimelineIndex");
+        if (confirmAtSegmentId < detectedAtSegmentId) {
+            throw new IllegalArgumentException("confirmAtSegmentId must be >= detectedAtSegmentId");
         }
         ownerSplitterId = ownerSplitterId == null ? "" : ownerSplitterId.trim();
         if (ownerSplitterId.isEmpty()) {
@@ -41,78 +39,62 @@ public record EpisodePendingMark(
     }
 
     public static EpisodePendingMark fromRuntimeConfig(
-            EpisodeTimeline timeline,
-            int detectedAtTimelineIndex,
             long detectedAtSegmentId,
-            int splitTimelineIndex,
+            long splitLeftSegmentId,
+            long splitRightSegmentId,
             long splitTimestamp,
             EpisodeSplitReason reason,
             String ownerSplitterId) {
         EpisodeReasonRuntimeConfig config = EpisodeRuntimeSettings.getConfig(reason);
-        int confirmAtTimelineIndex = Math.max(
-                splitTimelineIndex,
-                detectedAtTimelineIndex + config.confirmDelaySegments());
-        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds = timeline == null
-                ? new EpisodeTimeline.BoundarySegmentIds(
-                        EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
-                        EpisodeTimeline.UNASSIGNED_SEGMENT_ID)
-                : timeline.boundarySegmentIdsAt(splitTimelineIndex);
+        long materializedConfirmFloor = splitRightSegmentId > 0L
+                ? splitRightSegmentId
+                : detectedAtSegmentId + 1L;
+        long confirmAtSegmentId = Math.max(
+                materializedConfirmFloor,
+                detectedAtSegmentId + config.confirmDelaySegments());
         return new EpisodePendingMark(
-                detectedAtTimelineIndex,
                 detectedAtSegmentId,
-                splitTimelineIndex,
-                boundarySegmentIds.leftSegmentId(),
-                boundarySegmentIds.rightSegmentId(),
+                splitLeftSegmentId,
+                splitRightSegmentId,
                 splitTimestamp,
                 reason,
-                confirmAtTimelineIndex,
+                confirmAtSegmentId,
                 ownerSplitterId,
                 config.highPriority(),
                 config.coverBeforeSegments(),
                 config.coverAfterSegments());
     }
 
-    public static EpisodePendingMark fromRuntimeConfig(
-            int detectedAtTimelineIndex,
-            int splitTimelineIndex,
-            long splitTimestamp,
-            EpisodeSplitReason reason,
-            String ownerSplitterId) {
-        return fromRuntimeConfig(
-                EpisodeTimeline.empty(),
-                detectedAtTimelineIndex,
-                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
-                splitTimelineIndex,
-                splitTimestamp,
-                reason,
-                ownerSplitterId);
-    }
-
     public boolean isHighPriority() {
         return highPriority;
     }
 
-    public boolean coversTimelineIndex(int candidateTimelineIndex) {
-        int min = splitTimelineIndex - coverBeforeSegments;
-        int max = splitTimelineIndex + coverAfterSegments;
-        return candidateTimelineIndex >= min && candidateTimelineIndex <= max;
+    public long splitAnchorSegmentId() {
+        if (splitRightSegmentId > 0L) {
+            return splitRightSegmentId;
+        }
+        if (splitLeftSegmentId > 0L) {
+            return splitLeftSegmentId + 1L;
+        }
+        return EpisodeTimeline.UNASSIGNED_SEGMENT_ID;
+    }
+
+    public boolean coversSplitAnchor(long candidateSplitAnchorSegmentId) {
+        long anchorSegmentId = splitAnchorSegmentId();
+        if (anchorSegmentId <= 0L || candidateSplitAnchorSegmentId <= 0L) {
+            return false;
+        }
+        long min = Math.max(1L, anchorSegmentId - coverBeforeSegments);
+        long max = anchorSegmentId + coverAfterSegments;
+        return candidateSplitAnchorSegmentId >= min && candidateSplitAnchorSegmentId <= max;
     }
 
     public boolean sameKey(EpisodePendingMark other) {
         if (other == null) {
             return false;
         }
-        boolean hasStableBoundaryIds = splitLeftSegmentId > 0L || splitRightSegmentId > 0L;
-        boolean otherHasStableBoundaryIds = other.splitLeftSegmentId > 0L || other.splitRightSegmentId > 0L;
-        if (hasStableBoundaryIds && otherHasStableBoundaryIds) {
-            return splitLeftSegmentId == other.splitLeftSegmentId
-                    && splitRightSegmentId == other.splitRightSegmentId
-                    && confirmAtTimelineIndex == other.confirmAtTimelineIndex
-                    && reason == other.reason
-                    && ownerSplitterId.equals(other.ownerSplitterId);
-        }
-        return splitTimelineIndex == other.splitTimelineIndex
-                && confirmAtTimelineIndex == other.confirmAtTimelineIndex
+        return splitAnchorSegmentId() == other.splitAnchorSegmentId()
+                && confirmAtSegmentId == other.confirmAtSegmentId
                 && reason == other.reason
                 && ownerSplitterId.equals(other.ownerSplitterId);
     }

@@ -1,15 +1,40 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentService;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialCleanupResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionMaterialRequest;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.CurrentSituationUpdateModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.FavorabilityUpdateModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.FavorabilityUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.MemorySynthesisModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.MemorySynthesisResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.PlayerProfileUpdateModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.PlayerProfileUpdateResult;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.RecapUpdateModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.RecapUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModule;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModuleKey;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModuleResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.DefaultReflectionMaterialExporter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.DefaultReflectionMaterialMerger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.DefaultReflectionPersonaLoader;
@@ -20,24 +45,50 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.Re
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.ReflectionPersonaLoader;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.ReflectionPromptFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.ReflectionStateSnapshotLoader;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaEntry;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.StringJoiner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 第一条正式 concrete reflection task。
  * <p>
- * 当前先冻结固定 modules、input 请求与 task 边界，
- * LLM 调用与 commit 逻辑留待下一步接入。
+ * 当前固定 modules、input 请求与 task 边界已经冻结；
+ * 第一版现在开始承担 task-owned prompt / LLM / commit / cleanup。
  */
 public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask {
 
     public static final String SOURCE_NAME = "episode_synthesis_reflection";
+    private static final String SYSTEM_PROMPT_HEADER = """
+            你正在执行 `episode_synthesis` reflection task。
+            你的职责是基于这一整段 episode 的 material、当前状态与相关 persona，
+            同时完成长期记忆合成、玩家画像更新、前情提要更新、关系更新和情绪更新。
+            输出必须严格遵守给定 JSON 协议，只返回一个 JSON 对象，不要输出解释、Markdown 或额外文字。
+            """.trim();
+    private static final String USER_PROMPT = "请完成本次 episode synthesis reflection，并只返回单个 JSON 对象。";
+    private static final float DEFAULT_SYNTHESIZED_MEMORY_IMPORTANCE = 0.6f;
+    private static final String TASK_LOG_PREFIX = "[TalkingWeapon/Reflection] ";
+    private static final Gson PRETTY_GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .disableHtmlEscaping()
+            .create();
+    private static final Pattern MARKDOWN_JSON = Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)```", Pattern.DOTALL);
+    private static final Pattern JSON_BLOCK = Pattern.compile("\\{[\\s\\S]*}", Pattern.DOTALL);
 
     private static final List<ReflectionModule> FIXED_MODULES = List.of(
             new MemorySynthesisModule(),
             new PlayerProfileUpdateModule(),
-            new CurrentSituationUpdateModule(),
+            new RecapUpdateModule(),
             new FavorabilityUpdateModule(),
             new EmotionUpdateModule());
 
@@ -46,6 +97,9 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
     public EpisodeSynthesisReflectionTask(EpisodeSynthesisTriggerSignal signal) {
         this(
                 signal,
+                -1L,
+                -1L,
+                -1L,
                 new DefaultReflectionMaterialExporter(),
                 new DefaultReflectionMaterialMerger(),
                 new DefaultReflectionStateSnapshotLoader(),
@@ -55,13 +109,33 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
 
     public EpisodeSynthesisReflectionTask(
             EpisodeSynthesisTriggerSignal signal,
+            long currentGameTime,
+            long currentDayIndex,
+            long currentTimeOfDayTick) {
+        this(
+                signal,
+                currentGameTime,
+                currentDayIndex,
+                currentTimeOfDayTick,
+                new DefaultReflectionMaterialExporter(),
+                new DefaultReflectionMaterialMerger(),
+                new DefaultReflectionStateSnapshotLoader(),
+                new DefaultReflectionPersonaLoader(),
+                new DefaultReflectionPromptFormatter());
+    }
+
+    public EpisodeSynthesisReflectionTask(
+            EpisodeSynthesisTriggerSignal signal,
+            long currentGameTime,
+            long currentDayIndex,
+            long currentTimeOfDayTick,
             ReflectionMaterialExporter materialExporter,
             ReflectionMaterialMerger materialMerger,
             ReflectionStateSnapshotLoader stateSnapshotLoader,
             ReflectionPersonaLoader personaLoader,
             ReflectionPromptFormatter promptFormatter) {
         super(
-                buildContext(signal),
+                buildContext(signal, currentGameTime, currentDayIndex, currentTimeOfDayTick),
                 ReflectionTaskType.EPISODE_SYNTHESIS,
                 FIXED_MODULES,
                 materialExporter,
@@ -105,20 +179,497 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
     protected void executePreparedTask(
             ReflectionTaskInput input,
             ReflectionPromptDraft promptDraft) {
-        String moduleInstruction = buildModuleInstructionPrompt(input);
-        // 第一版只冻结 task 主干，不接 LLM / commit。
-        AgentLogger.logDebug(
-                "[Reflection Skeleton] episode_synthesis prepared"
-                        + "\nsegments=" + input.material().segments().size()
-                        + "\nmodules=" + modules().stream().map(module -> module.moduleKey().wireName()).toList()
-                        + "\npromptDraftLength=" + promptDraft.draftText().length()
-                        + "\nmoduleInstructionLength=" + moduleInstruction.length());
+        AgentRuntime runtime = AgentRuntime.getInstance();
+        String systemPrompt = buildSystemPrompt(input, promptDraft);
+        String userPrompt = buildUserPrompt();
+        boolean taskOwnedCommitApplied = false;
+
+        try {
+            if (isCancelled()) {
+                rollbackPendingRegion(runtime.getMemory());
+                return;
+            }
+
+            AgentLogger.logPrompts(systemPrompt, userPrompt, SOURCE_NAME, false);
+            String rawReply = LLMAgentService.buildClient().generate(List.of(
+                    LLMMessage.system(systemPrompt),
+                    LLMMessage.user(userPrompt)));
+            AgentLogger.logRawResponse(rawReply);
+
+            if (isCancelled()) {
+                rollbackPendingRegion(runtime.getMemory());
+                return;
+            }
+
+            JsonObject rootObject = parseRootObject(rawReply);
+            Map<ReflectionModuleKey, ReflectionModuleResult> parsedResults =
+                    parseAndValidateModuleOutputs(rootObject, input);
+
+            applyModuleResults(parsedResults, input, runtime);
+            taskOwnedCommitApplied = true;
+            if (!finalizeConsumedCleanupAndResolution(runtime.getMemory())) {
+                throw new IllegalStateException(
+                        "Episode synthesis finalize failed for regionId=" + signal.regionId());
+            }
+            AgentStateStorage.requestSaveRuntimeState(runtime.getState(), runtime.getPersona());
+        } catch (InterruptedException interrupted) {
+            if (!taskOwnedCommitApplied) {
+                rollbackPendingRegion(runtime.getMemory());
+            } else {
+                logTaskNotice("episode synthesis interrupted after task-owned commit; region kept pending"
+                        + " regionId=" + signal.regionId());
+            }
+            Thread.currentThread().interrupt();
+        } catch (Exception exception) {
+            if (!taskOwnedCommitApplied) {
+                rollbackPendingRegion(runtime.getMemory());
+            } else {
+                logTaskNotice("episode synthesis failed after task-owned commit; region kept pending"
+                        + " regionId=" + signal.regionId()
+                        + " cause=" + exception.getClass().getSimpleName());
+            }
+            throw new IllegalStateException(
+                    "Episode synthesis reflection failed for regionId=" + signal.regionId(),
+                    exception);
+        }
     }
 
-    private static AgentContext buildContext(EpisodeSynthesisTriggerSignal signal) {
+    String buildSystemPrompt(ReflectionTaskInput input, ReflectionPromptDraft promptDraft) {
+        StringJoiner joiner = new StringJoiner("\n\n");
+        joiner.add(SYSTEM_PROMPT_HEADER);
+
+        String cognitionRule = PromptRegistry.getInstance().getSystemCognitionRule();
+        if (cognitionRule != null && !cognitionRule.isBlank()) {
+            joiner.add("[System Cognition Rule]\n" + cognitionRule.trim());
+        }
+
+        joiner.add(buildIdentitySection(input.state()));
+        joiner.add(buildStateSection(input.state()));
+        joiner.add(buildRelevantPersonaSection(input.relevantPersonaEntries()));
+
+        if (promptDraft != null && !promptDraft.draftText().isBlank()) {
+            joiner.add(promptDraft.draftText().trim());
+        }
+        if (promptDraft != null && !promptDraft.segmentReferenceMap().isBlank()) {
+            joiner.add("[Segment Reference Map]\n" + promptDraft.segmentReferenceMap().trim());
+        }
+
+        joiner.add("""
+                [Task Constraints]
+                - 这是一次 episode 级综合任务，必须同时填写全部 modules
+                - 所有输出都必须基于同一批 material / state / persona 事实
+                - 不要输出推理过程
+                - 不要省略任何已声明 module
+                """.trim());
+
+        String moduleInstruction = buildModuleInstructionPrompt(input);
+        if (!moduleInstruction.isBlank()) {
+            joiner.add("[Module Instructions]\n" + moduleInstruction);
+        }
+
+        joiner.add("[Output Contract]\n" + buildRootOutputContractPrompt());
+        joiner.add("""
+                [Output Rules]
+                - 顶层必须是 JSON object
+                - 顶层必须包含 `modules`
+                - `modules` 下必须包含全部已声明的 module key
+                - 不要输出 Markdown 代码块
+                - 不要输出任何额外说明文字
+                """.trim());
+        return joiner.toString();
+    }
+
+    String buildUserPrompt() {
+        return USER_PROMPT;
+    }
+
+    private String buildIdentitySection(ReflectionStateSnapshot state) {
+        return """
+                [Identity]
+                identity: %s
+                role_background: %s
+                role_personality: %s
+                """.formatted(
+                safeText(state.identity()),
+                safeText(state.roleBackground()),
+                safeText(state.rolePersonality())).trim();
+    }
+
+    private String buildStateSection(ReflectionStateSnapshot state) {
+        return """
+                [State Snapshot]
+                primary_emotion: %s
+                emotion_intensity: %s
+                familiarity: %s
+                player_address: %s
+                current_desire_tag: %s
+                current_desire_description: %s
+                favorability: %s
+                player_profile: %s
+                recap: %s
+                """.formatted(
+                safeText(state.primaryEmotion()),
+                safeNumber(state.emotionIntensity()),
+                safeNumber(state.familiarity()),
+                safeText(state.playerAddress()),
+                safeText(state.currentDesireTag()),
+                safeText(state.currentDesireDescription()),
+                safeNumber(state.favorability()),
+                safeText(state.playerProfile()),
+                safeText(state.recap())).trim();
+    }
+
+    private String buildRelevantPersonaSection(RelevantPersonaEntries relevantPersonaEntries) {
+        List<PersonaEntry> entries = relevantPersonaEntries == null ? List.of() : relevantPersonaEntries.entries();
+        if (entries == null || entries.isEmpty()) {
+            return "[Relevant Persona Entries]\n(none)";
+        }
+
+        StringBuilder builder = new StringBuilder("[Relevant Persona Entries]\n");
+        for (PersonaEntry entry : entries) {
+            if (entry == null) {
+                continue;
+            }
+            builder.append("- description: ").append(safeText(entry.getDescription())).append('\n');
+            builder.append("  focus_tags: ").append(entry.getFocusTags()).append('\n');
+            builder.append("  detail_tags: ").append(entry.getDetailTags()).append('\n');
+            builder.append("  always_recalled: ").append(entry.isAlwaysRecalled()).append('\n');
+        }
+        return builder.toString().trim();
+    }
+
+    private String buildRootOutputContractPrompt() {
+        JsonObject moduleProperties = new JsonObject();
+        JsonArray moduleRequired = new JsonArray();
+        for (ReflectionModule module : modules()) {
+            if (module == null) {
+                continue;
+            }
+            moduleProperties.add(module.moduleKey().wireName(), module.buildOutputContract());
+            moduleRequired.add(module.moduleKey().wireName());
+        }
+
+        JsonObject modulesContract = new JsonObject();
+        modulesContract.addProperty("type", "object");
+        modulesContract.add("required", moduleRequired);
+        modulesContract.add("properties", moduleProperties);
+
+        JsonObject rootProperties = new JsonObject();
+        rootProperties.add("modules", modulesContract);
+
+        JsonArray rootRequired = new JsonArray();
+        rootRequired.add("modules");
+
+        JsonObject rootContract = new JsonObject();
+        rootContract.addProperty("type", "object");
+        rootContract.add("required", rootRequired);
+        rootContract.add("properties", rootProperties);
+        return PRETTY_GSON.toJson(rootContract);
+    }
+
+    private JsonObject parseRootObject(String rawReply) {
+        if (rawReply == null || rawReply.isBlank()) {
+            throw new IllegalArgumentException("Reflection reply is empty");
+        }
+
+        JsonObject direct = tryParseJsonObject(rawReply.trim());
+        if (direct != null) {
+            return direct;
+        }
+
+        Matcher markdownMatcher = MARKDOWN_JSON.matcher(rawReply);
+        if (markdownMatcher.find()) {
+            JsonObject markdown = tryParseJsonObject(markdownMatcher.group(1).trim());
+            if (markdown != null) {
+                return markdown;
+            }
+        }
+
+        Matcher jsonMatcher = JSON_BLOCK.matcher(rawReply);
+        if (jsonMatcher.find()) {
+            JsonObject block = tryParseJsonObject(jsonMatcher.group().trim());
+            if (block != null) {
+                return block;
+            }
+        }
+
+        throw new IllegalArgumentException("Failed to parse reflection JSON root object from raw reply");
+    }
+
+    private JsonObject tryParseJsonObject(String candidate) {
+        try {
+            JsonElement root = JsonParser.parseString(candidate);
+            return root != null && root.isJsonObject() ? root.getAsJsonObject() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void applyModuleResults(
+            Map<ReflectionModuleKey, ReflectionModuleResult> parsedResults,
+            ReflectionTaskInput input,
+            AgentRuntime runtime) {
+        MemorySynthesisResult memorySynthesis = requireTypedResult(
+                parsedResults,
+                ReflectionModuleKey.MEMORY_SYNTHESIS,
+                MemorySynthesisResult.class);
+        PlayerProfileUpdateResult playerProfile = requireTypedResult(
+                parsedResults,
+                ReflectionModuleKey.PLAYER_PROFILE_UPDATE,
+                PlayerProfileUpdateResult.class);
+        RecapUpdateResult recap = requireTypedResult(
+                parsedResults,
+                ReflectionModuleKey.RECAP_UPDATE,
+                RecapUpdateResult.class);
+        FavorabilityUpdateResult favorability = requireTypedResult(
+                parsedResults,
+                ReflectionModuleKey.FAVORABILITY_UPDATE,
+                FavorabilityUpdateResult.class);
+        EmotionUpdateResult emotion = requireTypedResult(
+                parsedResults,
+                ReflectionModuleKey.EMOTION_UPDATE,
+                EmotionUpdateResult.class);
+
+        LTMEntry synthesizedMemory = buildSynthesizedMemoryEntry(input, memorySynthesis);
+        runtime.getMemory().addLTMRecord(synthesizedMemory);
+
+        AgentPersona persona = runtime.getPersona();
+        persona.setPlayerProfile(playerProfile.profileText());
+        persona.adjustFavorability(favorability.delta());
+
+        AgentState state = runtime.getState();
+        state.setPrimaryEmotionByName(emotion.emotion());
+        state.setEmotionIntensity(emotion.intensity());
+        state.setRecap(recap.recapText());
+    }
+
+    private boolean finalizeConsumedCleanupAndResolution(AgentMemory memory) {
+        MemorySourceMaterialCleanupResult cleanup = memory.cleanupEpisodeSynthesisConsumedSourceMaterial(signal);
+        if (cleanup.stale()) {
+            logTaskError("episode synthesis consumed cleanup became stale"
+                    + " regionId=" + signal.regionId());
+            return false;
+        }
+
+        if (!memory.getEpisodeTimelineStore().hasRegion(signal.regionId())) {
+            return true;
+        }
+        boolean resolved = memory.getEpisodeTimelineStore().markEpisodeSynthesisResolved(signal.regionId());
+        if (!resolved) {
+            logTaskNotice("failed to mark episode synthesis resolved"
+                    + " regionId=" + signal.regionId());
+            return false;
+        }
+        return true;
+    }
+
+    private void rollbackPendingRegion(AgentMemory memory) {
+        boolean rolledBack = memory.getEpisodeTimelineStore().rollbackEpisodeSynthesisToHolding(signal.regionId());
+        if (!rolledBack) {
+            logTaskNotice("failed to rollback episode synthesis region to holding"
+                    + " regionId=" + signal.regionId());
+        }
+    }
+
+    private LTMEntry buildSynthesizedMemoryEntry(
+            ReflectionTaskInput input,
+            MemorySynthesisResult memorySynthesis) {
+        List<ReflectionSegmentMaterial> selectedSegments = resolveSelectedSegments(input, memorySynthesis);
+        LinkedHashSet<FocusTag> focusTags = new LinkedHashSet<>();
+        LinkedHashSet<DetailTag> detailTags = new LinkedHashSet<>();
+        DetailTag semanticTimeTag = null;
+        ReflectionContextSnapshot anchorSnapshot = null;
+
+        for (ReflectionSegmentMaterial segment : selectedSegments) {
+            if (segment == null) {
+                continue;
+            }
+            if (anchorSnapshot == null) {
+                anchorSnapshot = segment.segmentSnapshot();
+            }
+
+            semanticTimeTag = absorbSnapshotTags(segment.segmentSnapshot(), focusTags, detailTags, semanticTimeTag);
+            for (TaggedContextEntry contextEntry : segment.localContextEntries()) {
+                if (contextEntry == null) {
+                    continue;
+                }
+                focusTags.addAll(contextEntry.getFocusTags());
+                semanticTimeTag = absorbDetailTags(contextEntry.getDetailTags(), detailTags, semanticTimeTag);
+            }
+            segment.playerActions().forEach(action -> {
+                if (action == null || action.actionType() == null) {
+                    return;
+                }
+                focusTags.addAll(action.actionType().getAllFocusTags());
+                detailTags.addAll(action.detailTags());
+            });
+            for (ReflectionInteraction interaction : segment.interactions()) {
+                if (interaction == null) {
+                    continue;
+                }
+                semanticTimeTag = absorbSnapshotTags(interaction.boundSnapshot(), focusTags, detailTags, semanticTimeTag);
+            }
+        }
+
+        if (focusTags.isEmpty()) {
+            focusTags.add(FocusTag.COMMON);
+        }
+
+        ReflectionContextSnapshot resolvedAnchor = anchorSnapshot == null
+                ? new ReflectionContextSnapshot(List.of(), Map.of())
+                : anchorSnapshot;
+
+        LTMEntry.Builder builder = LTMEntry.builder()
+                .sourceType(LTMEntry.SourceType.SYNTHESIZED)
+                .timestamp(System.currentTimeMillis())
+                .occurredGameTime(getContext().getGameTime())
+                .occurredDayIndex(getContext().getDayIndex())
+                .occurredTimeOfDayTick(getContext().getTimeOfDayTick())
+                .description(memorySynthesis.ltmText())
+                .importance(memorySynthesis.importance() != null
+                        ? memorySynthesis.importance()
+                        : DEFAULT_SYNTHESIZED_MEMORY_IMPORTANCE)
+                .focusTags(focusTags)
+                .detailTags(detailTags)
+                .semanticTimeLabel(resolveSemanticTimeLabel(resolvedAnchor))
+                .dimensionId(blankToNull(resolvedAnchor.contextExtras().get("dimension")))
+                .biomeId(blankToNull(resolvedAnchor.contextExtras().get("biome")))
+                .raining(inferRaining(detailTags));
+
+        if (semanticTimeTag != null) {
+            builder.semanticTimeTag(semanticTimeTag);
+        }
+        return builder.build();
+    }
+
+    private List<ReflectionSegmentMaterial> resolveSelectedSegments(
+            ReflectionTaskInput input,
+            MemorySynthesisResult memorySynthesis) {
+        List<ReflectionSegmentMaterial> allSegments = input.material().segments();
+        java.util.ArrayList<ReflectionSegmentMaterial> selected = new java.util.ArrayList<>();
+        for (Integer index : memorySynthesis.selectedSegmentIndices()) {
+            if (index == null || index < 0 || index >= allSegments.size()) {
+                continue;
+            }
+            selected.add(allSegments.get(index));
+        }
+        return List.copyOf(selected);
+    }
+
+    private DetailTag absorbSnapshotTags(
+            ReflectionContextSnapshot snapshot,
+            Set<FocusTag> focusTags,
+            Set<DetailTag> detailTags,
+            DetailTag semanticTimeTag) {
+        if (snapshot == null) {
+            return semanticTimeTag;
+        }
+        for (TaggedContextEntry entry : snapshot.visibleContexts()) {
+            if (entry == null) {
+                continue;
+            }
+            focusTags.addAll(entry.getFocusTags());
+            semanticTimeTag = absorbDetailTags(entry.getDetailTags(), detailTags, semanticTimeTag);
+        }
+        return semanticTimeTag;
+    }
+
+    private DetailTag absorbDetailTags(
+            Set<DetailTag> sourceTags,
+            Set<DetailTag> detailTags,
+            DetailTag semanticTimeTag) {
+        if (sourceTags == null || sourceTags.isEmpty()) {
+            return semanticTimeTag;
+        }
+        DetailTag resolvedSemantic = semanticTimeTag;
+        for (DetailTag detailTag : sourceTags) {
+            if (detailTag == null) {
+                continue;
+            }
+            if (resolvedSemantic == null && isSemanticTimeTagCandidate(detailTag)) {
+                resolvedSemantic = detailTag;
+                continue;
+            }
+            detailTags.add(detailTag);
+        }
+        return resolvedSemantic;
+    }
+
+    private boolean isSemanticTimeTagCandidate(DetailTag detailTag) {
+        return detailTag != null
+                && DetailTag.CUSTOM_SPECIFIC.equals(detailTag.getPrefix())
+                && detailTag.getValue().startsWith("time_");
+    }
+
+    private String resolveSemanticTimeLabel(ReflectionContextSnapshot anchorSnapshot) {
+        if (anchorSnapshot != null) {
+            String timeDesc = blankToNull(anchorSnapshot.contextExtras().get("time_desc"));
+            if (timeDesc != null) {
+                return timeDesc;
+            }
+        }
+        return null;
+    }
+
+    private Boolean inferRaining(Set<DetailTag> detailTags) {
+        for (DetailTag detailTag : detailTags) {
+            if (detailTag == null || !DetailTag.CUSTOM_SPECIFIC.equals(detailTag.getPrefix())) {
+                continue;
+            }
+            if ("weather_rain".equals(detailTag.getValue()) || "weather_thunder".equals(detailTag.getValue())) {
+                return true;
+            }
+            if ("weather_clear".equals(detailTag.getValue())) {
+                return false;
+            }
+        }
+        return null;
+    }
+
+    private <T extends ReflectionModuleResult> T requireTypedResult(
+            Map<ReflectionModuleKey, ReflectionModuleResult> parsedResults,
+            ReflectionModuleKey key,
+            Class<T> expectedType) {
+        ReflectionModuleResult result = parsedResults.get(key);
+        if (!expectedType.isInstance(result)) {
+            throw new IllegalStateException("Missing or invalid reflection module result: " + key);
+        }
+        return expectedType.cast(result);
+    }
+
+    private void logTaskNotice(String message) {
+        AgentLogger.logDebug(message);
+        System.out.println(TASK_LOG_PREFIX + message);
+    }
+
+    private void logTaskError(String message) {
+        AgentLogger.logError(message, null);
+        System.err.println(TASK_LOG_PREFIX + message);
+    }
+
+    private String safeText(String value) {
+        return value == null || value.isBlank() ? "(none)" : value.trim();
+    }
+
+    private String safeNumber(Number value) {
+        return value == null ? "(none)" : value.toString();
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static AgentContext buildContext(
+            EpisodeSynthesisTriggerSignal signal,
+            long currentGameTime,
+            long currentDayIndex,
+            long currentTimeOfDayTick) {
         Objects.requireNonNull(signal, "signal");
         return AgentContext.builder()
                 .timestamp(System.currentTimeMillis())
+                .gameTime(currentGameTime)
+                .dayIndex(currentDayIndex)
+                .timeOfDayTick(currentTimeOfDayTick)
                 .triggerSource(SOURCE_NAME)
                 .extra("episode_region_id", Long.toString(signal.regionId()))
                 .extra("episode_region_start_segment_id", Long.toString(signal.regionStartSegmentId()))

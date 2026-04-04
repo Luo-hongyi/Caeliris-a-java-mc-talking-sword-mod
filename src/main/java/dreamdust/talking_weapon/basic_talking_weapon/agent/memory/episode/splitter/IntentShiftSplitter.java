@@ -31,13 +31,12 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
     public List<EpisodePendingMark> detect(EpisodeDetectContext context) {
         EpisodeTimeline timeline = context == null ? null : context.timeline();
         FixedActionSegment latestSegment = context == null ? null : context.latestSegment();
-        int latestTimelineIndex = context == null ? -1 : context.latestTimelineIndex();
         if (timeline == null || latestSegment == null) {
             return List.of();
         }
 
         EpisodeRegion currentRegion = timeline.latestRegion();
-        if (currentRegion == null || currentRegion.segmentCount() < MIN_REGION_SEGMENTS_BEFORE_SHIFT) {
+        if (currentRegion == null || timeline.segmentCountOf(currentRegion) < MIN_REGION_SEGMENTS_BEFORE_SHIFT) {
             return List.of();
         }
 
@@ -52,11 +51,13 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
             return List.of();
         }
 
+        long splitLeftSegmentId = timeline.segmentCount() <= 0
+                ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID
+                : timeline.getSegmentId(timeline.segmentCount() - 1);
         return List.of(EpisodePendingMark.fromRuntimeConfig(
-                timeline,
-                latestTimelineIndex,
                 latestSegment.getSegmentId(),
-                latestTimelineIndex,
+                splitLeftSegmentId,
+                latestSegment.getSegmentId(),
                 latestSegment.getStartTimestamp(),
                 reason,
                 id()));
@@ -75,22 +76,29 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
     public Optional<EpisodeSplitPoint> confirm(
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
-            FixedActionSegment latestSegment,
-            int latestTimelineIndex) {
+            FixedActionSegment latestSegment) {
         if (timeline == null || pendingMark == null || latestSegment == null || !supports(pendingMark)) {
             return Optional.empty();
         }
 
-        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitTimelineIndex());
-        if (previousRegion == null || previousRegion.segmentCount() < MIN_REGION_SEGMENTS_BEFORE_SHIFT) {
+        EpisodeRegion previousRegion = timeline.regionBeforeBoundary(
+                pendingMark.splitLeftSegmentId(),
+                pendingMark.splitRightSegmentId());
+        if (previousRegion == null || timeline.segmentCountOf(previousRegion) < MIN_REGION_SEGMENTS_BEFORE_SHIFT) {
             return Optional.empty();
         }
 
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds = timeline.resolveBoundarySegmentIds(
+                pendingMark.splitLeftSegmentId(),
+                pendingMark.splitRightSegmentId());
+        if (boundarySegmentIds.rightSegmentId() <= 0L) {
+            return Optional.empty();
+        }
         EpisodeIntentProfile nextProfile = EpisodeIntentMath.deriveProfile(
                 EpisodeIntentMath.aggregateScores(
-                        timeline.segments(),
-                        pendingMark.splitTimelineIndex(),
-                        latestTimelineIndex));
+                        timeline,
+                        boundarySegmentIds.rightSegmentId(),
+                        latestSegment.getSegmentId()));
         EpisodeSplitReason confirmedReason = classifyShift(previousRegion, nextProfile);
         if (confirmedReason == null) {
             return Optional.empty();
@@ -100,15 +108,10 @@ public final class IntentShiftSplitter implements EpisodeSplitter {
             return Optional.empty();
         }
 
-        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
-                timeline.boundarySegmentIdsAt(pendingMark.splitTimelineIndex());
-
         return Optional.of(new EpisodeSplitPoint(
-                pendingMark.splitTimelineIndex(),
                 boundarySegmentIds.leftSegmentId(),
                 boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
-                latestTimelineIndex,
                 latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 confirmedReason,

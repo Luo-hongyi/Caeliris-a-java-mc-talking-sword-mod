@@ -88,38 +88,40 @@
 
 #### C. Episode timeline 位置坐标
 
-这一套坐标来自当前 `EpisodeTimeline.segments()` list 的位置。
+这套坐标原本来自 `EpisodeTimeline.segments()` list 的位置。
 
-它已经扩散到：
+这一层现在已经被收缩为“局部实现细节”，不再作为正式业务坐标外泄。
+
+已经完成清理的正式结构：
 
 - `EpisodePendingMark`
-  - `detectedAtTimelineIndex`
-  - `splitTimelineIndex`
-  - `confirmAtTimelineIndex`
+  - 已改为：
+    - `detectedAtSegmentId`
+    - `splitLeftSegmentId`
+    - `splitRightSegmentId`
+    - `confirmAtSegmentId`
 - `EpisodeSplitPoint`
-  - `splitTimelineIndex`
-  - `confirmationTimelineIndex`
+  - 已改为：
+    - `splitLeftSegmentId`
+    - `splitRightSegmentId`
+    - `confirmationSegmentId`
 - `EpisodeRegion`
-  - `startSegmentIndex`
-  - `endSegmentIndex`
+  - 已改为：
+    - `startSegmentId`
+    - `endSegmentId`
 - `EpisodeTracker`
-  - detect / confirm / cleanup / rebuild 的内部比较
-- `EpisodeTimeline`
-  - `getSegment(segmentIndex)`
-  - `sliceSegments(startInclusive, endInclusive)`
+  - detect / confirm / cleanup / rebuild 的正式比较已切到 `segmentId`
 
-它本来的合理用途其实只有：
+当前仍允许保留 index 的地方只有：
 
 - 当前一轮 tracker 内部计算
 - 当前 timeline 的局部顺序比较
 
-它当前被误用的地方在于：
+而这些 index 现在的约束是：
 
-- 被当成 region 的正式边界身份
-- 被带进 signal
-- 被带进 reflection material request
-
-这才是中间 region 删除时会整体漂移的直接根源。
+- 不进入正式持久化结构
+- 不跨模块流转
+- 不跨异步任务边界泄露
 
 #### D. Reflection 异步引用坐标
 
@@ -144,7 +146,7 @@
 这意味着：
 
 - “异步 task 因 index 漂移而读错 segment” 这一层已经被切掉
-- 但“异步 task 执行时引用的 segment 已被 owner 清理掉”这个问题仍然存在
+- 但“异步 task 执行时引用的 segment 已被 owner 正式清理掉”这个问题仍然存在
 - 这个剩余问题后续要靠：
   - source material cleanup plan
   - owner-side task cancel / consume / stale check
@@ -152,19 +154,18 @@
 
 #### E. 伪稳定 identity
 
-当前还有一个容易误判的点：
+这一点现在也已经完成修复：
 
 - `EpisodeRegion.regionId` 看起来像稳定 identity
-- 但它当前的推导仍然混入了 `startSegmentIndex / endSegmentIndex`
+- 现在它的推导只混入：
+  - `startSegmentId / endSegmentId`
+  - `startTimestamp / endTimestamp`
 
-这意味着：
-
-- `regionId` 已经比纯 index 好很多
-- 但还没有彻底摆脱当前位置坐标的污染
+因此 `regionId` 已经摆脱了 timeline index 污染。
 
 ### 2.2 现在混在一起的其实是两种不同语义
 
-当前代码里的 `segmentIndex` 同时承担了两种语义：
+当前代码里的 `segmentIndex` 曾同时承担两种语义：
 
 1. 当前内存数组中的临时位置
    - 例如 `segments.get(i)` 里的 `i`
@@ -176,46 +177,38 @@
    - signal 引用它
    - reflection material request 引用它
 
-问题就在这里：
+之前的问题就在这里：
 
 - “当前数组位置”不是稳定 identity
 - 一旦中间物理删除，它就会整体漂移
 
 ### 2.3 一旦中间删除，漂移会直接打坏哪些东西
 
-当前直接依赖 segment index 的正式结构包括：
+这一批正式结构现在已经完成拔除：
 
-- `EpisodePendingMark`
-  - `detectedAtTimelineIndex`
-  - `splitTimelineIndex`
-  - `confirmAtTimelineIndex`
-- `EpisodeSplitPoint`
-  - `splitTimelineIndex`
-  - `confirmationTimelineIndex`
-- `EpisodeRegion`
-  - `startSegmentIndex`
-  - `endSegmentIndex`
-  - 当前 `regionId` 也混入了 index 推导
+- `EpisodePendingMark.*TimelineIndex`
+- `EpisodeSplitPoint.*TimelineIndex`
+- `EpisodeRegion.startSegmentIndex / endSegmentIndex`
+- `regionId` 中的 index 推导
 
-因此，如果直接删除中间 region，对后续会造成四类破坏：
+因此，坐标问题当前已经从“正式状态整体漂移”收缩为更小的一层：
 
-1. 后面的 region / split / pending mark 坐标整体失效
-2. 已经发出去但尚未消费的 signal / cleanup plan 会变成 stale 引用
-3. 已入队但尚未执行的 reflection task 会在 exporter 阶段因为 segmentId 不存在而 fail fast
-4. runtime 持久化中的 region state 会和当前内存 timeline 脱节
+1. 已发出的异步任务在执行时，引用 material 可能已经被 owner 清理
+2. cleanup / consume 可能遇到旧票据
+3. task-local 局部 index 仍需要保持只在单次计算内使用
 
 ### 2.4 当前“统一”的目标到底是什么
 
-这里需要把目标说得更精确一些。
+这一阶段的目标已经基本完成。
 
-我们说“将所有的 segment index 体系重构为统一的，并且可持久化的”，真正意思不是：
+现在更准确的后续目标不是：
 
-- 把系统里所有位置字段都强行合并成一个 `int`
+- 继续拔除所有局部实现里的 index 变量
 
 而是：
 
 - 所有跨模块、跨异步、跨持久化边界的正式引用
-  - 统一到一套 `SegmentCoordinate`
+  - 已统一到绝对 `segmentId` 家族
 - 所有只服务局部算法的当前位置值
   - 保留为临时位置坐标
   - 但不再伪装成正式 identity

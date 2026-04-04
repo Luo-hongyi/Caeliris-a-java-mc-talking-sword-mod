@@ -28,7 +28,7 @@ public final class StudioEpisodeTuningFile {
 
     public static final String FILENAME = "episode_tuning.json";
     public static final String VERSION_KEY = "episodeTuning";
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     private StudioEpisodeTuningFile() {
     }
@@ -83,6 +83,7 @@ public final class StudioEpisodeTuningFile {
         EpisodeTuningFileModel safeFile = file != null ? file : createCurrentModel();
         safeFile.normalize();
         EpisodeRuntimeSettings.setFallbackQuietWindowSegments(safeFile.fallbackQuietWindowSegments);
+        EpisodeRuntimeSettings.setSignalHoldbackRegionCount(safeFile.signalHoldbackRegionCount);
         EpisodeRuntimeSettings.setEmptyStmRejectProbability(safeFile.emptyStmRejectProbability);
 
         LinkedHashMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> configs =
@@ -101,6 +102,7 @@ public final class StudioEpisodeTuningFile {
         EpisodeTuningFileModel file = new EpisodeTuningFileModel();
         file.generatedAt = OffsetDateTime.now().toString();
         file.fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
+        file.signalHoldbackRegionCount = EpisodeRuntimeSettings.getSignalHoldbackRegionCount();
         file.emptyStmRejectProbability = EpisodeRuntimeSettings.getEmptyStmRejectProbability();
         file.reasons = createReasonModels(EpisodeRuntimeSettings.snapshotConfigs());
         file.normalize();
@@ -140,6 +142,7 @@ public final class StudioEpisodeTuningFile {
         if (file == null
                 || file.schemaVersion < SCHEMA_VERSION
                 || file.reasons == null
+                || file.signalHoldbackRegionCount < 0
                 || file.emptyStmRejectProbability == null) {
             return true;
         }
@@ -155,6 +158,7 @@ public final class StudioEpisodeTuningFile {
         public int schemaVersion = SCHEMA_VERSION;
         public String generatedAt = "";
         public int fallbackQuietWindowSegments = EpisodeRuntimeSettings.getFallbackQuietWindowSegments();
+        public int signalHoldbackRegionCount = EpisodeRuntimeSettings.getSignalHoldbackRegionCount();
         public Double emptyStmRejectProbability = EpisodeRuntimeSettings.getEmptyStmRejectProbability();
         public LinkedHashMap<String, EpisodeReasonTuningFileModel> reasons =
                 createReasonModels(EpisodeRuntimeSettings.snapshotConfigs());
@@ -167,6 +171,7 @@ public final class StudioEpisodeTuningFile {
                 generatedAt = "";
             }
             fallbackQuietWindowSegments = Math.max(1, Math.min(64, fallbackQuietWindowSegments));
+            signalHoldbackRegionCount = Math.max(0, Math.min(64, signalHoldbackRegionCount));
             double safeRejectProbability = emptyStmRejectProbability == null
                     ? EpisodeRuntimeSettings.DEFAULT_EMPTY_STM_REJECT_PROBABILITY
                     : emptyStmRejectProbability;

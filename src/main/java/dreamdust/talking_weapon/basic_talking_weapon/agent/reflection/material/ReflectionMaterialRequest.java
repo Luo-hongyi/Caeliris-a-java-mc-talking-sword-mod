@@ -5,6 +5,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.Episod
 
 /**
  * Reflection task 对 material 的读取请求。
+ * <p>
+ * 正式时间范围语义固定为 `[startTimestamp, endTimestamp)`。
  */
 public record ReflectionMaterialRequest(
         ReflectionScope scope,
@@ -72,13 +74,8 @@ public record ReflectionMaterialRequest(
                 endSegmentId,
                 startTimestamp,
                 endTimestamp,
-                exclusiveUpperBoundAfter(endTimestamp),
+                endTimestamp,
                 stmSliceStartTimestamp,
                 stmSliceExclusiveTimestamp);
-    }
-
-    private static long exclusiveUpperBoundAfter(long inclusiveTimestamp) {
-        long safeInclusive = Math.max(0L, inclusiveTimestamp);
-        return safeInclusive == Long.MAX_VALUE ? Long.MAX_VALUE : safeInclusive + 1L;
     }
 }

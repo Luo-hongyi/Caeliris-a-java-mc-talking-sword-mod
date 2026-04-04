@@ -2,6 +2,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.trigger.BiomeChangeTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentSensor;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSemantics;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.internal.EpisodeSynthesisInternalTrigger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionRecord;
@@ -131,6 +133,8 @@ public class TickEventWatcher {
             new RegisteredLocationBoundaryTracker();
     private final MajorStructureBoundaryTracker majorStructureBoundaryTracker =
             new MajorStructureBoundaryTracker();
+    private final EpisodeSynthesisInternalTrigger episodeSynthesisInternalTrigger =
+            new EpisodeSynthesisInternalTrigger();
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
@@ -174,6 +178,16 @@ public class TickEventWatcher {
 
         // ── 发呆检测 ──
         checkIdle(now);
+
+        // ── episode synthesis internal trigger ──
+        long currentGameTime = level.getGameTime();
+        boolean submittedEpisodeSynthesis = episodeSynthesisInternalTrigger.submitReadySignals(
+                currentGameTime,
+                WorldTimeSemantics.dayIndex(currentGameTime),
+                WorldTimeSemantics.timeOfDay(level.getDayTime()));
+        if (submittedEpisodeSynthesis) {
+            episodeTimelineSnapshotDirty = true;
+        }
 
         flushStudioRuntimeSnapshotsIfDirty(memoryOfRuntime());
     }

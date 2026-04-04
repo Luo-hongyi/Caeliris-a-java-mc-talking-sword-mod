@@ -18,7 +18,7 @@ public record ReflectionStateSnapshot(
         String currentDesireDescription,
         Integer favorability,
         String playerProfile,
-        String currentSituationSummary) {
+        String recap) {
 
     public ReflectionStateSnapshot {
         identity = identity == null ? "" : identity;
@@ -29,6 +29,6 @@ public record ReflectionStateSnapshot(
         currentDesireTag = currentDesireTag == null ? "" : currentDesireTag;
         currentDesireDescription = currentDesireDescription == null ? "" : currentDesireDescription;
         playerProfile = playerProfile == null ? "" : playerProfile;
-        currentSituationSummary = currentSituationSummary == null ? "" : currentSituationSummary;
+        recap = recap == null ? "" : recap;
     }
 }

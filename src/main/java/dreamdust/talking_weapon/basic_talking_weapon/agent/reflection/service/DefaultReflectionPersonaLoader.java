@@ -1,6 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionPlayerAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentMaterial;
@@ -64,6 +67,8 @@ public final class DefaultReflectionPersonaLoader implements ReflectionPersonaLo
             if (segment == null) {
                 continue;
             }
+            collectSnapshotDetailTags(segment.segmentSnapshot(), tags);
+            segment.localContextEntries().forEach(entry -> collectContextEntryDetailTags(entry, tags));
             for (ReflectionPlayerAction action : segment.playerActions()) {
                 if (action == null) {
                     continue;
@@ -74,7 +79,31 @@ public final class DefaultReflectionPersonaLoader implements ReflectionPersonaLo
                     }
                 }
             }
+            for (ReflectionInteraction interaction : segment.interactions()) {
+                if (interaction == null) {
+                    continue;
+                }
+                collectSnapshotDetailTags(interaction.boundSnapshot(), tags);
+            }
         }
         return tags;
+    }
+
+    private void collectSnapshotDetailTags(ReflectionContextSnapshot snapshot, Set<String> tags) {
+        if (snapshot == null || tags == null) {
+            return;
+        }
+        snapshot.visibleContexts().forEach(entry -> collectContextEntryDetailTags(entry, tags));
+    }
+
+    private void collectContextEntryDetailTags(TaggedContextEntry entry, Set<String> tags) {
+        if (entry == null || tags == null) {
+            return;
+        }
+        for (DetailTag detailTag : entry.getDetailTags()) {
+            if (detailTag != null) {
+                tags.add(detailTag.toString());
+            }
+        }
     }
 }

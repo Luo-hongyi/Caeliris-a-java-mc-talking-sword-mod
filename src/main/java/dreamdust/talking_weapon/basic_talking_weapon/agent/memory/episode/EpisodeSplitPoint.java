@@ -7,11 +7,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.splitt
  * Episode v2 中的正式分割点。
  */
 public record EpisodeSplitPoint(
-        int splitTimelineIndex,
         long splitLeftSegmentId,
         long splitRightSegmentId,
         long splitTimestamp,
-        int confirmationTimelineIndex,
         long confirmationSegmentId,
         long confirmationTimestamp,
         EpisodeSplitReason reason,
@@ -21,27 +19,26 @@ public record EpisodeSplitPoint(
         PlayerIntent nextSecondaryIntent) {
 
     public EpisodeSplitPoint {
-        if (splitTimelineIndex < 0) {
-            throw new IllegalArgumentException("splitTimelineIndex must be >= 0");
+        if (splitLeftSegmentId <= 0L && splitRightSegmentId <= 0L) {
+            throw new IllegalArgumentException("split boundary must reference at least one segment id");
         }
-        if (confirmationTimelineIndex < 0) {
-            throw new IllegalArgumentException("confirmationTimelineIndex must be >= 0");
+    }
+
+    public long splitAnchorSegmentId() {
+        if (splitRightSegmentId > 0L) {
+            return splitRightSegmentId;
         }
+        if (splitLeftSegmentId > 0L) {
+            return splitLeftSegmentId + 1L;
+        }
+        return EpisodeTimeline.UNASSIGNED_SEGMENT_ID;
     }
 
     public boolean sameAnchor(EpisodeSplitPoint other) {
         if (other == null) {
             return false;
         }
-        boolean hasStableBoundaryIds = splitLeftSegmentId > 0L || splitRightSegmentId > 0L;
-        boolean otherHasStableBoundaryIds = other.splitLeftSegmentId > 0L || other.splitRightSegmentId > 0L;
-        if (hasStableBoundaryIds && otherHasStableBoundaryIds) {
-            return splitLeftSegmentId == other.splitLeftSegmentId
-                    && splitRightSegmentId == other.splitRightSegmentId
-                    && splitTimestamp == other.splitTimestamp
-                    && reason == other.reason;
-        }
-        return splitTimelineIndex == other.splitTimelineIndex
+        return splitAnchorSegmentId() == other.splitAnchorSegmentId()
                 && splitTimestamp == other.splitTimestamp
                 && reason == other.reason;
     }

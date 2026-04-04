@@ -14,6 +14,7 @@ import java.util.Map;
 public final class EpisodeRuntimeSettings {
 
     public static final int DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS = 8;
+    public static final int DEFAULT_SIGNAL_HOLDBACK_REGION_COUNT = 2;
     public static final double DEFAULT_EMPTY_STM_REJECT_PROBABILITY = 0.0D;
 
     private static final EnumMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> DEFAULT_CONFIGS =
@@ -21,6 +22,7 @@ public final class EpisodeRuntimeSettings {
     private static final EnumMap<EpisodeSplitReason, EpisodeReasonRuntimeConfig> runtimeConfigs =
             new EnumMap<>(EpisodeSplitReason.class);
     private static volatile int fallbackQuietWindowSegments = DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS;
+    private static volatile int signalHoldbackRegionCount = DEFAULT_SIGNAL_HOLDBACK_REGION_COUNT;
     private static volatile double emptyStmRejectProbability = DEFAULT_EMPTY_STM_REJECT_PROBABILITY;
 
     static {
@@ -63,6 +65,7 @@ public final class EpisodeRuntimeSettings {
             runtimeConfigs.put(reason, copyConfig(DEFAULT_CONFIGS.get(reason)));
         }
         fallbackQuietWindowSegments = DEFAULT_FALLBACK_QUIET_WINDOW_SEGMENTS;
+        signalHoldbackRegionCount = DEFAULT_SIGNAL_HOLDBACK_REGION_COUNT;
         emptyStmRejectProbability = DEFAULT_EMPTY_STM_REJECT_PROBABILITY;
     }
 
@@ -72,6 +75,14 @@ public final class EpisodeRuntimeSettings {
 
     public static void setFallbackQuietWindowSegments(int value) {
         fallbackQuietWindowSegments = clampInt(value, 1, 64);
+    }
+
+    public static int getSignalHoldbackRegionCount() {
+        return signalHoldbackRegionCount;
+    }
+
+    public static void setSignalHoldbackRegionCount(int value) {
+        signalHoldbackRegionCount = clampInt(value, 0, 64);
     }
 
     public static double getEmptyStmRejectProbability() {

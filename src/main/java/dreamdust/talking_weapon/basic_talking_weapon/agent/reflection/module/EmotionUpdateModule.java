@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionTaskInput;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
@@ -18,7 +19,7 @@ public final class EmotionUpdateModule extends ReflectionModule {
     public String buildInstructionPrompt(ReflectionTaskInput input) {
         String currentEmotion = input == null ? "" : input.state().primaryEmotion();
         Integer currentIntensity = input == null ? null : input.state().emotionIntensity();
-        return """
+        String basePrompt = """
                 你负责 `emotion_update` 模块。
                 目标：
                 - 基于本次 reflection material 更新剑当前的主导情绪与强度
@@ -32,6 +33,11 @@ public final class EmotionUpdateModule extends ReflectionModule {
                 """.formatted(
                 currentEmotion == null || currentEmotion.isBlank() ? "unknown" : currentEmotion,
                 currentIntensity == null ? "unknown" : currentIntensity).trim();
+        String emotionGuide = PromptRegistry.getInstance().getEmotionTypeDescription();
+        if (emotionGuide == null || emotionGuide.isBlank()) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\n" + emotionGuide.trim();
     }
 
     @Override

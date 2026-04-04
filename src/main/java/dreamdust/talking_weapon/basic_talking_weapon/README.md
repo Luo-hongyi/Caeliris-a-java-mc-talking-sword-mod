@@ -17,7 +17,7 @@
 - `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
 - 全局植入记忆 (`implanted memories`) 的读写链路可用。
 - 植入记忆支持独立的 `semantic_time_tag`：它会参与记忆之间的联想边，并在 Prompt 中以独立时间语义输出，但不会并入普通 `detail_tags` 的 cue 列表。
-- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。旧版 `ReflectionTask` / `ReflectionTrigger` 已经从代码中移除；当前新的 reflection 主线骨架已经落到 `AbstractReflectionTask + EpisodeSynthesisReflectionTask + fixed modules`，但 episode gate、后台入队、单次 LLM 调用与 task-owned commit 还没有正式接起。
+- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。旧版 `ReflectionTask` / `ReflectionTrigger` 已经从代码中移除；当前新的 reflection 主线已经落到 `AbstractReflectionTask + EpisodeSynthesisReflectionTask + fixed modules`，并已接起 episode gate、后台入队、单次 LLM 调用与第一版 task-owned commit。`recap_update` 现在已经写回 `AgentState.recap`，语义上作为“阶段性前情提要”存在；当前主要剩余工作转为 synthesized LTM 的 tag / 时间锚点质量继续收紧。
 
 ## ✨ 核心特性
 
@@ -191,7 +191,8 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 - `nostalgia` 目前保留在 `AgentState` 中，但暂未接入 recall 公式；植入记忆保底仍然是独立开关。
 - 植入记忆保底现在是独立开关：当 `agent_state.json.state.implanted_memory_safety_net = true` 且本轮正常召回没有命中任何 `occurredGameTime < 0` 的植入记忆时，系统会复用本轮总 cue 池，对符合条件的植入记忆做一次轻量加权保底，最多额外补入 1 条。
 - `LTMEntry` 现在会长期存储拆分后的时间锚点（`occurredDayIndex + occurredTimeOfDayTick`），并在运行时重建内部 `occurredGameTime`；召回老化只按游戏内时间推进，不再依赖现实时钟。
-- 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，Prompt 中会单独显示为“时间语义”。
+- synthesized LTM 现在会在 reflection task 提交时写入正式游戏内时间坐标；默认时间文案也优先由这组正式时间坐标生成，不再依赖 `semantic_time_tag` 兜底。
+- 若某条记忆存在独立的 `semantic_time_tag`，它会进入内部联想图，作为记忆之间的额外语义边；但它不会并入普通 `detail_tags`，也不是 synthesized LTM 的结构性必填字段。
 - 长期记忆只会从当前 `visibleContexts` 起跳，不会反向解锁未被 booster 提升的隐藏 `ContextEntry`。
 - `RecallPreset.CUSTOM` 的具体参数优先读取 `agent_state.json.state.recall_tuning`，目前包含 `main_candidates_per_cue`、`sandbox_cues_per_memory`、`conscious_memory_cap`、`retention_memory_cap` 四项；若该段缺失，则回退到 `memory_recall_tuning.json` / `TalkingWeaponConfig` 中的默认值。
 - recall 公式参数现在以 Studio workspace 中的 `memory_recall_tuning.json` 为 authored 真源；游戏内 config screen 不再直接暴露这一组细粒度公式参数。
@@ -200,8 +201,9 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 
 - 旧版 `ReflectionTask` / `ReflectionTrigger` 路线已经删除，不再作为过渡实现保留。
 - 旧 `EpisodeSynthesisTask` / `DebugEpisodeSynthesisTask` / 内部 trigger 接线也已经清除，不再作为当前入口保留。
-- 当前 reflection 已经按 `REFLECTION_MAINLINE_REFACTOR_PLAN.md` 落下第一版骨架：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 已存在，`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`current_situation_update`、`favorability_update`、`emotion_update` 五个 modules。
-- 但这条链路还没有接回 `EpisodeTimelineStore` 的 gate，也还没有正式调用 `AgentRuntime.submitBackground(...)` 入后台队列；当前 `executePreparedTask(...)` 仍停在 prepared skeleton 阶段，因此当前阶段仍不能视为“LTM 生成系统已完成”。
+- 当前 reflection 已经按 `REFLECTION_MAINLINE_REFACTOR_PLAN.md` 落下第一版骨架：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 已存在，`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`recap_update`、`favorability_update`、`emotion_update` 五个 modules。
+- action 侧旧的高频 `favorability_update` 动作已经拆除；当前好感度更新只保留 reflection 侧的低频主线。
+- 这条链路现在已经接回 `EpisodeTimelineStore` gate、internal trigger 和共享后台队列；`executePreparedTask(...)` 也已经能完成单次 LLM 调用、module parse / validate、第一版 owner-side commit 以及 consumed cleanup / resolved。`recap_update` 现在会写回 `AgentState.recap`，作为低频“前情提要”而非即时状态；当前仍不能视为“LTM 生成系统已完成”，主要是因为 synthesized LTM 的 tag / 时间锚点质量仍需继续打磨。
 - 当前开发的关键缺口是：构建一个与新召回方案对齐的 LTM 生成闭环，包括何时结算、如何从 episode / STM 提炼 detail tags / focus tags、如何控制植入与生成记忆的质量边界，以及如何与 persona / favorability 的低频更新协同。
 
 ### 显示机制

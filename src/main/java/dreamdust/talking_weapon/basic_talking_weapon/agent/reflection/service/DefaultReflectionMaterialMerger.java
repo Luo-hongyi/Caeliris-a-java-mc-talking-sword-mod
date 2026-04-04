@@ -22,9 +22,10 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
     private static final Comparator<ReflectionSegmentEvent> EVENT_ORDER =
             Comparator.comparingLong(ReflectionSegmentEvent::timestamp)
                     .thenComparingInt(event -> switch (event.type()) {
-                        case SEGMENT_START_SNAPSHOT -> 0;
-                        case PLAYER_ACTION -> 1;
-                        case AGENT_INTERACTION -> 2;
+                        case SEGMENT_SNAPSHOT -> 0;
+                        case LOCAL_STM_CONTEXT -> 1;
+                        case PLAYER_ACTION -> 2;
+                        case AGENT_INTERACTION -> 3;
                     });
 
     @Override
@@ -38,14 +39,23 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
             }
             List<ReflectionSegmentEvent> timelineEvents = new ArrayList<>();
             timelineEvents.add(new ReflectionSegmentEvent(
-                    ReflectionSegmentEventType.SEGMENT_START_SNAPSHOT,
+                    ReflectionSegmentEventType.SEGMENT_SNAPSHOT,
                     rawSegment.startTimestamp(),
-                    rawSegment.startSnapshot(),
+                    rawSegment.segmentSnapshot(),
+                    null,
                     null,
                     null));
+            rawSegment.localContextEntries().forEach(contextEntry -> timelineEvents.add(new ReflectionSegmentEvent(
+                    ReflectionSegmentEventType.LOCAL_STM_CONTEXT,
+                    contextEntry.getTimestamp(),
+                    null,
+                    contextEntry,
+                    null,
+                    null)));
             rawSegment.playerActions().forEach(action -> timelineEvents.add(new ReflectionSegmentEvent(
                     ReflectionSegmentEventType.PLAYER_ACTION,
                     action.timestamp(),
+                    null,
                     null,
                     action,
                     null)));
@@ -53,6 +63,7 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
                     ReflectionSegmentEventType.AGENT_INTERACTION,
                     interaction.timestamp(),
                     interaction.boundSnapshot(),
+                    null,
                     null,
                     interaction)));
             timelineEvents.sort(EVENT_ORDER);
@@ -62,7 +73,8 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
                     rawSegment.segmentId(),
                     rawSegment.startTimestamp(),
                     rawSegment.endTimestamp(),
-                    rawSegment.startSnapshot(),
+                    rawSegment.segmentSnapshot(),
+                    rawSegment.localContextEntries(),
                     rawSegment.playerActions(),
                     rawSegment.interactions(),
                     timelineEvents));

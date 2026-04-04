@@ -49,6 +49,6 @@ public class RightClickTrigger implements IAgentTrigger {
 
     @Override
     public List<String> getEnabledActions() {
-        return java.util.List.of("speech", "inner_monologue", "favorability_update");
+        return java.util.List.of("speech", "inner_monologue");
     }
 }

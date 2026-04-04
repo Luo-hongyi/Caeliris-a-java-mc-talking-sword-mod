@@ -32,6 +32,5 @@ public interface EpisodeSplitter {
     Optional<EpisodeSplitPoint> confirm(
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
-            FixedActionSegment latestSegment,
-            int latestTimelineIndex);
+            FixedActionSegment latestSegment);
 }

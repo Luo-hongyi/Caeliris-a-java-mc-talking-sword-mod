@@ -6,6 +6,7 @@
 
 - [episode/EPISODE_CURRENT_STATE.md](episode/EPISODE_CURRENT_STATE.md) - episode 当前实际实现总览；从 action 采集、action archive、splitter signals、split、region 到 prompt synthesis 的最新扫描结果
 - [episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md](episode/REFLECTION_MAINLINE_REFACTOR_PLAN.md) - 当前 reflection 主线重构计划；记录 episode / interaction trace / material exporter 边界、gate、模块化输出与后续实现顺序
+- [episode/REFLECTION_CHAIN_ISSUES.md](episode/REFLECTION_CHAIN_ISSUES.md) - 当前 reflection 主线从原材料到 commit / cleanup 的问题清单与修复顺序
 - [SEGMENT_COORDINATE_REFACTOR_PLAN.md](SEGMENT_COORDINATE_REFACTOR_PLAN.md) - fixed segment 持久化坐标重构讨论；解决中间 region 物理删除、signal 稳定引用和 reflection task 入队后坐标漂移问题
 - [PERFORMANCE_HOTSPOTS.md](PERFORMANCE_HOTSPOTS.md) - 当前 memory / studio runtime 持久化热点、已完成优化与后续性能债记录
 - [RECALL_OVERVIEW.md](RECALL_OVERVIEW.md) - 当前 recall 子系统的设计与实现总览
@@ -24,11 +25,13 @@
 - `ActionArchive` 之上已经接入第一版 `PlayerIntentScorer`：它会对固定时间窗压缩结果做规则打分，输出每段的多意图分数、主导意图和理由，供 episode / LTM 设计阶段调试。
 - 全局植入记忆 (`IMPLANTED`) 的加载、保存和运行时热重载链路可用。
 - 长期记忆召回 (`LTMRecallEngine`) 已切换到最新方案：先由 `visibleContexts` 注入跨轮维护的 `tag_pool`，再从 `tag_pool` 派生首层 cue，对长期记忆做联想式召回。
-- `LTMEntry` 已补入可持久化的游戏内语义时间锚点；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
-- `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue。
+- `LTMEntry` 已补入可持久化的正式游戏内时间坐标；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
+- `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue；对于 synthesized LTM，它现在只是可选增强层，不再作为默认时间文案或结构性必填字段。
 - 当前仍未完成的关键环节，是和这套新 recall 架构一致的 **LTM 生成闭环**。
-- 新 reflection 主线骨架已经存在：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 都已落地；`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`current_situation_update`、`favorability_update`、`emotion_update` 五个 modules。
-- 但这条 reflection 主线还没有正式接回 episode gate，也还没有进入 `AgentRuntime` 的后台队列执行闭环。
+- 新 reflection 主线骨架已经存在：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 都已落地；`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`recap_update`、`favorability_update`、`emotion_update` 五个 modules，这五个也就是当前 reflection 包里全部现有的 modules。当前设计上，episode synthesis 先作为“全量总任务”承载这一整组输出。
+- `emotion_update` 现在已经接上 `PromptRegistry.getEmotionTypeDescription()`，因此情绪类型说明文本可以热更新；但真正允许的情绪类型集合仍然是 `AgentState.PrimaryEmotion` 这组静态枚举，当前不能由玩家动态修改。
+- action 侧旧的高频 `favorability_update` 链已经拆除：`LLMInteractionTask` 不再暴露也不再执行这类动作，`STMPool` 也不再维护对应账本；当前好感度更新只保留 reflection 侧模块语义。
+- 这条 reflection 主线已经正式接回 episode gate，并进入 `AgentRuntime` 的共享后台队列执行闭环。
 - 继续推进这条主线前，当前先插入一个更底层的前置议题：fixed segment 持久化坐标。原因是 episode / reflection 现在仍把当前数组位置当作正式引用坐标，这会阻塞中间 region 物理删除和 targeted cleanup。
 - action runtime 持久化这一轮已经做过一次性能收尾：sealed fixed segment payload 已拆出高频 timeline snapshot 主路径，当前先不继续围绕写盘做大改，主线重新回到 segment / episode / reflection 的结构调整。
 - fixed segment discard window 也已经从 `studio_runtime_action_timeline.json` 拔出，改为独立的 `studio_runtime_action_segment_discards.jsonl` sidecar log。
@@ -119,14 +122,17 @@
 
 3. reflection 主线已经有骨架，但还没接成完整闭环
 
-- 还没有 internal trigger 真正提交 `EpisodeSynthesisReflectionTask`
-- `collectEpisodeSynthesisTriggerSignals()` 仍返回空列表
-- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 仍只停在 prepared skeleton
-- 还没有真正的：
-  - LLM 调用
-  - root parse / validate
+- `EpisodeSynthesisInternalTrigger` 已经会逐个消费 ready signals，并提交 `EpisodeSynthesisReflectionTask`
+- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 已经接起第一版 task 主体：
+  - 单次 LLM 调用
+  - root JSON 提取
+  - module parse / validate
   - task-owned commit
-  - success / rollback / consumed cleanup
+  - consumed cleanup + region resolved / rollback
+- 当前剩余缺口主要是：
+  - `recap_update` 已写回 `AgentState.recap`，语义上作为低频“前情提要”
+  - 失败后的 LLM 重试链路还没接
+  - synthesized LTM 的 tag / 时间锚点质量还只是第一版
 
 ### 下一阶段推荐顺序
 
@@ -140,10 +146,7 @@
 3. 接回 episode gate / holdback / ready signal
 - 让 `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 真正产出 ready signals
 
-4. 重建 internal trigger
-- 逐个调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`
-
-5. 补齐单次 reflection task 的完整 LLM 闭环
+4. 补齐单次 reflection task 的完整 LLM 闭环
 - instruction
 - root output contract
 - parse / validate / cross-validate
@@ -233,9 +236,10 @@
 
 旧版 `ReflectionTask` 和 `ReflectionTrigger` 已经删除；当前 reflection 方向已经有新的 episode 驱动骨架，但它仍不是当前设计意义上的完整实现。原因包括：
 
-- `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 当前仍返回空列表，episode 侧 gate 还没有真正产出可提交的多 signal。
-- 当前还没有正式调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`，所以 reflection task 还没有真正入共享后台队列。
-- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 当前仍只停在 prepared skeleton，没有完成单次 LLM 调用、root output 解析、task-owned commit 和后续 consumption signal。
+- `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 已经能产出 `PASS + HOLDING` 且越过 holdback 的多 signal，并在发出时将 region 推进到 `PENDING`。
+- `EpisodeSynthesisInternalTrigger` 已经会正式调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`，所以 reflection task 已经开始进入共享后台队列。
+- `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 现在已经能完成单次 LLM 调用、root output 解析、module validate、task-owned commit，以及 consumed cleanup + region resolved。
+- `recap_update` 现在已经写回 `AgentState.recap`；这里的语义不是“即时当前状态”，而是基于最近一段 episode 产出的阶段性前情提要。
 - 它还没有和最新的 `specific` / `generic` 语义完全统一。
 - 它还没有和当前的 `visibleContexts`、`associativeOnly`、`native_generic hidden` 策略形成闭环。
 - 它还没有明确的新一代结算时机和筛选规则。

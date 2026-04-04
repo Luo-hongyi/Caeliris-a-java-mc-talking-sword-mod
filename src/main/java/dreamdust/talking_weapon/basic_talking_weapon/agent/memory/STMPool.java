@@ -28,23 +28,12 @@ public final class STMPool {
 
     private final List<TaggedContextEntry> contextEntries;
     private final List<InteractionTurn> interactionTurns;
-    
-    /** 领域疲劳账单：记录在这个纪元里，哪种领域引发了多少次分数变动 */
-    private final java.util.Map<dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag, Integer> domainFatigue;
-    
-    /** 分标签暂存好感账本：记录本期尚未合成入最后总账的好感变动 */
-    private final java.util.Map<dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag, Integer> volatileFavorabilityByTag;
-    
-    /** 单个领域允许的单期好感度变动极限 */
-    private static final int MAX_FAVORABILITY_CHANGE_PER_TAG_PER_EPOCH = 30;
     private final int contextCapacity;
     private final int turnCapacity;
 
     public STMPool(int contextCapacity, int turnCapacity) {
         this.contextEntries = new ArrayList<>();
         this.interactionTurns = new ArrayList<>();
-        this.domainFatigue = new java.util.concurrent.ConcurrentHashMap<>();
-        this.volatileFavorabilityByTag = new java.util.concurrent.ConcurrentHashMap<>();
         this.contextCapacity = contextCapacity;
         this.turnCapacity = turnCapacity;
     }
@@ -236,86 +225,6 @@ public final class STMPool {
     public synchronized void clear() {
         contextEntries.clear();
         interactionTurns.clear();
-        domainFatigue.clear();
-        volatileFavorabilityByTag.clear();
-    }
-
-    /**
-     * 获取本纪元的暂态（未定案）好感度账单副本。
-     */
-    public synchronized java.util.Map<dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag, Integer> getVolatileFavorabilityByTag() {
-        return new java.util.HashMap<>(volatileFavorabilityByTag);
-    }
-
-    /**
-     * 向 STM 请求变动好感度，STM 根据可见上文的领域权重进行划分并对各标签实施递减。
-     * @param requestedChange LLM 申请的好感度总体变动量
-     * @param visibleContexts 当前由于注意力机制真正传递给了大模型的上下文条目列表
-     * @return 实际被允许应用到该纪元暂存账本的有效总变动量
-     */
-    public synchronized int requestFavorabilityChange(int requestedChange, List<TaggedContextEntry> visibleContexts) {
-        if (requestedChange == 0) return 0;
-
-        java.util.Map<dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag, Double> tagWeights = new java.util.HashMap<>();
-        int totalTags = 0;
-        
-        if (visibleContexts != null) {
-            for (TaggedContextEntry entry : visibleContexts) {
-                for (dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag tag : entry.getFocusTags()) {
-                    tagWeights.put(tag, tagWeights.getOrDefault(tag, 0.0) + 1.0);
-                    totalTags++;
-                }
-            }
-        }
-
-        if (totalTags == 0) {
-            // 没有有效领域标签时，默认分配为 COMMON
-            tagWeights.put(dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag.COMMON, 1.0);
-            totalTags = 1;
-        }
-
-        int totalAppliedChange = 0;
-
-        for (java.util.Map.Entry<dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag, Double> tagEntry : tagWeights.entrySet()) {
-            dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag tag = tagEntry.getKey();
-            double weight = tagEntry.getValue() / totalTags;
-
-            // 分摊到该标签的请求份额
-            int share = (int) Math.round(requestedChange * weight);
-            if (share == 0) continue;
-
-            int fatigue = domainFatigue.getOrDefault(tag, 0);
-
-            // 边际衰减：申请量 / (2 ^ 疲劳度)，封顶向右位移 10 次也就是除以 1024 基本归 0
-            int scaleShift = Math.min(fatigue, 10);
-            int decayedShare = share / (1 << scaleShift);
-
-            if (decayedShare == 0) {
-                // 已经因刷得太多被衰减为 0，依然算作一次疲劳加深
-                domainFatigue.put(tag, fatigue + 1);
-                continue;
-            }
-
-            int oldAcc = volatileFavorabilityByTag.getOrDefault(tag, 0);
-            int newAcc = oldAcc + decayedShare;
-
-            // 应用极限截断，防止单领域大量刷好感
-            if (newAcc > MAX_FAVORABILITY_CHANGE_PER_TAG_PER_EPOCH) {
-                newAcc = MAX_FAVORABILITY_CHANGE_PER_TAG_PER_EPOCH;
-            } else if (newAcc < -MAX_FAVORABILITY_CHANGE_PER_TAG_PER_EPOCH) {
-                newAcc = -MAX_FAVORABILITY_CHANGE_PER_TAG_PER_EPOCH;
-            }
-
-            int appliedForTag = newAcc - oldAcc;
-            volatileFavorabilityByTag.put(tag, newAcc);
-
-            if (appliedForTag != 0) {
-                domainFatigue.put(tag, fatigue + 1);
-                totalAppliedChange += appliedForTag;
-            }
-        }
-
-        return totalAppliedChange;
     }
 
     @Override

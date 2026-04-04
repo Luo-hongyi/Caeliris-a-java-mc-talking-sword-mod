@@ -42,26 +42,29 @@ public final class ObservedActionTypeSplitter implements EpisodeSplitter {
 
     @Override
     public List<EpisodePendingMark> detect(EpisodeDetectContext context) {
-        EpisodeTimeline timeline = context == null ? null : context.timeline();
         FixedActionSegment latestSegment = context == null ? null : context.latestSegment();
-        int latestTimelineIndex = context == null ? -1 : context.latestTimelineIndex();
         if (latestSegment == null
                 || latestSegment.getSplitterSignals() == null
                 || !latestSegment.getSplitterSignals().hasObservedAction(actionType)) {
             return List.of();
         }
 
-        int splitTimelineIndex = splitAfterCurrentSegment
-                ? latestTimelineIndex + 1
-                : latestTimelineIndex;
+        EpisodeTimeline timeline = context == null ? null : context.timeline();
         long splitTimestamp = splitAfterCurrentSegment
                 ? latestSegment.getEndTimestamp()
                 : latestSegment.getStartTimestamp();
+        long splitLeftSegmentId = splitAfterCurrentSegment
+                ? latestSegment.getSegmentId()
+                : timeline == null || timeline.segmentCount() <= 0
+                ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID
+                : timeline.getSegmentId(timeline.segmentCount() - 1);
+        long splitRightSegmentId = splitAfterCurrentSegment
+                ? EpisodeTimeline.UNASSIGNED_SEGMENT_ID
+                : latestSegment.getSegmentId();
         return List.of(EpisodePendingMark.fromRuntimeConfig(
-                timeline,
-                latestTimelineIndex,
                 latestSegment.getSegmentId(),
-                splitTimelineIndex,
+                splitLeftSegmentId,
+                splitRightSegmentId,
                 splitTimestamp,
                 reason,
                 id()));
@@ -76,27 +79,30 @@ public final class ObservedActionTypeSplitter implements EpisodeSplitter {
     public Optional<EpisodeSplitPoint> confirm(
             EpisodeTimeline timeline,
             EpisodePendingMark pendingMark,
-            FixedActionSegment latestSegment,
-            int latestTimelineIndex) {
+            FixedActionSegment latestSegment) {
         if (timeline == null || latestSegment == null || !supports(pendingMark)) {
             return Optional.empty();
         }
 
-        EpisodeRegion previousRegion = timeline.regionBeforeSplit(pendingMark.splitTimelineIndex());
+        EpisodeRegion previousRegion = timeline.regionBeforeBoundary(
+                pendingMark.splitLeftSegmentId(),
+                pendingMark.splitRightSegmentId());
+        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds = timeline.resolveBoundarySegmentIds(
+                pendingMark.splitLeftSegmentId(),
+                pendingMark.splitRightSegmentId());
+        if (boundarySegmentIds.rightSegmentId() <= 0L) {
+            return Optional.empty();
+        }
         EpisodeIntentProfile nextProfile = EpisodeIntentMath.deriveProfile(
                 EpisodeIntentMath.aggregateScores(
-                        timeline.segments(),
-                        pendingMark.splitTimelineIndex(),
-                        latestTimelineIndex));
-        EpisodeTimeline.BoundarySegmentIds boundarySegmentIds =
-                timeline.boundarySegmentIdsAt(pendingMark.splitTimelineIndex());
+                        timeline,
+                        boundarySegmentIds.rightSegmentId(),
+                        latestSegment.getSegmentId()));
 
         return Optional.of(new EpisodeSplitPoint(
-                pendingMark.splitTimelineIndex(),
                 boundarySegmentIds.leftSegmentId(),
                 boundarySegmentIds.rightSegmentId(),
                 pendingMark.splitTimestamp(),
-                latestTimelineIndex,
                 latestSegment.getSegmentId(),
                 latestSegment.getEndTimestamp(),
                 pendingMark.reason(),

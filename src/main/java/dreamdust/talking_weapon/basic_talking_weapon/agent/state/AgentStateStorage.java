@@ -175,8 +175,8 @@ public final class AgentStateStorage {
 
     private static AgentStateFile normalized(AgentStateFile raw) {
         AgentStateFile file = raw != null ? raw : new AgentStateFile();
-        if (file.schemaVersion < 5) {
-            file.schemaVersion = 5;
+        if (file.schemaVersion < 7) {
+            file.schemaVersion = 7;
         }
         if (file.state == null) {
             file.state = new AgentRuntimeStateSection();
@@ -216,6 +216,7 @@ public final class AgentStateStorage {
         file.state.full_raw_action_log = state.isFullRawActionLogEnabled();
         file.state.current_desire_tag = state.getCurrentDesireTag() != null ? state.getCurrentDesireTag().name() : null;
         file.state.desire_description = state.getDesireDescription();
+        file.state.recap = state.getRecap();
 
         file.persona_state.favorability = persona.getFavorability();
         file.persona_state.player_profile = persona.getPlayerProfile();
@@ -253,6 +254,7 @@ public final class AgentStateStorage {
         state.setFullRawActionLogEnabled(Boolean.TRUE.equals(file.state.full_raw_action_log));
         state.setCurrentDesireTag(parseFocusTag(file.state.current_desire_tag));
         state.setDesireDescription(file.state.desire_description);
+        state.setRecap(file.state.recap);
 
         persona.setFavorability(file.persona_state.favorability);
         persona.setPlayerProfile(file.persona_state.player_profile);
@@ -283,7 +285,7 @@ public final class AgentStateStorage {
     }
 
     public static final class AgentStateFile {
-        public int schemaVersion = 5;
+        public int schemaVersion = 7;
         public AgentRuntimeStateSection state = new AgentRuntimeStateSection();
         public AgentPersonaStateSection persona_state = new AgentPersonaStateSection();
         public AttentionWeightsSection attention_weights = new AttentionWeightsSection();
@@ -303,6 +305,7 @@ public final class AgentStateStorage {
         public Boolean full_raw_action_log = false;
         public String current_desire_tag = null;
         public String desire_description = "";
+        public String recap = "";
     }
 
     /**

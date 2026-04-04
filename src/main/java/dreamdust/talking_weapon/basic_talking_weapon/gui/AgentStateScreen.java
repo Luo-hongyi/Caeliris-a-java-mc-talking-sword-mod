@@ -43,7 +43,7 @@ public class AgentStateScreen extends Screen {
     private static final int LABEL_COLOR = 0xFFCCCCCC;
     private static final int TITLE_COLOR = 0xFFFFD700;
     private static final int HEADER_HEIGHT = 30;
-    private static final int FOOTER_HEIGHT = 68;
+    private static final int FOOTER_HEIGHT = 92;
 
     private final Screen parent;
 
@@ -355,36 +355,42 @@ public class AgentStateScreen extends Screen {
         int bx = (width - totalW) / 2;
         int firstRowY = height - FOOTER_HEIGHT + 8;
         int secondRowY = firstRowY + 24;
+        int thirdRowY = secondRowY + 24;
 
         addRenderableWidget(Button.builder(Component.literal("§6玩家画像 →"), btn -> {
             save();
             minecraft.setScreen(new AgentPlayerProfileScreen(this));
         }).bounds(bx, firstRowY, btnW, 20).build());
 
+        addRenderableWidget(Button.builder(Component.literal("§6前情提要 →"), btn -> {
+            save();
+            minecraft.setScreen(new AgentRecapScreen(this));
+        }).bounds(bx + (btnW + gap) * 1, firstRowY, btnW, 20).build());
+
         addRenderableWidget(Button.builder(Component.literal("§6性格词条 →"), btn -> {
             save();
             minecraft.setScreen(new AgentTraitsScreen(this));
-        }).bounds(bx + (btnW + gap) * 1, firstRowY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 2, firstRowY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§6地点注册 →"), btn -> {
             save();
             minecraft.setScreen(new AgentLocationRegistryScreen(this));
-        }).bounds(bx + (btnW + gap) * 2, firstRowY, btnW, 20).build());
+        }).bounds(bx, secondRowY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§6最近心声 →"), btn -> {
             save();
             minecraft.setScreen(new AgentLastInnerThoughtScreen(this));
-        }).bounds(bx, secondRowY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 1, secondRowY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§6触发记录 →"), btn -> {
             save();
             minecraft.setScreen(new AgentRecentInteractionScreen(this));
-        }).bounds(bx + (btnW + gap) * 1, secondRowY, btnW, 20).build());
+        }).bounds(bx + (btnW + gap) * 2, secondRowY, btnW, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("§a✔ 保存"), btn -> {
             save();
             minecraft.setScreen(parent);
-        }).bounds(bx + (btnW + gap) * 2, secondRowY, btnW, 20).build());
+        }).bounds(width / 2 - btnW / 2, thirdRowY, btnW, 20).build());
     }
 
     private EditBox editBox(String hint, String value, int maxLen) {

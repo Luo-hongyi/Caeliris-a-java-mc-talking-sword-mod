@@ -110,7 +110,6 @@ public class AgentRecentInteractionScreen extends Screen {
         return switch (actionType.toLowerCase()) {
             case "speech" -> "说话";
             case "inner_monologue" -> "心声";
-            case "favorability_update" -> "好感";
             case "emotion_update" -> "情绪";
             default -> abbreviate(actionType, 8);
         };

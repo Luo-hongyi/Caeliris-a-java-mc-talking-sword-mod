@@ -5,7 +5,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedCon
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 完整的交互回合。
@@ -28,18 +30,22 @@ public final class InteractionTurn {
     /** Agent 基于此 Prompt 产出的所有行为（如开口说话、内心独白等） */
     private final List<AgentOutputRecord> agentActions;
 
-    /** 本回合触发过的动作类型摘要（如 speech / inner_monologue / favorability_update） */
+    /** 本回合触发过的动作类型摘要（如 speech / inner_monologue） */
     private final List<String> actionTypes;
 
     /** 本回合真正进入模型视野的 visible contexts（仅保留 memory-eligible 条目） */
     private final List<TaggedContextEntry> visibleContexts;
+
+    /** 本回合绑定的 supplementary extras 快照 */
+    private final Map<String, String> contextExtras;
 
     /** 回合发生时间戳 */
     private final long timestamp;
 
     public InteractionTurn(String triggerSource, String userPrompt, String userScreenshotBase64,
             List<AgentOutputRecord> agentActions, List<String> actionTypes,
-            List<TaggedContextEntry> visibleContexts) {
+            List<TaggedContextEntry> visibleContexts,
+            Map<String, String> contextExtras) {
         this.triggerSource = triggerSource;
         this.userPrompt = userPrompt;
         this.userScreenshotBase64 = userScreenshotBase64;
@@ -49,6 +55,9 @@ public final class InteractionTurn {
                 : Collections.unmodifiableList(new ArrayList<>(actionTypes));
         this.visibleContexts = Collections.unmodifiableList(
                 new ArrayList<>(CollectedContextSnapshot.memoryEligibleEntries(visibleContexts)));
+        this.contextExtras = contextExtras == null || contextExtras.isEmpty()
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(contextExtras));
         this.timestamp = System.currentTimeMillis();
     }
 
@@ -58,6 +67,7 @@ public final class InteractionTurn {
     public List<AgentOutputRecord> getAgentActions() { return agentActions; }
     public List<String> getActionTypes() { return actionTypes; }
     public List<TaggedContextEntry> getVisibleContexts() { return visibleContexts; }
+    public Map<String, String> getContextExtras() { return contextExtras; }
     public long getTimestamp() { return timestamp; }
 
     /** 是否有图像输入 */

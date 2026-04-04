@@ -22,7 +22,7 @@ public final class StudioWorkspacePaths {
     }
 
     public static Path getWorkspaceRoot() {
-        return FMLPaths.CONFIGDIR.get()
+        return getConfigRoot()
                 .resolve(CONFIG_SUBDIR)
                 .resolve(WORKSPACE_DIRNAME);
     }
@@ -32,7 +32,7 @@ public final class StudioWorkspacePaths {
     }
 
     public static Path getLegacyConfigPath(String filename) {
-        return FMLPaths.CONFIGDIR.get()
+        return getConfigRoot()
                 .resolve(CONFIG_SUBDIR)
                 .resolve(filename);
     }
@@ -61,5 +61,14 @@ public final class StudioWorkspacePaths {
             }
             return false;
         }
+    }
+
+    private static Path getConfigRoot() {
+        Path configDir = null;
+        try {
+            configDir = FMLPaths.CONFIGDIR.get();
+        } catch (Throwable ignored) {
+        }
+        return configDir != null ? configDir : Path.of("config");
     }
 }

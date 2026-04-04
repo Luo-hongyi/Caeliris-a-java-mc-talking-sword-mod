@@ -15,5 +15,5 @@ public record ReflectionStateRequest(
         boolean includeCurrentDesire,
         boolean includeFavorability,
         boolean includePlayerProfile,
-        boolean includeCurrentSituationSummary) {
+        boolean includeRecap) {
 }

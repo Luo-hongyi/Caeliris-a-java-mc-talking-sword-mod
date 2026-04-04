@@ -66,14 +66,17 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             draft.append("[Segment ").append(segment.localSegmentIndex()).append("]\n");
             draft.append("segment id: ").append(segment.segmentId()).append("\n");
             draft.append("range: ").append(segment.startTimestamp()).append(" -> ").append(segment.endTimestamp()).append("\n");
-            appendSnapshot(draft, "start snapshot", segment.startSnapshot());
+            appendSnapshot(draft, "segment snapshot", segment.segmentSnapshot());
             draft.append("timeline:\n");
             for (ReflectionSegmentEvent event : segment.timelineEvents()) {
                 if (event == null) {
                     continue;
                 }
                 switch (event.type()) {
-                    case SEGMENT_START_SNAPSHOT -> draft.append("- snapshot baseline\n");
+                    case SEGMENT_SNAPSHOT -> draft.append("- segment snapshot baseline\n");
+                    case LOCAL_STM_CONTEXT -> draft.append("- local stm context: ")
+                            .append(describeContextEntry(event.contextEntry()))
+                            .append("\n");
                     case PLAYER_ACTION -> draft.append("- player action: ")
                             .append(describePlayerAction(event.playerAction()))
                             .append("\n");
@@ -138,6 +141,19 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
         return sb.toString();
     }
 
+    private String describeContextEntry(TaggedContextEntry entry) {
+        if (entry == null) {
+            return "(unknown)";
+        }
+        StringBuilder sb = new StringBuilder();
+        String description = cleanLine(entry.getDescription());
+        sb.append(description.isBlank() ? "(empty)" : description);
+        if (!entry.getDetailTags().isEmpty()) {
+            sb.append(" [tags=").append(entry.getDetailTags()).append(']');
+        }
+        return sb.toString();
+    }
+
     private String describeInteraction(ReflectionInteraction interaction) {
         if (interaction == null) {
             return "(unknown)";
@@ -161,6 +177,9 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
         }
         if (interaction.boundSnapshot() != null && !interaction.boundSnapshot().visibleContexts().isEmpty()) {
             sb.append(", bound_visible=").append(joinContextDescriptions(interaction.boundSnapshot().visibleContexts()));
+        }
+        if (interaction.boundSnapshot() != null && !interaction.boundSnapshot().contextExtras().isEmpty()) {
+            sb.append(", bound_extras=").append(joinExtras(interaction.boundSnapshot().contextExtras()));
         }
         return sb.toString();
     }

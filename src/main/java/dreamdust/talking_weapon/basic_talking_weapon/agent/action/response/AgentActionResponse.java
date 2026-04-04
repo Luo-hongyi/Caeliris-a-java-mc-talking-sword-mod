@@ -62,9 +62,6 @@ public final class AgentActionResponse {
     public static class ActionRequest {
         public String type;
         public String content;
-        
-        /** 用于 favorability_update 类型动作的特定金额字段 */
-        public Integer change_amount;
 
         public ActionRequest() {}
 

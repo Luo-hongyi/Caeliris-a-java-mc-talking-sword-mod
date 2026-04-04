@@ -564,9 +564,10 @@ public final class AgentLogger {
                 continue;
             }
             w.println(indent + "  - reason=" + (mark.reason() == null ? "(none)" : mark.reason().name())
-                    + " | split@" + mark.splitTimelineIndex()
-                    + " | detected@" + mark.detectedAtTimelineIndex()
-                    + " | confirm@" + mark.confirmAtTimelineIndex()
+                    + " | boundary=" + mark.splitLeftSegmentId() + "->" + mark.splitRightSegmentId()
+                    + " | anchor@" + mark.splitAnchorSegmentId()
+                    + " | detected@" + mark.detectedAtSegmentId()
+                    + " | confirm@" + mark.confirmAtSegmentId()
                     + " | owner=" + mark.ownerSplitterId()
                     + (mark.highPriority() ? " | HIGH" : "")
                     + " | cover=" + mark.coverBeforeSegments() + "/" + mark.coverAfterSegments());
@@ -584,8 +585,9 @@ public final class AgentLogger {
                 continue;
             }
             w.println(indent + "  - reason=" + (splitPoint.reason() == null ? "(none)" : splitPoint.reason().name())
-                    + " | split@" + splitPoint.splitTimelineIndex()
-                    + " | confirm@" + splitPoint.confirmationTimelineIndex()
+                    + " | boundary=" + splitPoint.splitLeftSegmentId() + "->" + splitPoint.splitRightSegmentId()
+                    + " | anchor@" + splitPoint.splitAnchorSegmentId()
+                    + " | confirm@" + splitPoint.confirmationSegmentId()
                     + " | prev=" + safeIntentName(splitPoint.previousPrimaryIntent())
                     + " / " + safeIntentName(splitPoint.previousSecondaryIntent())
                     + " | next=" + safeIntentName(splitPoint.nextPrimaryIntent())
@@ -593,7 +595,11 @@ public final class AgentLogger {
         }
     }
 
-    private static void writeEpisodeRegions(PrintWriter w, List<EpisodeRegion> regions, String indent) {
+    private static void writeEpisodeRegions(
+            PrintWriter w,
+            EpisodeTimeline episodeTimeline,
+            List<EpisodeRegion> regions,
+            String indent) {
         w.println(indent + "regions:");
         if (regions == null || regions.isEmpty()) {
             w.println(indent + "  (空)");
@@ -603,8 +609,9 @@ public final class AgentLogger {
             if (region == null) {
                 continue;
             }
-            w.println(indent + "  - [" + region.startSegmentIndex() + ".." + region.endSegmentIndex() + "]"
-                    + " | segments=" + region.segmentCount()
+            int segmentCount = episodeTimeline == null ? 0 : episodeTimeline.segmentCountOf(region);
+            w.println(indent + "  - [" + region.startSegmentId() + ".." + region.endSegmentId() + "]"
+                    + " | segments=" + segmentCount
                     + " | primary=" + safeIntentName(region.primaryIntent())
                     + " " + String.format("%.2f", region.primaryScore())
                     + " | secondary=" + safeIntentName(region.secondaryIntent())
@@ -705,7 +712,7 @@ public final class AgentLogger {
                 + " | regions=" + episodeTimeline.regions().size());
         writeEpisodePendingMarks(w, episodeTimeline.pendingMarks(), "    ");
         writeEpisodeSplitPoints(w, episodeTimeline.splitPoints(), "    ");
-        writeEpisodeRegions(w, episodeTimeline.regions(), "    ");
+        writeEpisodeRegions(w, episodeTimeline, episodeTimeline.regions(), "    ");
         w.println();
     }
 
