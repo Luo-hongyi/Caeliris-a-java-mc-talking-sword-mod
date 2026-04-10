@@ -7,6 +7,54 @@
 > 截至 `2026-03-27`，本文不仅记录目标设计，也记录当前已经落地的骨架实现。
 > 若文档中的“下一步”与代码现状冲突，以这里补充的“当前实现状态”小节为准，并继续同步修正文档。
 
+## 当前冻结状态
+
+截至 `2026-04-09`，正在进行中的 `reflection` 构建先临时冻结。
+
+当前冻结原因不是 `reflection` 自身设计变动，而是底层 `context` 语义正在做一次正式重构：
+
+- 给所有 `TaggedContextEntry` 增加正式 `source`
+- 引入 `PLAYER / AGENT / ENVIRONMENT` 主体语义
+- 清理旧的“context 中所有行动默认都属于玩家”这一前提
+
+对应重构计划见：
+
+- [TAGGED_CONTEXT_SOURCE_REFACTOR_PLAN.md](/Users/jackluo/Documents/self_forge_mod/forge-1.20.1-47.4.10-mdk/src/main/java/dreamdust/talking_weapon/basic_talking_weapon/agent/context/TAGGED_CONTEXT_SOURCE_REFACTOR_PLAN.md)
+
+在这轮 source 重构完成之前，`reflection` 主线当前约定为：
+
+- 暂不继续向前推进新的 prompt / module / task 业务构建
+- 暂不继续扩展基于旧 context 语义的 reflection 细化实现
+- 只允许做与 source 重构直接相关的同步调整或文档修正
+
+原因很简单：
+
+- `reflection` 现在大量消费 `TaggedContextEntry`
+- 如果继续沿旧前提推进 prompt / material / cognition 设计，后面一定还要整体返工
+- 因此先冻结上层，优先把底层主体语义立住，才是更干净的做法
+
+截至 `2026-04-10`，这轮底层语义重构已经基本收口，当前可视为进入“恢复 reflection 主线构建”的阶段。
+
+当前恢复点记录如下：
+
+- `TaggedContextEntry.source` 已正式贯通到 reflection formatter
+- `InteractionTurn.messages` 已正式切到 `InteractionMessage`
+- `InteractionMessage` 当前采用：
+  - `source = PLAYER / AGENT / ENVIRONMENT`
+  - `kind = TEXT / INNER_MONOLOGUE / REACTION_CUE`
+- reflection prompt preview 已能稳定显示：
+  - tagged context 的 source
+  - interaction message 的 `source + kind`
+
+当前仍暂缓的点：
+
+- interaction 的 `initiator / target` 还没有进入正式数据模型
+- 这一点已经记入 source / interaction 计划文档，暂不阻塞 reflection 主线继续推进
+
+因此从现在开始，reflection 链路可以重新继续向前推进；
+但推进时应默认使用当前这版 `source + kind` 口径，而不是旧的 `userPrompt + outputs` 结构。
+
+
 ## 1. 重构范围
 
 这次不是单独补一个 `episode synthesis` 功能，而是重构整条 `reflection` 主线。

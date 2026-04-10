@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -38,6 +39,7 @@ public class LookingAtCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         Minecraft mc = Minecraft.getInstance();
 
@@ -48,7 +50,7 @@ public class LookingAtCollector implements IContextCollector {
             String name = crosshairEntity.getType().getDescription().getString();
             double dist = player.distanceTo(crosshairEntity);
 
-            sb.append("正在看: ").append(name);
+            sb.append("当前准心目标: ").append(name);
             sb.append(" (距离").append(dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(dist)).append(")");
 
             if (crosshairEntity instanceof LivingEntity living) {
@@ -78,7 +80,7 @@ public class LookingAtCollector implements IContextCollector {
                 }
             }
 
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.COMMON)
                     .detail(detailPrefix, detailValue)
                     .description(sb.toString())
@@ -100,12 +102,12 @@ public class LookingAtCollector implements IContextCollector {
             double dist = Math.sqrt(player.blockPosition().distSqr(pos));
 
             StringBuilder sb = new StringBuilder();
-            sb.append("正在看: ").append(blockName);
+            sb.append("当前准心目标: ").append(blockName);
             sb.append(" (坐标 ").append(pos.getX()).append(", ").append(pos.getY()).append(", ").append(pos.getZ())
                     .append(")");
             sb.append(" (距离 ").append(String.format("%.1f", dist)).append("格)");
 
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.COMMON)
                     .detail(DetailTag.NATIVE_SPECIFIC, blockId)
                     .description(sb.toString())
@@ -116,7 +118,7 @@ public class LookingAtCollector implements IContextCollector {
         }
 
         // ── 什么也没看 ──
-        builder.extra("looking_at", "正在看: 天空/远方(无目标)");
+        builder.extra("looking_at", "当前准心目标: 天空/远方(无目标)");
     }
 
     private String resolveEntityId(Entity entity) {

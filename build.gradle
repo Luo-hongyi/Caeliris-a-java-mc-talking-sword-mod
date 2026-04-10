@@ -216,3 +216,13 @@ tasks.register('previewEpisodeSynthesisPrompt', JavaExec) {
     workingDir = project.projectDir
     args project.file('testdata/reflection_prompt_mock_preview').absolutePath
 }
+
+tasks.register('previewEpisodeSynthesisPromptHostileMurderer', JavaExec) {
+    group = 'verification'
+    description = 'Generates a hostile murderer variant of the mock episode synthesis reflection prompt preview.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.EpisodeSynthesisPromptMockPreview'
+    workingDir = project.projectDir
+    args project.file('testdata/reflection_prompt_mock_preview_hostile_murderer').absolutePath, 'hostile_murderer'
+}

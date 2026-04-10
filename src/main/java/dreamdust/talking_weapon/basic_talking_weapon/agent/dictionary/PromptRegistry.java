@@ -62,7 +62,7 @@ public final class PromptRegistry {
     }
 
     public String getSystemCognitionRule() {
-        return get("system_cognition_rule", "【核心认知规则】你是一把被玩家携带在身边的有自我意识的武器。在接下来的 [Tagged Context] 中，所有的环境交互、移动、受伤、持有物品等物理状态，都是你的【主人/持有者】在经历。你只是通过感知连接获取到了这些信息，不要错误地认为是自己在进行物理活动。");
+        return get("system_cognition_rule", "【核心认知规则】你是一把被玩家携带在身边的有自我意识的武器。在 [Tagged Context] 中，每条条目都会带有 source。你必须先根据 source 判断事实的主体：source=player 表示玩家本人在经历或执行这件事；source=agent 表示你自己正在产生的想法、倾向或行动；source=environment 表示与主体无关的客观世界事实。不要再默认所有行动、状态和经历都属于玩家，也不要把玩家的物理行动误认为是你自己在做。");
     }
 
     public String getFocusTagDescription() {

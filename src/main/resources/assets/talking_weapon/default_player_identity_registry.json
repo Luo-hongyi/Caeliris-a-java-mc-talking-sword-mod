@@ -1,0 +1,5 @@
+{
+  "_comment": "玩家身份登记表。key 为稳定 player UUID。",
+  "_comment2": "displayName 为默认显示名；aliases 与 note 可手动维护。",
+  "players": {}
+}

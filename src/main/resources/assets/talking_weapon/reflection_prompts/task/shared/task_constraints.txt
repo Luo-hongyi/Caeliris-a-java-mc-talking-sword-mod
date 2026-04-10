@@ -1,0 +1,5 @@
+[Task Constraints]
+- 同时填写全部 modules
+- 所有输出都必须基于同一批 material / state / persona 事实
+- 不要省略任何已声明 module
+- 在输出内容时，你应该进行角色扮演，以提供的角色背景，性格，立场等信息为基础，用第一人称以相应的语气进行输出

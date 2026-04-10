@@ -10,13 +10,13 @@ import java.util.List;
 /**
  * 短期记忆聚合池 (Short-Term Memory Pool)。
  * <p>
- * 统一的时间线缓冲区，收集当前纪元内的<b>所有</b>上下文和 Agent 输出，
+ * 统一的时间线缓冲区，收集当前纪元内的<b>所有</b>上下文和 interaction turn，
  * 供后续长期记忆 (LTM) 合成任务读取。
  * <p>
  * <b>分区设计：</b>
  * <ul>
  *   <li>{@link #contextEntries} — 玩家/环境视角的全量上下文（未经注意力过滤）</li>
- *   <li>{@link #interactionTurns} — 玩家与剑灵的交互回合（带有输入 Prompt 和输出 Actions）</li>
+ *   <li>{@link #interactionTurns} — 玩家与剑灵的交互回合（内部带有 message timeline）</li>
  * </ul>
  * <p>
  * <b>注意力过滤仅在提取时使用</b>（组装即时 Prompt 或 LTM 合成 TopK），

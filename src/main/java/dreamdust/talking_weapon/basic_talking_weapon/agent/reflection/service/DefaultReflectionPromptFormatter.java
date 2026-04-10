@@ -1,7 +1,10 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSourceType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionMaterial;
@@ -109,7 +112,7 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             if (entry == null || entry.getDescription() == null || entry.getDescription().isBlank()) {
                 continue;
             }
-            descriptions.add(cleanLine(entry.getDescription()));
+            descriptions.add(describeContextSummary(entry));
         }
         return descriptions.isEmpty() ? "(none)" : String.join(" | ", descriptions);
     }
@@ -146,6 +149,7 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             return "(unknown)";
         }
         StringBuilder sb = new StringBuilder();
+        sb.append('[').append(describeContextSource(entry)).append("] ");
         String description = cleanLine(entry.getDescription());
         sb.append(description.isBlank() ? "(empty)" : description);
         if (!entry.getDetailTags().isEmpty()) {
@@ -154,25 +158,58 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
         return sb.toString();
     }
 
+    private String describeContextSummary(TaggedContextEntry entry) {
+        if (entry == null) {
+            return "(unknown)";
+        }
+        String description = cleanLine(entry.getDescription());
+        return "[" + describeContextSource(entry) + "] " + (description.isBlank() ? "(empty)" : description);
+    }
+
+    private String describeContextSource(TaggedContextEntry entry) {
+        if (entry == null || entry.getSource() == null) {
+            return "unknown";
+        }
+        TaggedContextSource source = entry.getSource();
+        return switch (source.getType()) {
+            case PLAYER -> "player:" + cleanLine(firstNonBlank(source.getDisplayName(), source.getSourceId()));
+            case AGENT -> "agent:" + cleanLine(firstNonBlank(source.getDisplayName(), source.getSourceId(), "self"));
+            case ENVIRONMENT -> "environment";
+        };
+    }
+
+    private String firstNonBlank(String... candidates) {
+        if (candidates == null) {
+            return "";
+        }
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return "";
+    }
+
     private String describeInteraction(ReflectionInteraction interaction) {
         if (interaction == null) {
             return "(unknown)";
         }
         StringBuilder sb = new StringBuilder();
         sb.append("trigger=").append(interaction.triggerSource().isBlank() ? "unknown" : interaction.triggerSource());
-        if (!interaction.userPrompt().isBlank()) {
-            sb.append(", user=\"").append(cleanLine(interaction.userPrompt())).append("\"");
-        }
-        if (!interaction.outputs().isEmpty()) {
+        if (!interaction.messages().isEmpty()) {
             List<String> outputs = new ArrayList<>();
-            for (AgentOutputRecord output : interaction.outputs()) {
-                if (output == null || output.getText() == null || output.getText().isBlank()) {
+            for (InteractionMessage output : interaction.messages()) {
+                if (output == null
+                        || output.getSource() == null
+                        || output.getKind() == null
+                        || output.getText() == null
+                        || output.getText().isBlank()) {
                     continue;
                 }
-                outputs.add(output.getType() + ":" + cleanLine(output.getText()));
+                outputs.add(describeInteractionMessage(output) + ":" + cleanLine(output.getText()));
             }
             if (!outputs.isEmpty()) {
-                sb.append(", outputs=").append(String.join(" ; ", outputs));
+                sb.append(", messages=").append(String.join(" ; ", outputs));
             }
         }
         if (interaction.boundSnapshot() != null && !interaction.boundSnapshot().visibleContexts().isEmpty()) {
@@ -186,5 +223,22 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
 
     private String cleanLine(String text) {
         return text == null ? "" : text.replace('\n', ' ').trim();
+    }
+
+    private String describeInteractionMessage(InteractionMessage message) {
+        if (message == null || message.getSource() == null || message.getKind() == null) {
+            return "unknown";
+        }
+        if (message.getKind() == InteractionMessageKind.REACTION_CUE) {
+            return "agent_reaction_cue";
+        }
+        TaggedContextSourceType sourceType = message.getSource().getType();
+        return switch (sourceType) {
+            case PLAYER -> "player_msg";
+            case AGENT -> message.getKind() == InteractionMessageKind.INNER_MONOLOGUE
+                    ? "agent_inner_monologue"
+                    : "agent_speech";
+            case ENVIRONMENT -> "environment_msg";
+        };
     }
 }

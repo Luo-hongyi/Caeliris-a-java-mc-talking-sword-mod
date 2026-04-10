@@ -44,7 +44,7 @@ public class AgentState {
     private volatile int familiarity;
 
     /**
-     * 对玩家的称呼（如 "主人", "朋友"）。
+     * 对玩家的称呼（如 "你", "朋友"）。
      */
     private volatile String playerAddress;
 
@@ -143,7 +143,7 @@ public class AgentState {
         this.fullRawActionLogEnabled = false;
         this.currentDesireTag = null;
         this.desireDescription = "";
-        this.playerAddress = "主人";
+        this.playerAddress = "你";
         this.recap = "";
     }
 
@@ -199,11 +199,11 @@ public class AgentState {
     // ── PlayerAddress ─────────────────────────────────────────────────
 
     public String getPlayerAddress() {
-        return playerAddress != null && !playerAddress.isBlank() ? playerAddress : "主人";
+        return playerAddress != null && !playerAddress.isBlank() ? playerAddress : "你";
     }
 
     public void setPlayerAddress(String address) {
-        this.playerAddress = address != null && !address.isBlank() ? address.trim() : "主人";
+        this.playerAddress = address != null && !address.isBlank() ? address.trim() : "你";
     }
 
     // ── Recap ────────────────────────────────────────────────────────

@@ -110,8 +110,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
             interactions.add(new ReflectionInteraction(
                     turn.getTimestamp(),
                     turn.getTriggerSource(),
-                    turn.getUserPrompt(),
-                    turn.getAgentActions(),
+                    turn.getMessages(),
                     new ReflectionContextSnapshot(turn.getVisibleContexts(), turn.getContextExtras())));
         }
 

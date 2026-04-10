@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionTaskInput;
 
 import java.util.LinkedHashSet;
@@ -13,6 +14,9 @@ import java.util.Set;
  */
 public final class MemorySynthesisModule extends ReflectionModule {
 
+    private static final String INSTRUCTION_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.MODULE_SHARED_MEMORY_SYNTHESIS_INSTRUCTION).trim();
+
     public MemorySynthesisModule() {
         super(ReflectionModuleKey.MEMORY_SYNTHESIS);
     }
@@ -20,17 +24,7 @@ public final class MemorySynthesisModule extends ReflectionModule {
     @Override
     public String buildInstructionPrompt(ReflectionTaskInput input) {
         int segmentCount = input == null ? 0 : input.material().segments().size();
-        return """
-                你负责 `memory_synthesis` 模块。
-                目标：
-                - 从当前 reflection material 中挑选最值得沉淀成长记忆的 segment
-                - 输出一段统一的 LTM 文本
-                约束：
-                - `selected_segment_indices` 使用本次 material 的 local segment index
-                - 只能选择 0 到 %d 之间的已存在 segment
-                - `ltm_text` 必须是可直接提交的总结文本，不要写解释
-                - `importance` 可选，若填写则使用 0 到 1 之间的小数
-                """.formatted(Math.max(0, segmentCount - 1)).trim();
+        return INSTRUCTION_TEMPLATE.formatted(Math.max(0, segmentCount - 1));
     }
 
     @Override

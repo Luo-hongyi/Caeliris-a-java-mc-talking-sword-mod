@@ -1,0 +1,9 @@
+[State Snapshot]
+primary_emotion: %s
+emotion_intensity: %s
+familiarity: %s
+player_address: %s
+current_desire_description: %s
+favorability: %s
+player_profile: %s
+recap: %s

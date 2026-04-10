@@ -60,7 +60,7 @@
 要求：
 
 - `visibleContexts` 必须保留原始语义文本
-- 因为它和该轮 `InteractionTurn` 以及 LLM 产出的动作直接绑定
+- 因为它和该轮 `InteractionTurn` 以及该轮内部的 `InteractionMessage` 直接绑定
 - 后续 region / episode summary 若要解释“为什么当时说了这句话”，只能依赖这一层
 
 ### Layer 4: `recall-only edges`
@@ -166,7 +166,7 @@ region 应保留两类东西：
 
 原因：
 
-- 它们与 `InteractionTurn` 和 LLM 动作绑定
+- 它们与 `InteractionTurn` 和该轮 message timeline 绑定
 - 没有这层，后面只能看到“说了什么”，看不到“为什么说”
 
 ### B. 大量 recall-only 扁平 tag
@@ -207,7 +207,7 @@ region 应保留两类东西：
 
 #### Registered location
 
-- `主人当前位于已登记地点`
+- `玩家当前位于已登记地点`
 - 建议：`default visible`
 - 原因：它是强场景锚点，且常与 episode 切分和叙事位置直接相关
 
@@ -252,7 +252,7 @@ region 应保留两类东西：
 
 #### Biome
 
-- `主人正身处于群落`
+- `玩家正身处于群落`
 - 建议：`recall-only`
 - 原因：是典型环境标签，不是默认 visible 核心
 
@@ -260,7 +260,7 @@ region 应保留两类东西：
 
 #### Dimension
 
-- `主人目前身处于: dim`
+- `玩家目前身处于: dim`
 - 建议：`recall-only`
 - 原因：很重要，但更适合作为结构化环境锚点而不是默认 prompt 句子
 
@@ -275,7 +275,7 @@ region 应保留两类东西：
 
 #### Held item
 
-- `主人的手中正紧紧握着`
+- `玩家的手中正紧紧握着`
 - 建议：`default visible`
 - 原因：和 intent、动作解释强相关
 

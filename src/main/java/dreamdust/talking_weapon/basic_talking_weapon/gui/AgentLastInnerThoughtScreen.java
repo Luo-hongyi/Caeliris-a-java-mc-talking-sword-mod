@@ -1,5 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.gui;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSourceType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecentInteractionsFile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -52,7 +54,7 @@ public class AgentLastInnerThoughtScreen extends Screen {
             scrollList.addWrappedLines(font, left, rowWidth, "当前还没有可显示的 inner_monologue。", LABEL_COLOR);
         } else {
             scrollList.addWrappedLines(font, left, rowWidth,
-                    "最近一次触发: " + abbreviate(latest.entry.userPrompt, 96), LABEL_COLOR);
+                    "最近一次触发: " + abbreviate(describeTrigger(latest.entry), 96), LABEL_COLOR);
             scrollList.addWrappedLines(font, left, rowWidth,
                     "时间: " + TIME_FORMATTER.format(Instant.ofEpochMilli(latest.entry.timestamp)), LABEL_COLOR);
             scrollList.addBlank();
@@ -69,17 +71,35 @@ public class AgentLastInnerThoughtScreen extends Screen {
                 StudioRuntimeRecentInteractionsFile.readOrEmpty().entries;
         for (int i = entries.size() - 1; i >= 0; i--) {
             StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry = entries.get(i);
-            List<StudioRuntimeRecentInteractionsFile.RuntimeInteractionOutputEntry> outputs = entry.outputs;
-            for (int j = outputs.size() - 1; j >= 0; j--) {
-                StudioRuntimeRecentInteractionsFile.RuntimeInteractionOutputEntry output = outputs.get(j);
-                if ("inner_monologue".equals(output.type)
-                        && output.text != null
-                        && !output.text.isBlank()) {
-                    return new LatestThought(entry, output.text.trim());
+            List<StudioRuntimeRecentInteractionsFile.RuntimeInteractionMessageEntry> messages = entry.messages;
+            for (int j = messages.size() - 1; j >= 0; j--) {
+                StudioRuntimeRecentInteractionsFile.RuntimeInteractionMessageEntry message = messages.get(j);
+                if (message.sourceType == TaggedContextSourceType.AGENT
+                        && message.kind == InteractionMessageKind.INNER_MONOLOGUE
+                        && message.text != null
+                        && !message.text.isBlank()) {
+                    return new LatestThought(entry, message.text.trim());
                 }
             }
         }
         return null;
+    }
+
+    private static String describeTrigger(StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry) {
+        if (entry == null || entry.messages == null) {
+            return "(无触发)";
+        }
+        for (StudioRuntimeRecentInteractionsFile.RuntimeInteractionMessageEntry message : entry.messages) {
+            if (message == null || message.text == null || message.text.isBlank()) {
+                continue;
+            }
+            if ((message.sourceType == TaggedContextSourceType.AGENT
+                    && message.kind == InteractionMessageKind.REACTION_CUE)
+                    || message.sourceType == TaggedContextSourceType.PLAYER) {
+                return message.text.trim();
+            }
+        }
+        return entry.triggerSource == null || entry.triggerSource.isBlank() ? "(无触发)" : entry.triggerSource.trim();
     }
 
     private static String abbreviate(String text, int maxLen) {
@@ -98,7 +118,7 @@ public class AgentLastInnerThoughtScreen extends Screen {
         renderBackground(graphics);
         scrollList.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 10, TITLE_COLOR);
-        graphics.drawString(font, "§7这里只读显示最近一次被记录的 inner_monologue。", (width - Math.min(width - 40, 500)) / 2,
+        graphics.drawString(font, "§7这里只读显示最近一次被记录的 AGENT_INNER_MONOLOGUE。", (width - Math.min(width - 40, 500)) / 2,
                 HEADER_HEIGHT - 12, LABEL_COLOR);
         super.render(graphics, mouseX, mouseY, partialTick);
     }

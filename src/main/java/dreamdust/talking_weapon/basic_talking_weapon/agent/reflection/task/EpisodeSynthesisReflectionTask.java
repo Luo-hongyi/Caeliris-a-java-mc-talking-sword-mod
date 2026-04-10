@@ -22,6 +22,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.R
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentMaterial;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateModule;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.FavorabilityUpdateModule;
@@ -69,13 +70,27 @@ import java.util.regex.Pattern;
 public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask {
 
     public static final String SOURCE_NAME = "episode_synthesis_reflection";
-    private static final String SYSTEM_PROMPT_HEADER = """
-            你正在执行 `episode_synthesis` reflection task。
-            你的职责是基于这一整段 episode 的 material、当前状态与相关 persona，
-            同时完成长期记忆合成、玩家画像更新、前情提要更新、关系更新和情绪更新。
-            输出必须严格遵守给定 JSON 协议，只返回一个 JSON 对象，不要输出解释、Markdown 或额外文字。
-            """.trim();
-    private static final String USER_PROMPT = "请完成本次 episode synthesis reflection，并只返回单个 JSON 对象。";
+    private static final String ROLEPLAY_REASONING_FIELD = "roleplay_reasoning";
+    private static final String SYSTEM_PROMPT_HEADER = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_EPISODE_SYNTHESIS_SYSTEM_HEADER).trim();
+    private static final String USER_PROMPT = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_EPISODE_SYNTHESIS_USER_PROMPT).trim();
+    private static final String IDENTITY_SECTION_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_IDENTITY_SECTION).trim();
+    private static final String SHARED_REFLECTION_SYSTEM_HEADER = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_REFLECTION_SYSTEM_HEADER).trim();
+    private static final String STATE_SECTION_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_STATE_SNAPSHOT_SECTION).trim();
+    private static final String RELEVANT_PERSONA_HEADER = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_RELEVANT_PERSONA_HEADER).trim();
+    private static final String RELEVANT_PERSONA_ENTRY_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_RELEVANT_PERSONA_ENTRY).trim();
+    private static final String RELEVANT_PERSONA_NONE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_RELEVANT_PERSONA_NONE).trim();
+    private static final String TASK_CONSTRAINTS = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_TASK_CONSTRAINTS).trim();
+    private static final String OUTPUT_RULES = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.TASK_SHARED_OUTPUT_RULES).trim();
     private static final float DEFAULT_SYNTHESIZED_MEMORY_IMPORTANCE = 0.6f;
     private static final String TASK_LOG_PREFIX = "[TalkingWeapon/Reflection] ";
     private static final Gson PRETTY_GSON = new GsonBuilder()
@@ -202,6 +217,7 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
             }
 
             JsonObject rootObject = parseRootObject(rawReply);
+            requireTopLevelNonBlankString(rootObject, ROLEPLAY_REASONING_FIELD);
             Map<ReflectionModuleKey, ReflectionModuleResult> parsedResults =
                     parseAndValidateModuleOutputs(rootObject, input);
 
@@ -237,6 +253,7 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
     String buildSystemPrompt(ReflectionTaskInput input, ReflectionPromptDraft promptDraft) {
         StringJoiner joiner = new StringJoiner("\n\n");
         joiner.add(SYSTEM_PROMPT_HEADER);
+        joiner.add(SHARED_REFLECTION_SYSTEM_HEADER);
 
         String cognitionRule = PromptRegistry.getInstance().getSystemCognitionRule();
         if (cognitionRule != null && !cognitionRule.isBlank()) {
@@ -254,13 +271,7 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
             joiner.add("[Segment Reference Map]\n" + promptDraft.segmentReferenceMap().trim());
         }
 
-        joiner.add("""
-                [Task Constraints]
-                - 这是一次 episode 级综合任务，必须同时填写全部 modules
-                - 所有输出都必须基于同一批 material / state / persona 事实
-                - 不要输出推理过程
-                - 不要省略任何已声明 module
-                """.trim());
+        joiner.add(TASK_CONSTRAINTS);
 
         String moduleInstruction = buildModuleInstructionPrompt(input);
         if (!moduleInstruction.isBlank()) {
@@ -268,14 +279,7 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
         }
 
         joiner.add("[Output Contract]\n" + buildRootOutputContractPrompt());
-        joiner.add("""
-                [Output Rules]
-                - 顶层必须是 JSON object
-                - 顶层必须包含 `modules`
-                - `modules` 下必须包含全部已声明的 module key
-                - 不要输出 Markdown 代码块
-                - 不要输出任何额外说明文字
-                """.trim());
+        joiner.add(OUTPUT_RULES);
         return joiner.toString();
     }
 
@@ -284,56 +288,37 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
     }
 
     private String buildIdentitySection(ReflectionStateSnapshot state) {
-        return """
-                [Identity]
-                identity: %s
-                role_background: %s
-                role_personality: %s
-                """.formatted(
+        return IDENTITY_SECTION_TEMPLATE.formatted(
                 safeText(state.identity()),
                 safeText(state.roleBackground()),
-                safeText(state.rolePersonality())).trim();
+                safeText(state.rolePersonality()));
     }
 
     private String buildStateSection(ReflectionStateSnapshot state) {
-        return """
-                [State Snapshot]
-                primary_emotion: %s
-                emotion_intensity: %s
-                familiarity: %s
-                player_address: %s
-                current_desire_tag: %s
-                current_desire_description: %s
-                favorability: %s
-                player_profile: %s
-                recap: %s
-                """.formatted(
+        return STATE_SECTION_TEMPLATE.formatted(
                 safeText(state.primaryEmotion()),
                 safeNumber(state.emotionIntensity()),
                 safeNumber(state.familiarity()),
                 safeText(state.playerAddress()),
-                safeText(state.currentDesireTag()),
                 safeText(state.currentDesireDescription()),
                 safeNumber(state.favorability()),
                 safeText(state.playerProfile()),
-                safeText(state.recap())).trim();
+                safeText(state.recap()));
     }
 
     private String buildRelevantPersonaSection(RelevantPersonaEntries relevantPersonaEntries) {
         List<PersonaEntry> entries = relevantPersonaEntries == null ? List.of() : relevantPersonaEntries.entries();
         if (entries == null || entries.isEmpty()) {
-            return "[Relevant Persona Entries]\n(none)";
+            return RELEVANT_PERSONA_HEADER + "\n" + RELEVANT_PERSONA_NONE;
         }
 
-        StringBuilder builder = new StringBuilder("[Relevant Persona Entries]\n");
+        StringBuilder builder = new StringBuilder(RELEVANT_PERSONA_HEADER).append('\n');
         for (PersonaEntry entry : entries) {
             if (entry == null) {
                 continue;
             }
-            builder.append("- description: ").append(safeText(entry.getDescription())).append('\n');
-            builder.append("  focus_tags: ").append(entry.getFocusTags()).append('\n');
-            builder.append("  detail_tags: ").append(entry.getDetailTags()).append('\n');
-            builder.append("  always_recalled: ").append(entry.isAlwaysRecalled()).append('\n');
+            builder.append(RELEVANT_PERSONA_ENTRY_TEMPLATE.formatted(
+                    safeText(entry.getDescription()))).append('\n');
         }
         return builder.toString().trim();
     }
@@ -354,10 +339,18 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
         modulesContract.add("required", moduleRequired);
         modulesContract.add("properties", moduleProperties);
 
+        JsonObject roleplayReasoningContract = new JsonObject();
+        roleplayReasoningContract.addProperty("type", "string");
+        roleplayReasoningContract.addProperty(
+                "description",
+                "简短说明这次你如何把握剑的立场、语气、偏好与主体区分；该字段仅用于调试。");
+
         JsonObject rootProperties = new JsonObject();
+        rootProperties.add(ROLEPLAY_REASONING_FIELD, roleplayReasoningContract);
         rootProperties.add("modules", modulesContract);
 
         JsonArray rootRequired = new JsonArray();
+        rootRequired.add(ROLEPLAY_REASONING_FIELD);
         rootRequired.add("modules");
 
         JsonObject rootContract = new JsonObject();
@@ -365,6 +358,20 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
         rootContract.add("required", rootRequired);
         rootContract.add("properties", rootProperties);
         return PRETTY_GSON.toJson(rootContract);
+    }
+
+    private String requireTopLevelNonBlankString(JsonObject rootObject, String fieldName) {
+        if (rootObject == null || fieldName == null || fieldName.isBlank()) {
+            throw new IllegalArgumentException("rootObject and fieldName must not be null");
+        }
+        if (!rootObject.has(fieldName) || rootObject.get(fieldName).isJsonNull()) {
+            throw new IllegalArgumentException("Missing required top-level string field: " + fieldName);
+        }
+        String value = rootObject.get(fieldName).getAsString();
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Top-level string field must not be blank: " + fieldName);
+        }
+        return value;
     }
 
     private JsonObject parseRootObject(String rawReply) {

@@ -4,7 +4,7 @@
     {
       "tag": "custom_specific:health_critical",
       "kind": "custom_specific",
-      "label": "持有者生命危急（低于 25%）",
+      "label": "玩家生命危急（低于 25%）",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -12,7 +12,7 @@
     {
       "tag": "custom_specific:health_low",
       "kind": "custom_specific",
-      "label": "持有者生命偏低（低于 50%）",
+      "label": "玩家生命偏低（低于 50%）",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -20,7 +20,7 @@
     {
       "tag": "custom_specific:health_medium",
       "kind": "custom_specific",
-      "label": "持有者生命略有折损",
+      "label": "玩家生命略有折损",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -28,7 +28,7 @@
     {
       "tag": "custom_specific:health_full",
       "kind": "custom_specific",
-      "label": "持有者生命值充盈",
+      "label": "玩家生命值充盈",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -36,7 +36,7 @@
     {
       "tag": "custom_specific:hungry_critical",
       "kind": "custom_specific",
-      "label": "持有者极度饥饿",
+      "label": "玩家极度饥饿",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -44,7 +44,7 @@
     {
       "tag": "custom_specific:hungry_low",
       "kind": "custom_specific",
-      "label": "持有者有些饥饿",
+      "label": "玩家有些饥饿",
       "aliases": [],
       "notes": "",
       "group": ""
@@ -300,7 +300,7 @@
     {
       "tag": "custom_specific:xp_level",
       "kind": "custom_specific",
-      "label": "持有者当前拥有经验等级",
+      "label": "玩家当前拥有经验等级",
       "aliases": [],
       "notes": "",
       "group": ""

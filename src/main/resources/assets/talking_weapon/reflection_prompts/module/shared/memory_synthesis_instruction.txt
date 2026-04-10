@@ -1,0 +1,8 @@
+在之前一段时间内，有一些片段中发生了些许特别引起你注意的事情...
+- 明确 0 ～ 2段最引起你注意的事情
+- 你的潜意识中形成了一段模糊的长期记忆LTM
+约束：
+- `selected_segment_indices` 使用本次 material 的 local segment index
+- 只能选择 0 到 %d 之间的已存在 segment
+- `ltm_text` 中，记忆是以第一人称的性格，偏好，立场和口吻产生的
+- `importance` 填写则使用 0 到 1 之间的小数

@@ -1,0 +1,15 @@
+episode_synthesis prompt mock preview
+
+scenario: hostile_murderer
+description: 同一套地下探索材料，但剑灵被设定为卑劣的杀人魔，且与玩家关系极差。
+regionId: 1001
+segmentRange: 41 -> 42
+timeRange: 120000 -> 180000
+stmSlice: 120000 -> 180000
+segmentCount: 2
+
+generated files:
+- system_prompt.txt
+- user_prompt.txt
+- prompt_draft.txt
+- segment_reference_map.txt

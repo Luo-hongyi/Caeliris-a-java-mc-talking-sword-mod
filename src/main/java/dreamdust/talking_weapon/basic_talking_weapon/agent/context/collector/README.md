@@ -91,11 +91,13 @@ public class MyNewCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
+
         // ── 传统 extras 输出（向后兼容） ──
         builder.extra("my_key", "人类可读的描述");
 
         // ── 标签化输出（推荐） ──
-        builder.addTaggedEntry(TaggedContextEntry.builder()
+        builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                 .focus(FocusTag.COMBAT)              // 注意力元标签
                 .detail(DetailTag.nativeSpecific("minecraft:zombie")) // 原生细节标签
                 .detail(DetailTag.nativeGeneric("minecraft:undead"))  // 原生概括标签

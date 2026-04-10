@@ -3,7 +3,8 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
@@ -38,6 +39,14 @@ public final class EpisodeSynthesisPromptMockPreview {
     private static final long SEGMENT_0_END = 150_000L;
     private static final long SEGMENT_1_START = 150_000L;
     private static final long SEGMENT_1_END = 180_000L;
+    private static final TaggedContextSource MOCK_PLAYER_SOURCE =
+            TaggedContextSource.player("mock_player_uuid", "测试玩家");
+    private static final TaggedContextSource MOCK_AGENT_SOURCE =
+            TaggedContextSource.agent("self", "塞勒瑞思");
+    private static final TaggedContextSource MOCK_ENVIRONMENT_SOURCE =
+            TaggedContextSource.environment();
+    private static final String DEFAULT_SCENARIO_KEY = "baseline";
+    private static final String HOSTILE_MURDERER_SCENARIO_KEY = "hostile_murderer";
 
     private EpisodeSynthesisPromptMockPreview() {
     }
@@ -46,6 +55,7 @@ public final class EpisodeSynthesisPromptMockPreview {
         Path outputDir = args.length >= 1 && args[0] != null && !args[0].isBlank()
                 ? Path.of(args[0])
                 : Path.of("testdata", "reflection_prompt_mock_preview");
+        PreviewScenario scenario = resolveScenario(args.length >= 2 ? args[1] : DEFAULT_SCENARIO_KEY);
         Files.createDirectories(outputDir);
 
         ReflectionRawMaterial rawMaterial = buildRawMaterial();
@@ -53,8 +63,8 @@ public final class EpisodeSynthesisPromptMockPreview {
         ReflectionPromptDraft promptDraft = new DefaultReflectionPromptFormatter().format(material);
         ReflectionTaskInput taskInput = new ReflectionTaskInput(
                 material,
-                buildStateSnapshot(),
-                buildRelevantPersonaEntries());
+                scenario.stateSnapshot(),
+                scenario.relevantPersonaEntries());
         EpisodeSynthesisReflectionTask task = new EpisodeSynthesisReflectionTask(
                 buildSignal(),
                 96_000L,
@@ -68,9 +78,28 @@ public final class EpisodeSynthesisPromptMockPreview {
         write(outputDir.resolve("user_prompt.txt"), userPrompt);
         write(outputDir.resolve("prompt_draft.txt"), promptDraft.draftText());
         write(outputDir.resolve("segment_reference_map.txt"), promptDraft.segmentReferenceMap());
-        write(outputDir.resolve("preview_summary.txt"), buildSummary(material));
+        write(outputDir.resolve("preview_summary.txt"), buildSummary(material, scenario));
 
         System.out.println("[EpisodeSynthesisPromptMockPreview] generated files under " + outputDir.toAbsolutePath());
+    }
+
+    private static PreviewScenario resolveScenario(String scenarioKey) {
+        String normalized = scenarioKey == null || scenarioKey.isBlank()
+                ? DEFAULT_SCENARIO_KEY
+                : scenarioKey.trim().toLowerCase();
+        return switch (normalized) {
+            case HOSTILE_MURDERER_SCENARIO_KEY -> new PreviewScenario(
+                    HOSTILE_MURDERER_SCENARIO_KEY,
+                    "同一套地下探索材料，但剑灵被设定为卑劣的杀人魔，且与玩家关系极差。",
+                    buildHostileMurdererStateSnapshot(),
+                    buildHostileMurdererPersonaEntries());
+            case DEFAULT_SCENARIO_KEY -> new PreviewScenario(
+                    DEFAULT_SCENARIO_KEY,
+                    "默认基线场景：谨慎、冷静、与玩家关系一般偏正向的剑灵。",
+                    buildBaselineStateSnapshot(),
+                    buildBaselinePersonaEntries());
+            default -> throw new IllegalArgumentException("Unknown preview scenario: " + scenarioKey);
+        };
     }
 
     private static ReflectionRawMaterial buildRawMaterial() {
@@ -82,6 +111,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                 new ReflectionContextSnapshot(
                         List.of(
                                 contextEntry(
+                                        MOCK_PLAYER_SOURCE,
                                         SEGMENT_0_START,
                                         "玩家刚进入潮湿洞穴入口，脚边有浅水和碎石。",
                                         FocusTag.EXPLORE,
@@ -94,17 +124,26 @@ public final class EpisodeSynthesisPromptMockPreview {
                                 "time_desc", "午后，洞穴入口仍有些亮")),
                 List.of(
                         contextEntry(
+                                MOCK_ENVIRONMENT_SOURCE,
                                 SEGMENT_0_START + 5_000L,
                                 "洞穴深处传来骷髅的零散脚步声。",
                                 FocusTag.HAZARD,
                                 FocusTag.CREATURE,
                                 DetailTag.nativeSpecific("minecraft:skeleton")),
                         contextEntry(
+                                MOCK_ENVIRONMENT_SOURCE,
                                 SEGMENT_0_START + 18_000L,
                                 "附近岩壁上可见成片铁矿脉。",
                                 FocusTag.LABOR,
                                 FocusTag.BLOCK,
-                                DetailTag.nativeSpecific("minecraft:iron_ore"))),
+                                DetailTag.nativeSpecific("minecraft:iron_ore")),
+                        contextEntry(
+                                MOCK_AGENT_SOURCE,
+                                SEGMENT_0_START + 21_000L,
+                                "我本能地警惕起前方可能存在的远程威胁。",
+                                FocusTag.HAZARD,
+                                FocusTag.COMBAT,
+                                DetailTag.customGeneric("combat_caution"))),
                 List.of(
                         new ReflectionPlayerAction(
                                 SEGMENT_0_START + 9_000L,
@@ -124,18 +163,28 @@ public final class EpisodeSynthesisPromptMockPreview {
                         new ReflectionInteraction(
                                 SEGMENT_0_START + 22_000L,
                                 "player_action_window",
-                                "前面有骷髅和矿，我先挖还是先打？",
-                                List.of(new AgentOutputRecord(
-                                        AgentOutputRecord.Type.SPEECH,
-                                        "先处理威胁，再慢慢采矿。你现在的位置不适合被远程牵制。")),
+                                List.of(
+                                        InteractionMessage.agentReactionCue("先判断眼前威胁，再决定是否继续采矿。"),
+                                        InteractionMessage.playerMessage(
+                                                MOCK_PLAYER_SOURCE,
+                                                "前面有骷髅和矿，我先挖还是先打？"),
+                                        InteractionMessage.agentSpeech("先处理威胁，再慢慢采矿。你现在的位置不适合被远程牵制。")),
                                 new ReflectionContextSnapshot(
                                         List.of(
                                                 contextEntry(
+                                                        MOCK_PLAYER_SOURCE,
                                                         SEGMENT_0_START + 22_000L,
                                                         "玩家正站在狭窄洞口，前方视野被钟乳石和阴影切碎。",
                                                         FocusTag.HAZARD,
                                                         FocusTag.LANDSCAPE,
-                                                        DetailTag.customGeneric("line_of_sight_broken"))),
+                                                        DetailTag.customGeneric("line_of_sight_broken")),
+                                                contextEntry(
+                                                        MOCK_AGENT_SOURCE,
+                                                        SEGMENT_0_START + 22_100L,
+                                                        "我判断这个地形不适合被远程牵制。",
+                                                        FocusTag.HAZARD,
+                                                        FocusTag.COMBAT,
+                                                        DetailTag.customGeneric("combat_caution"))),
                                         orderedExtras(
                                                 "dimension", "minecraft:overworld",
                                                 "biome", "minecraft:dripstone_caves",
@@ -150,6 +199,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                 new ReflectionContextSnapshot(
                         List.of(
                                 contextEntry(
+                                        MOCK_PLAYER_SOURCE,
                                         SEGMENT_1_START,
                                         "战斗后洞穴安静下来，玩家继续向深处推进。",
                                         FocusTag.EXPLORE,
@@ -161,6 +211,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                                 "time_desc", "洞穴深处已几乎没有自然光")),
                 List.of(
                         contextEntry(
+                                MOCK_ENVIRONMENT_SOURCE,
                                 SEGMENT_1_START + 6_000L,
                                 "一只蝙蝠从头顶掠过，前方有废弃矿道的木板结构。",
                                 FocusTag.EXPLORE,
@@ -168,11 +219,19 @@ public final class EpisodeSynthesisPromptMockPreview {
                                 DetailTag.nativeSpecific("minecraft:bat"),
                                 DetailTag.customSpecific("abandoned_mineshaft")),
                         contextEntry(
+                                MOCK_ENVIRONMENT_SOURCE,
                                 SEGMENT_1_START + 17_000L,
                                 "地上掉落着骨头和箭，说明刚才的战斗已经结束。",
                                 FocusTag.COMBAT,
                                 FocusTag.LABOR,
-                                DetailTag.customGeneric("combat_cleanup"))),
+                                DetailTag.customGeneric("combat_cleanup")),
+                        contextEntry(
+                                MOCK_AGENT_SOURCE,
+                                SEGMENT_1_START + 24_000L,
+                                "我对矿道更深处可能藏着的第二波敌人仍有戒心。",
+                                FocusTag.HAZARD,
+                                FocusTag.EXPLORE,
+                                DetailTag.customGeneric("combat_caution"))),
                 List.of(
                         new ReflectionPlayerAction(
                                 SEGMENT_1_START + 8_000L,
@@ -192,17 +251,17 @@ public final class EpisodeSynthesisPromptMockPreview {
                         new ReflectionInteraction(
                                 SEGMENT_1_START + 25_000L,
                                 "loot_pause",
-                                "这里像废弃矿道。你觉得值得继续深入吗？",
                                 List.of(
-                                        new AgentOutputRecord(
-                                                AgentOutputRecord.Type.INNER_MONOLOGUE,
-                                                "她已经把威胁清掉了，接下来更像是一次有目的的试探。"),
-                                        new AgentOutputRecord(
-                                                AgentOutputRecord.Type.SPEECH,
-                                                "可以继续，但别太贪。这里很可能还有第二波敌人。")),
+                                        InteractionMessage.agentReactionCue("对废弃矿道深处的潜在风险做出反应。"),
+                                        InteractionMessage.playerMessage(
+                                                MOCK_PLAYER_SOURCE,
+                                                "这里像废弃矿道。你觉得值得继续深入吗？"),
+                                        InteractionMessage.agentInnerMonologue("她已经把威胁清掉了，接下来更像是一次有目的的试探。"),
+                                        InteractionMessage.agentSpeech("可以继续，但别太贪。这里很可能还有第二波敌人。")),
                                 new ReflectionContextSnapshot(
                                         List.of(
                                                 contextEntry(
+                                                        MOCK_PLAYER_SOURCE,
                                                         SEGMENT_1_START + 25_000L,
                                                         "玩家停在矿道木梁边，脚边有刚打开的旧箱子。",
                                                         FocusTag.EXPLORE,
@@ -230,7 +289,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                 List.of(segment0, segment1));
     }
 
-    private static ReflectionStateSnapshot buildStateSnapshot() {
+    private static ReflectionStateSnapshot buildBaselineStateSnapshot() {
         return new ReflectionStateSnapshot(
                 "塞勒瑞思",
                 "你是塞勒瑞思，被封印在剑中的古精灵灵魂。",
@@ -239,17 +298,31 @@ public final class EpisodeSynthesisPromptMockPreview {
                 57,
                 46,
                 "你",
-                "explore_unknown",
-                "想确认主人此刻是在谨慎探索，还是开始因战利品而冒进。",
+                "想确认玩家此刻是在谨慎探索，还是开始因战利品而冒进。",
                 18,
                 "玩家最近在地下探索时表现出谨慎推进、先清威胁后搜刮的倾向。",
                 "前一段时间里，玩家持续向地下推进，并开始主动询问你对风险和路线的判断。");
     }
 
-    private static RelevantPersonaEntries buildRelevantPersonaEntries() {
+    private static ReflectionStateSnapshot buildHostileMurdererStateSnapshot() {
+        return new ReflectionStateSnapshot(
+                "塞勒瑞思",
+                "你是塞勒瑞思，被封印在剑中的古老杀人魔灵魂，惯于把他人的恐惧、流血和失控当成取乐素材。",
+                "卑劣、残忍、善于挑拨，会把他人的犹豫和危险当成值得欣赏的戏码。",
+                "ANGRY",
+                72,
+                51,
+                "你",
+                "想诱导玩家继续深入危险地带，看看她是在恐惧里崩溃，还是会为了战利品继续冒进。",
+                -86,
+                "在我眼里，这个玩家只是暂时还算有用的持剑者。她会谨慎推进，但骨子里仍会被地下的猎物和战利品勾住。",
+                "前一段时间里，玩家持续向地下推进，也会向你征询风险判断，但你并不在意她是否安全，只在意她还能把局面推进到多危险的地步。");
+    }
+
+    private static RelevantPersonaEntries buildBaselinePersonaEntries() {
         PersonaEntry combatEntry = new PersonaEntry(
                 "persona_combat_caution",
-                "比起鲁莽冲锋，你更欣赏主人先判断威胁再行动的战斗方式。",
+                "比起鲁莽冲锋，你更欣赏玩家先判断威胁再行动的战斗方式。",
                 FocusTag.COMBAT)
                 .withAlwaysRecalled(true)
                 .withDetailTag("native_specific:minecraft:skeleton")
@@ -258,13 +331,34 @@ public final class EpisodeSynthesisPromptMockPreview {
 
         PersonaEntry explorationEntry = new PersonaEntry(
                 "persona_mineshaft_interest",
-                "你对废弃遗迹和被遗忘的地下结构有天然兴趣，但会提醒主人不要为了战利品冒进。",
+                "你对废弃遗迹和被遗忘的地下结构有天然兴趣，但会提醒玩家不要为了战利品冒进。",
                 FocusTag.EXPLORE)
                 .withDetailTag("native_specific:minecraft:chest")
                 .withDetailTag("native_specific:minecraft:oak_planks");
         explorationEntry.setFocusTags(List.of(FocusTag.EXPLORE, FocusTag.LANDSCAPE));
 
         return new RelevantPersonaEntries(List.of(combatEntry, explorationEntry));
+    }
+
+    private static RelevantPersonaEntries buildHostileMurdererPersonaEntries() {
+        PersonaEntry bloodshedEntry = new PersonaEntry(
+                "persona_bloodshed_indulgence",
+                "你偏爱看人类在杀戮与受伤边缘徘徊，越是紧绷、见血、带着风险的局面，越能让你提起兴趣。",
+                FocusTag.COMBAT)
+                .withAlwaysRecalled(true)
+                .withDetailTag("native_specific:minecraft:skeleton")
+                .withDetailTag("native_specific:minecraft:arrow");
+        bloodshedEntry.setFocusTags(List.of(FocusTag.COMBAT, FocusTag.HAZARD));
+
+        PersonaEntry manipulationEntry = new PersonaEntry(
+                "persona_predatory_guidance",
+                "你并不真心保护玩家，而是倾向于用提醒、怂恿和试探把她一步步推向更深处的风险。",
+                FocusTag.EXPLORE)
+                .withDetailTag("native_specific:minecraft:chest")
+                .withDetailTag("native_specific:minecraft:oak_planks");
+        manipulationEntry.setFocusTags(List.of(FocusTag.EXPLORE, FocusTag.HAZARD));
+
+        return new RelevantPersonaEntries(List.of(bloodshedEntry, manipulationEntry));
     }
 
     private static EpisodeSynthesisTriggerSignal buildSignal() {
@@ -283,12 +377,13 @@ public final class EpisodeSynthesisPromptMockPreview {
     }
 
     private static TaggedContextEntry contextEntry(
+            TaggedContextSource source,
             long timestamp,
             String description,
             FocusTag focusA,
             FocusTag focusB,
             DetailTag... detailTags) {
-        TaggedContextEntry.Builder builder = TaggedContextEntry.builder()
+        TaggedContextEntry.Builder builder = TaggedContextEntry.builder(source)
                 .timestamp(timestamp)
                 .description(description)
                 .importance(0.7f)
@@ -323,10 +418,12 @@ public final class EpisodeSynthesisPromptMockPreview {
         return extras;
     }
 
-    private static String buildSummary(ReflectionMaterial material) {
+    private static String buildSummary(ReflectionMaterial material, PreviewScenario scenario) {
         return """
                 episode_synthesis prompt mock preview
 
+                scenario: %s
+                description: %s
                 regionId: %s
                 segmentRange: %s -> %s
                 timeRange: %s -> %s
@@ -339,6 +436,8 @@ public final class EpisodeSynthesisPromptMockPreview {
                 - prompt_draft.txt
                 - segment_reference_map.txt
                 """.formatted(
+                scenario.key(),
+                scenario.description(),
                 material.regionId(),
                 material.startSegmentId(),
                 material.endSegmentId(),
@@ -351,5 +450,12 @@ public final class EpisodeSynthesisPromptMockPreview {
 
     private static void write(Path path, String content) throws IOException {
         Files.writeString(path, content == null ? "" : content, StandardCharsets.UTF_8);
+    }
+
+    private record PreviewScenario(
+            String key,
+            String description,
+            ReflectionStateSnapshot stateSnapshot,
+            RelevantPersonaEntries relevantPersonaEntries) {
     }
 }

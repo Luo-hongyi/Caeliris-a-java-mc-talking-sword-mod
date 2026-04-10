@@ -38,7 +38,7 @@
 - `MovingActionBuffer`
   - 从同一批动作事件投影出来的 prompt 侧近期摘要缓冲
   - 保留短窗口、压缩、选择性消费语义
-  - 供 `RecentActionCollector` 生成“主人刚刚做了什么”
+  - 供 `RecentActionCollector` 生成“玩家刚刚做了什么”
 - `RecentActionBuffer`
   - 旧 prompt 链路遗留的兼容层
   - 当前不再作为 `RecentActionCollector` 的直接输入
@@ -68,9 +68,9 @@
 
 `MovingActionBuffer` 当前很适合做的事情：
 
-- “主人刚刚打了一架”
-- “主人刚刚挖了一些矿”
-- “主人刚刚移动了一大段距离”
+- “玩家刚刚打了一架”
+- “玩家刚刚挖了一些矿”
+- “玩家刚刚移动了一大段距离”
 
 它不适合直接承担的事情：
 
@@ -133,7 +133,7 @@
 
 - 给 episode / intent 层一个明确的“阶段空白”信号
 - 避免我们只能通过“没有记录”去被动猜测玩家是否停下来了
-- 也可以作为 prompt 里的轻量氛围信息，例如“主人刚才发了一会儿呆”
+- 也可以作为 prompt 里的轻量氛围信息，例如“玩家刚才发了一会儿呆”
 
 当前实现：
 
@@ -339,7 +339,7 @@
 原因是：
 
 - `INTERACT` 会把 `SOCIAL` 和 `CRAFT` 的边界重新糊掉
-- `INNER_MONOLOGUE` 属于 Agent 输出记录，应留在 `AgentOutputRecord` / `InteractionTurn` 这条链路
+- `INNER_MONOLOGUE` 属于 interaction message，应留在 `InteractionMessage` / `InteractionTurn` 这条链路
 
 ## 7. 面向 player intent 的推荐分类
 

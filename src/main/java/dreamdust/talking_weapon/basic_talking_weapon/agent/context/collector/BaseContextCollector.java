@@ -5,8 +5,10 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.WorldTimeSema
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PlayerIdentityRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagPolicy;
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.player.Player;
@@ -34,7 +36,9 @@ public class BaseContextCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
         if (player != null) {
+            TaggedContextSource playerSource = PlayerIdentityRegistry.getInstance().resolveSource(player);
             builder.health(player.getHealth())
                     .maxHealth(player.getMaxHealth())
                     .foodLevel(player.getFoodData().getFoodLevel())
@@ -75,10 +79,10 @@ public class BaseContextCollector implements IContextCollector {
                         }
                     }
 
-                    TaggedContextEntry.Builder locationEntry = TaggedContextEntry.builder()
+                    TaggedContextEntry.Builder locationEntry = TaggedContextEntry.builder(playerSource)
                             .focus(locationFocus)
                             .detail(DetailTag.customSpecific(resolvedLocation.getName()))
-                            .description("主人当前位于已登记地点: " + resolvedLocation.getName())
+                            .description("玩家当前位置命中已登记地点: " + resolvedLocation.getName())
                             .importance(ImportanceRegistry.getInstance().get("base:registered_location", 0.28f));
                     for (String rawTag : resolvedLocation.getEntry().getParsedDetailTags()) {
                         try {
@@ -99,21 +103,21 @@ public class BaseContextCollector implements IContextCollector {
             if (healthPct < 0.2f) {
                 healthState = "health_critical";
                 healthImportance = ImportanceRegistry.getInstance().get("base:health_critical", 1.0f);
-                hpDesc = "主人的生命力犹如风中残烛，极其虚弱！(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
+                hpDesc = "玩家生命值极低，处于濒危状态。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else if (healthPct < 0.5f) {
                 healthState = "health_low";
                 healthImportance = ImportanceRegistry.getInstance().get("base:health_low", 0.6f);
-                hpDesc = "主人受了不轻的伤，需要治疗。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
+                hpDesc = "玩家受伤较重，需要尽快治疗。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else if (healthPct < 0.8f) {
                 healthState = "health_medium";
                 healthImportance = ImportanceRegistry.getInstance().get("base:health_medium", 0.2f);
-                hpDesc = "主人的生命状况有轻微折损。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
+                hpDesc = "玩家生命值有一定损耗。(" + String.format("%.0f/%.0f)", player.getHealth(), player.getMaxHealth());
             } else {
                 healthState = "health_full";
                 healthImportance = ImportanceRegistry.getInstance().get("base:health_good", 0.1f);
-                hpDesc = "主人的生命体征非常平稳健康。";
+                hpDesc = "玩家生命状态稳定。";
             }
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(playerSource)
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.CUSTOM_SPECIFIC, healthState)
                     .description(hpDesc)
@@ -123,17 +127,17 @@ public class BaseContextCollector implements IContextCollector {
             // ── 标签：饥饿状态 ──
             int food = player.getFoodData().getFoodLevel();
             if (food < 6) {
-                builder.addTaggedEntry(TaggedContextEntry.builder()
+                builder.addTaggedEntry(TaggedContextEntry.builder(playerSource)
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "hungry_critical")
-                    .description("主人已经非常饥饿，甚至没有力气奔跑了！(饥饿值: " + food + ")")
+                    .description("玩家极度饥饿，已经难以正常疾跑。(饥饿值: " + food + ")")
                     .importance(ImportanceRegistry.getInstance().get("base:hunger_critical", 0.8f))
                     .build());
             } else if (food < 15) {
-                builder.addTaggedEntry(TaggedContextEntry.builder()
+                builder.addTaggedEntry(TaggedContextEntry.builder(playerSource)
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "hungry_low")
-                    .description("主人的体力消耗明显，肚子饿了。(饥饿值: " + food + ")")
+                    .description("玩家饥饿感明显，体力开始不足。(饥饿值: " + food + ")")
                     .importance(ImportanceRegistry.getInstance().get("base:hunger_low", 0.4f))
                     .build());
             }
@@ -155,10 +159,10 @@ public class BaseContextCollector implements IContextCollector {
 
             // ── 标签：时间状态 ──
             String timeState = WorldTimeSemantics.categorizeTime(timeOfDayTick);
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, timeState)
-                    .description("感知到世界的时间是: " + timeDesc)
+                    .description("当前世界时间: " + timeDesc)
                     .importance(ImportanceRegistry.getInstance().get("base:time", 0.2f))
                     .associativeOnly(true)
                     .build());
@@ -168,10 +172,10 @@ public class BaseContextCollector implements IContextCollector {
                     : level.isRaining() ? "weather_rain" : "weather_clear";
             float weatherImportance = level.isThundering() ? ImportanceRegistry.getInstance().get("base:weather_bad", 0.3f)
                     : level.isRaining() ? ImportanceRegistry.getInstance().get("base:weather_bad", 0.3f) : ImportanceRegistry.getInstance().get("base:weather_good", 0.1f);
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, weatherState)
-                    .description("外面的天气: " + (level.isThundering() ? "正在电闪雷鸣的暴风雨" : level.isRaining() ? "正在下雨" : "晴朗万里"))
+                    .description("当前天气: " + (level.isThundering() ? "电闪雷鸣的暴风雨" : level.isRaining() ? "下雨" : "晴朗"))
                     .importance(weatherImportance)
                     .build());
 
@@ -183,10 +187,10 @@ public class BaseContextCollector implements IContextCollector {
                     builder.extra("biome", biomeId);
 
                     // ── 标签：群系 ──
-                    builder.addTaggedEntry(TaggedContextEntry.builder()
+                    builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                             .focus(FocusTag.LANDSCAPE)
                             .detail(DetailTag.NATIVE_SPECIFIC, biomeId)
-                            .description("主人正身处于群落: " + biomeId)
+                            .description("当前位置群系: " + biomeId)
                             .importance(ImportanceRegistry.getInstance().get("base:biome", 0.2f))
                             .associativeOnly(true)
                             .build());

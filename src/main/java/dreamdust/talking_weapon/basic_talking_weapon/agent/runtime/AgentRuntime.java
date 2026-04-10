@@ -15,7 +15,7 @@ import java.util.concurrent.PriorityBlockingQueue;
  * 优先响应，不允许被后台抢占。
  * <p>
  * <b>后台队列 (Background)</b>：处理 Agent 内部的异步任务（碎碎念、记忆沉淀、
- * 持有者画像更新、内心活动等）。后台 worker 完全独立，不阻塞前台交互。
+ * 玩家画像更新、内心活动等）。后台 worker 完全独立，不阻塞前台交互。
  * <p>
  * 两个队列共享同一份 {@link AgentMemory} 和 {@link AgentState}（注意：任务内部
  * 对共享状态的写操作需保证线程安全，当前以字段级 volatile 为基础防护）。

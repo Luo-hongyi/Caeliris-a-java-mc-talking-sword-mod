@@ -1,0 +1,4 @@
+[Identity]
+identity: %s
+role_background: %s
+role_personality: %s

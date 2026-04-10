@@ -2,6 +2,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionTaskInput;
 
 /**
@@ -9,22 +10,16 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.Refle
  */
 public final class RecapUpdateModule extends ReflectionModule {
 
+    private static final String INSTRUCTION_PROMPT = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.MODULE_SHARED_RECAP_UPDATE_INSTRUCTION).trim();
+
     public RecapUpdateModule() {
         super(ReflectionModuleKey.RECAP_UPDATE);
     }
 
     @Override
     public String buildInstructionPrompt(ReflectionTaskInput input) {
-        return """
-                你负责 `recap_update` 模块。
-                目标：
-                - 基于过去一段时间的记录，为剑生成一段阶段性“前情提要”
-                - 这不是即时状态播报，而是帮助后续理解最近大背景的低频摘要
-                约束：
-                - `recap_text` 必须是一段可直接提交的前情提要
-                - 允许概括阶段趋势，但不要伪装成“此刻正在发生”的即时事实
-                - 不要写推理过程，不要写字段说明
-                """.trim();
+        return INSTRUCTION_PROMPT;
     }
 
     @Override

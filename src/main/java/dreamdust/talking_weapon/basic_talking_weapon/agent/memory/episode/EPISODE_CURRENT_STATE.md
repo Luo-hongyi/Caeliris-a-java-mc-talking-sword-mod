@@ -459,8 +459,11 @@ region 的构造统一走 [EpisodeIntentMath.java](/Users/jackluo/Documents/self
 
 交互描述当前形态是：
 
-- 有 `userPrompt` 时：`玩家发出指令/事件「...」，随后剑说/剑心声...`
-- 没有 `userPrompt` 时：`触发源 xxx`
+- 当前正式结构已切到 `InteractionTurn.messages`
+- 常见形态是：
+  - `AGENT_REACTION_CUE` 作为这轮反应线索
+  - 后接 `AGENT_SPEECH` / `AGENT_INNER_MONOLOGUE`
+- 若未来接入真正玩家对话，则会补入 `PLAYER_MSG`
 
 ### 9.3 interaction 与 context 的绑定
 

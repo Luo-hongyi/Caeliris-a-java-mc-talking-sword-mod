@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
@@ -53,6 +54,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         BlockPos playerPos = player.blockPosition();
 
@@ -123,7 +125,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // --- 生成隐式关联方块 (Associative Only) ---
         for (Map.Entry<String, Integer> entry : blockCounts.entrySet()) {
             String label = blockLabels.getOrDefault(entry.getKey(), entry.getKey());
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.NATIVE_SPECIFIC, entry.getKey())
                     .description("周围环境方块: " + label + " 数量: " + entry.getValue())
@@ -157,7 +159,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // 3a. 露天 / 室内 / 洞穴推断
         if (canSeeSky) {
             features.add("露天环境");
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "exposed")
                     .description("处于露天环境中，视野开阔。脚踩: " + blockBelow)
@@ -191,7 +193,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
             if (!hitSky) {
                 features.add("深层遮挡或地底");
-                builder.addTaggedEntry(TaggedContextEntry.builder()
+                builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                         .focus(FocusTag.LANDSCAPE)
                         .detail(DetailTag.CUSTOM_SPECIFIC, "deep_indoors")
                         .description("位于头顶极深处被遮挡的建筑内部或极深地城。头顶逾 64 格不见天日。")
@@ -199,7 +201,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
                         .build());
             } else if (coverBlocksAbove <= 4 && depthBelowSurface <= 4) {
                 features.add("浅层遮挡(室内房屋或树冠下)");
-                builder.addTaggedEntry(TaggedContextEntry.builder()
+                builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                         .focus(FocusTag.LANDSCAPE)
                         .detail(DetailTag.CUSTOM_SPECIFIC, "indoors")
                         .description("处于浅层遮挡环境中，更像屋檐、树冠下或普通建筑内部，而非地下洞穴。")
@@ -214,7 +216,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
                 if (likelyUnderground && naturalRoofDominant && naturalSurroundings && caveLikeDarkness) {
                     features.add("洞穴或地下");
-                    builder.addTaggedEntry(TaggedContextEntry.builder()
+                    builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                             .focus(FocusTag.LANDSCAPE)
                             .detail(DetailTag.CUSTOM_SPECIFIC, "cave")
                             .description(
@@ -224,7 +226,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
                             .build());
                 } else {
                     features.add("大型建筑内部或深层室内");
-                    builder.addTaggedEntry(TaggedContextEntry.builder()
+                    builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                             .focus(FocusTag.LANDSCAPE)
                             .detail(DetailTag.CUSTOM_SPECIFIC, "indoors")
                             .description(
@@ -238,7 +240,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
         // 3b. 高度信息推断
         int y = playerPos.getY();
         if (y >= 100) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "high_altitude")
                     .description("位于高海拔处 (Y=" + y + ")。")
@@ -248,14 +250,14 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
         // 3c. 水体/岩浆推断
         if (lavaCount > 0) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.HAZARD)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "lava_nearby")
                     .description("极度危险！周围发现大量岩浆池。")
                     .importance(ImportanceRegistry.getInstance().get("env:lava_nearby", 0.9f))
                     .build());
         } else if (waterCount > 10) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "water_nearby")
                     .description("附近有大量水体。")
@@ -265,7 +267,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
 
         // 3d. 光照环境推断
         if (blockLight <= 3 && skyLight <= 3) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.HAZARD) // 黑暗带来危险
                     .detail(DetailTag.CUSTOM_SPECIFIC, "pitch_dark")
                     .description("环境漆黑一片，极易生成怪物。")
@@ -286,7 +288,7 @@ public class SurroundingBlocksCollector implements IContextCollector {
             maxDrop = Math.max(maxDrop, drop);
         }
         if (maxDrop >= 8) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.HAZARD)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "cliff")
                     .description("处于高落差悬崖边缘 (落差 > " + maxDrop + " 格)，小心脚下！")

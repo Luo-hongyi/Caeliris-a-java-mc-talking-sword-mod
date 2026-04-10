@@ -21,27 +21,27 @@ public final class CollectedContextSnapshot {
             new CollectedContextSnapshot(0L, "empty", Map.of(), List.of(), List.of());
 
     private final long timestamp;
-    private final String source;
+    private final String snapshotSource;
     private final Map<String, String> extras;
     private final List<TaggedContextEntry> taggedEntries;
     private final List<TaggedContextEntry> visibleTaggedEntries;
 
     public CollectedContextSnapshot(
             long timestamp,
-            String source,
+            String snapshotSource,
             Map<String, String> extras,
             List<TaggedContextEntry> taggedEntries) {
-        this(timestamp, source, extras, taggedEntries, List.of());
+        this(timestamp, snapshotSource, extras, taggedEntries, List.of());
     }
 
     public CollectedContextSnapshot(
             long timestamp,
-            String source,
+            String snapshotSource,
             Map<String, String> extras,
             List<TaggedContextEntry> taggedEntries,
             List<TaggedContextEntry> visibleTaggedEntries) {
         this.timestamp = Math.max(0L, timestamp);
-        this.source = source == null || source.isBlank() ? "unknown" : source;
+        this.snapshotSource = snapshotSource == null || snapshotSource.isBlank() ? "unknown" : snapshotSource;
         this.extras = extras == null || extras.isEmpty()
                 ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(extras));
@@ -73,17 +73,17 @@ public final class CollectedContextSnapshot {
 
     public static CollectedContextSnapshot fromEntries(
             long timestamp,
-            String source,
+            String snapshotSource,
             List<TaggedContextEntry> taggedEntries) {
-        return new CollectedContextSnapshot(timestamp, source, Map.of(), taggedEntries, List.of());
+        return new CollectedContextSnapshot(timestamp, snapshotSource, Map.of(), taggedEntries, List.of());
     }
 
     public long getTimestamp() {
         return timestamp;
     }
 
-    public String getSource() {
-        return source;
+    public String getSnapshotSource() {
+        return snapshotSource;
     }
 
     public Map<String, String> getExtras() {

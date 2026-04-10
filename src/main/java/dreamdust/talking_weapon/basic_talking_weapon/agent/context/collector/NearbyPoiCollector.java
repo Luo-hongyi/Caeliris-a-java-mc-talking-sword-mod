@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -55,6 +56,7 @@ public class NearbyPoiCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         BlockPos playerPos = player.blockPosition();
         int radiusBlocks = scanRadiusChunks * 16;
@@ -96,7 +98,7 @@ public class NearbyPoiCollector implements IContextCollector {
             double distance = entry.getValue();
             FocusTag focus = determineFocusTag(poiName);
 
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(focus)
                     .detail(DetailTag.customSpecific(prettifyName(poiName)))
                     .description(String.format("注意到%s的特殊位置: %s", dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(distance), prettifyName(poiName)))

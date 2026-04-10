@@ -4,7 +4,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PlayerIdentityRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
@@ -34,6 +36,7 @@ public class RecentActionCollector implements IContextCollector {
 
     @Override
     public void collect(AgentContext.Builder builder, Player player, Level level) {
+        TaggedContextSource playerSource = PlayerIdentityRegistry.getInstance().resolveSource(player);
         MovingActionBuffer movingActionBuffer = AgentRuntime.getInstance().getMemory().getMovingActionBuffer();
         if (movingActionBuffer.isEmpty()) {
             return;
@@ -52,11 +55,15 @@ public class RecentActionCollector implements IContextCollector {
 
         for (int i = 0; i < promptEntries.size(); i++) {
             MovingActionSegmentEntry entry = promptEntries.get(i);
-            addPromptEntry(builder, entry, promptEntries.size() - 1 - i);
+            addPromptEntry(builder, playerSource, entry, promptEntries.size() - 1 - i);
         }
     }
 
-    private void addPromptEntry(AgentContext.Builder builder, MovingActionSegmentEntry actionEntry, int distanceFromLatest) {
+    private void addPromptEntry(
+            AgentContext.Builder builder,
+            TaggedContextSource playerSource,
+            MovingActionSegmentEntry actionEntry,
+            int distanceFromLatest) {
         if (actionEntry == null || actionEntry.getType() == null) {
             return;
         }
@@ -72,7 +79,7 @@ public class RecentActionCollector implements IContextCollector {
             return;
         }
 
-        TaggedContextEntry.Builder entryBuilder = TaggedContextEntry.builder()
+        TaggedContextEntry.Builder entryBuilder = TaggedContextEntry.builder(playerSource)
                 .description(description)
                 .importance(importance)
                 .timestamp(actionEntry.getLastTimestamp())
@@ -117,9 +124,9 @@ public class RecentActionCollector implements IContextCollector {
             String clause,
             int distanceFromLatest) {
         String lead = switch (distanceFromLatest) {
-            case 0 -> leadForFocus(entry.getType().getPrimaryFocus(), "刚刚玩家");
-            case 1 -> leadForFocus(entry.getType().getPrimaryFocus(), "稍早前，玩家");
-            default -> leadForFocus(entry.getType().getPrimaryFocus(), "再往前一点，玩家");
+            case 0 -> leadForFocus(entry.getType().getPrimaryFocus(), "刚刚，");
+            case 1 -> leadForFocus(entry.getType().getPrimaryFocus(), "稍早前，");
+            default -> leadForFocus(entry.getType().getPrimaryFocus(), "再往前一点，");
         };
         return lead + clause + "。";
     }

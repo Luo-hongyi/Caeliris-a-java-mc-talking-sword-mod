@@ -295,7 +295,7 @@ public final class AgentStateStorage {
         public String primary_emotion = AgentState.PrimaryEmotion.NEUTRAL.name();
         public int emotion_intensity = 0;
         public int familiarity = 0;
-        public String player_address = "主人";
+        public String player_address = "你";
         public float concentration = 0.5f;
         public float wandering_mind = 0.1f;
         public float nostalgia = 0.5f;

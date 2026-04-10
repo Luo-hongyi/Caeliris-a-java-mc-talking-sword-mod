@@ -19,8 +19,8 @@ public class ActionRegistry {
     private static final List<LLMActionType> REGISTERED_ACTIONS = new ArrayList<>();
 
     static {
-        register(new LLMActionType("inner_monologue", "{ \"type\": \"inner_monologue\", \"content\": \"(剑灵的内心独白，对持有者不可见)\" }"));
-        register(new LLMActionType("speech", "{ \"type\": \"speech\", \"content\": \"(对持有者说出口的话)\" }"));
+        register(new LLMActionType("inner_monologue", "{ \"type\": \"inner_monologue\", \"content\": \"(剑灵的内心独白，对玩家不可见)\" }"));
+        register(new LLMActionType("speech", "{ \"type\": \"speech\", \"content\": \"(对玩家说出口的话)\" }"));
     }
 
     /**

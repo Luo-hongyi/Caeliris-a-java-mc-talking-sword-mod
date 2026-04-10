@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.context;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.collector.IContextCollector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 import net.minecraft.world.entity.player.Player;
@@ -73,7 +74,7 @@ public final class AgentContextCollectionRunner {
             desc = "内心的渴望...";
         }
         builder.addTaggedEntry(TaggedContextEntry
-                .builder()
+                .builder(TaggedContextSource.agentSelf())
                 .focus(state.getCurrentDesireTag())
                 .detail(DetailTag.CUSTOM_GENERIC, "desire")
                 .description("当前渴望: " + desc)

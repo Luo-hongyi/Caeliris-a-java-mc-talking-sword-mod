@@ -2,12 +2,16 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionTaskInput;
 
 /**
  * 低频好感度更新模块。
  */
 public final class FavorabilityUpdateModule extends ReflectionModule {
+
+    private static final String INSTRUCTION_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.MODULE_SHARED_FAVORABILITY_UPDATE_INSTRUCTION).trim();
 
     public FavorabilityUpdateModule() {
         super(ReflectionModuleKey.FAVORABILITY_UPDATE);
@@ -16,17 +20,7 @@ public final class FavorabilityUpdateModule extends ReflectionModule {
     @Override
     public String buildInstructionPrompt(ReflectionTaskInput input) {
         Integer currentFavorability = input == null ? null : input.state().favorability();
-        return """
-                你负责 `favorability_update` 模块。
-                目标：
-                - 基于本次 reflection material 对剑与玩家关系的整体判断，给出一次低频好感度修正
-                当前参考：
-                - current favorability = %s
-                约束：
-                - `delta` 为带符号整数，正数表示提高，负数表示降低，0 表示无明显变化
-                - `reason` 必须简短说明这次修正的依据
-                - 这是低频 reflection 更新，不要按单一瞬时事件过度波动
-                """.formatted(currentFavorability == null ? "unknown" : currentFavorability).trim();
+        return INSTRUCTION_TEMPLATE.formatted(currentFavorability == null ? "unknown" : currentFavorability);
     }
 
     @Override

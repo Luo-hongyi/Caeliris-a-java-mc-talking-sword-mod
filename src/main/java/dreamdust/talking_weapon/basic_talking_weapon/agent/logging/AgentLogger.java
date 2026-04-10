@@ -3,9 +3,11 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.logging;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AttentionFilter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSourceType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.action.response.AgentActionResponse;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
@@ -690,15 +692,13 @@ public final class AgentLogger {
         } else {
             for (int i = 0; i < turns.size(); i++) {
                 InteractionTurn turn = turns.get(i);
-                String p = turn.getUserPrompt();
-                if (p != null && p.length() > 60) p = p.substring(0, 60) + "...";
                 w.println("    [" + i + "] 触发: " + turn.getTriggerSource()
-                        + " | Prompt: " + (p != null ? p : "null")
+                        + " | messages=" + turn.getMessages().size()
                         + (turn.hasImage() ? " [+图片]" : ""));
-                for (AgentOutputRecord rec : turn.getAgentActions()) {
+                for (InteractionMessage rec : turn.getMessages()) {
                     String t = rec.getText();
                     if (t.length() > 60) t = t.substring(0, 60) + "...";
-                    w.println("        -> " + rec.getType() + ": " + t);
+                    w.println("        -> " + describeInteractionMessage(rec) + ": " + t);
                 }
             }
         }
@@ -739,6 +739,23 @@ public final class AgentLogger {
         }
         w.println("└──────────────────────────────────────────────────────────────");
         w.println();
+    }
+
+    private static String describeInteractionMessage(InteractionMessage message) {
+        if (message == null || message.getSource() == null || message.getKind() == null) {
+            return "unknown";
+        }
+        if (message.getKind() == InteractionMessageKind.REACTION_CUE) {
+            return "agent_reaction_cue";
+        }
+        TaggedContextSourceType sourceType = message.getSource().getType();
+        return switch (sourceType) {
+            case PLAYER -> "player_msg";
+            case AGENT -> message.getKind() == InteractionMessageKind.INNER_MONOLOGUE
+                    ? "agent_inner_monologue"
+                    : "agent_speech";
+            case ENVIRONMENT -> "environment_msg";
+        };
     }
 
     /**
@@ -933,7 +950,7 @@ public final class AgentLogger {
         w.println("───────────────────────────────────────────────────────────────");
     }
 
-    /** 日志会话持有者 */
+    /** 日志会话句柄 */
     private static class LogSession {
         final PrintWriter writer;
         final String filePath;

@@ -11,7 +11,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.action.response;
  * 对玩家不可见，也不写入长期记忆，仅记录在日志中。</li>
  * <li><b>inner_monologue</b>：剑真正的内心活动，是剑的主观意识体验。
  * 对玩家不可见，将来会写入剑的记忆系统。</li>
- * <li><b>speech</b>：剑对持有者说出口的话。为空或省略时剑保持沉默。</li>
+ * <li><b>speech</b>：剑对玩家说出口的话。为空或省略时剑保持沉默。</li>
  * </ul>
  *
  *   "actions": [

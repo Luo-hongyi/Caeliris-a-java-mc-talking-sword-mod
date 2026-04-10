@@ -1,5 +1,7 @@
 episode_synthesis prompt mock preview
 
+scenario: baseline
+description: 默认基线场景：谨慎、冷静、与玩家关系一般偏正向的剑灵。
 regionId: 1001
 segmentRange: 41 -> 42
 timeRange: 120000 -> 180000

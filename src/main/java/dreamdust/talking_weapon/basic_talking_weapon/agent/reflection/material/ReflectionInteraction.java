@@ -1,6 +1,6 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material;
 
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,8 +12,7 @@ import java.util.List;
 public record ReflectionInteraction(
         long timestamp,
         String triggerSource,
-        String userPrompt,
-        List<AgentOutputRecord> outputs,
+        List<InteractionMessage> messages,
         ReflectionContextSnapshot boundSnapshot) {
 
     public ReflectionInteraction {
@@ -21,10 +20,9 @@ public record ReflectionInteraction(
             throw new IllegalArgumentException("timestamp must be >= 0");
         }
         triggerSource = triggerSource == null ? "" : triggerSource;
-        userPrompt = userPrompt == null ? "" : userPrompt;
-        outputs = outputs == null
+        messages = messages == null
                 ? List.of()
-                : Collections.unmodifiableList(new ArrayList<>(outputs));
+                : Collections.unmodifiableList(new ArrayList<>(messages));
         if (boundSnapshot == null) {
             throw new IllegalArgumentException("boundSnapshot must not be null");
         }

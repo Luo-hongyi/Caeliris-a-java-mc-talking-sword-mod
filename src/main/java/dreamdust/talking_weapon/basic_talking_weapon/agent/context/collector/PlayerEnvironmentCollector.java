@@ -4,7 +4,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PlayerIdentityRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Player;
@@ -34,16 +36,18 @@ public class PlayerEnvironmentCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource playerSource = PlayerIdentityRegistry.getInstance().resolveSource(player);
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         // ── 标签：维度 ──
         ResourceKey<Level> dimKey = level.dimension();
         String dimId = dimKey.location().toString();
         builder.extra("dimension", dimId);
         
-        builder.addTaggedEntry(TaggedContextEntry.builder()
+        builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                 .focus(FocusTag.LANDSCAPE)
                 .detail(DetailTag.NATIVE_SPECIFIC, dimId)
-                .description("主人目前身处于: " + dimId)
+                .description("当前位置维度: " + dimId)
                 .importance(ImportanceRegistry.getInstance().get("env:dimension", 0.3f))
                 .associativeOnly(true)
                 .build());
@@ -55,10 +59,10 @@ public class PlayerEnvironmentCollector implements IContextCollector {
         int effectiveLight = Math.max(blockLight, skyLight);
         String lightState = effectiveLight < 7 ? "light_dark" : "light_bright";
         float lightImportance = effectiveLight < 7 ? ImportanceRegistry.getInstance().get("env:light_level", 0.3f) : 0.1f;
-        builder.addTaggedEntry(TaggedContextEntry.builder()
+        builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                 .focus(effectiveLight < 7 ? FocusTag.HAZARD : FocusTag.LANDSCAPE)
                 .detail(DetailTag.CUSTOM_SPECIFIC, lightState)
-                .description("主人周围的环境光照阴暗程度感知为: " + (effectiveLight < 7 ? "昏暗且危险 (容易生成怪物)" : "明亮安全"))
+                .description("当前位置环境光照: " + (effectiveLight < 7 ? "昏暗且危险 (容易生成怪物)" : "明亮安全"))
                 .importance(lightImportance)
                 .build());
 
@@ -68,20 +72,20 @@ public class PlayerEnvironmentCollector implements IContextCollector {
             String itemName = mainHand.getHoverName().getString();
             String itemId = net.minecraftforge.registries.ForgeRegistries.ITEMS
                     .getKey(mainHand.getItem()).toString();
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(playerSource)
                     .focus(FocusTag.TOOL)
                     .detail(DetailTag.NATIVE_SPECIFIC, itemId)
-                    .description("主人的手中正紧紧握着: " + itemName)
+                    .description("玩家主手持有: " + itemName)
                     .importance(ImportanceRegistry.getInstance().get("env:held_item", 0.2f))
                     .build());
         }
 
         // ── 标签：经验等级 ──
         if (player.experienceLevel > 0) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(playerSource)
                     .focus(FocusTag.STATUS)
                     .detail(DetailTag.CUSTOM_SPECIFIC, "xp_level")
-                    .description("主人当前积攒的经验等级为: " + player.experienceLevel)
+                    .description("玩家当前经验等级: " + player.experienceLevel)
                     .importance(ImportanceRegistry.getInstance().get("env:xp", 0.1f))
                     .build());
         }

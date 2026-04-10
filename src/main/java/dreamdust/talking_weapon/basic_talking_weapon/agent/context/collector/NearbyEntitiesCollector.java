@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.ImportanceRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.config.TalkingWeaponConfig;
 import net.minecraft.world.entity.Entity;
@@ -47,6 +48,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         boolean lineOfSight = TalkingWeaponConfig.ENTITIES_LINE_OF_SIGHT.get();
         int losMaxCheck = TalkingWeaponConfig.ENTITIES_LOS_MAX_CHECK.get();
@@ -133,7 +135,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
 
             float imp = isHostile ? ImportanceRegistry.getInstance().get("native_specific:hostile_base", 0.6f) : ImportanceRegistry.getInstance().get("native_specific:passive_base", 0.2f);
 
-            TaggedContextEntry.Builder tagBuilder = TaggedContextEntry.builder()
+            TaggedContextEntry.Builder tagBuilder = TaggedContextEntry.builder(environmentSource)
                     .description((fuzzy ? fuzzyQuantity(count) : count + "只") + name)
                     .importance(imp);
 
@@ -165,7 +167,7 @@ public class NearbyEntitiesCollector implements IContextCollector {
         }
 
         if (totalHostile >= 5) {
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.COMBAT, FocusTag.HAZARD)
                     .detail(DetailTag.customGeneric("combat_intense"))
                     .description("附近有大量敌对生物（" + totalHostile + "只），战斗激烈")

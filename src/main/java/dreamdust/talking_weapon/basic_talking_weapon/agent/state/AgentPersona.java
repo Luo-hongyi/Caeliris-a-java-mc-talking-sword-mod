@@ -12,9 +12,9 @@ import java.util.List;
  *
  * <h3>包含内容</h3>
  * <ul>
- * <li><b>好感度（Favorability）</b>：剑对持有者的整体情感偏向，-100 厌恶 ~ +100 深情。</li>
+ * <li><b>好感度（Favorability）</b>：剑对玩家的整体情感偏向，-100 厌恶 ~ +100 深情。</li>
  * <li><b>人格条目（Persona Entries）</b>：与认知领域绑定的关键词描述，按场景筛选注入 Prompt。</li>
- * <li><b>玩家画像（Player Profile）</b>：剑对持有者的主观动态评价，一段叙事文字。</li>
+ * <li><b>玩家画像（Player Profile）</b>：剑对玩家的主观动态评价，一段叙事文字。</li>
  * </ul>
  *
  * <h3>线程安全</h3>
@@ -30,7 +30,7 @@ public class AgentPersona {
     /** 静态 persona 条目列表（当前从 personas.json 加载） */
     private volatile List<PersonaEntry> personaEntries;
 
-    /** 对持有者的动态评价（由 LLM 在反思中重写） */
+    /** 对玩家的动态评价（由 LLM 在反思中重写） */
     private volatile String playerProfile;
 
     public AgentPersona() {
@@ -144,7 +144,7 @@ public class AgentPersona {
         }
 
         if (playerProfile != null && !playerProfile.isBlank()) {
-            sb.append("对持有者的看法: ").append(playerProfile).append("\n");
+            sb.append("对玩家的看法: ").append(playerProfile).append("\n");
         }
 
         return sb.toString();

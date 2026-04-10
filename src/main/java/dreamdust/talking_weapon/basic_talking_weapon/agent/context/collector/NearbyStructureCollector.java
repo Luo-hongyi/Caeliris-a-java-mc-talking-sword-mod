@@ -4,6 +4,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.AgentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -70,6 +71,7 @@ public class NearbyStructureCollector implements IContextCollector {
     public void collect(AgentContext.Builder builder, Player player, Level level) {
         if (player == null || level == null)
             return;
+        TaggedContextSource environmentSource = TaggedContextSource.environment();
 
         BlockPos playerPos = player.blockPosition();
         Map<String, Double> structureDistances = collectStructureDistances(level, playerPos);
@@ -99,7 +101,7 @@ public class NearbyStructureCollector implements IContextCollector {
             String structureId = entry.getKey();
             double distance = entry.getValue();
 
-            builder.addTaggedEntry(TaggedContextEntry.builder()
+            builder.addTaggedEntry(TaggedContextEntry.builder(environmentSource)
                     .focus(FocusTag.LANDSCAPE)
                     .detail(DetailTag.nativeSpecific(structureId))
                     .description(String.format("注意到%s的结构: %s", dreamdust.talking_weapon.basic_talking_weapon.agent.context.DistanceFuzzer.fuzzify(distance), prettifyName(structureId)))

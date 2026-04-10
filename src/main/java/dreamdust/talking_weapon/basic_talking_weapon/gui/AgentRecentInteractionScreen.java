@@ -1,5 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.gui;
 
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSourceType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeRecentInteractionsFile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -20,7 +22,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 只读界面：极简显示最近的触发记录、台词和动作类型摘要。
+ * 只读界面：极简显示最近的触发记录、台词和消息类型摘要。
  * <p>
  * 数据源直接读取 Studio workspace 中的 runtime 交互文件，不依赖 STMPool 是否已被清空。
  */
@@ -76,23 +78,28 @@ public class AgentRecentInteractionScreen extends Screen {
     private static String buildTriggerLine(StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry) {
         String time = TIME_FORMATTER.format(Instant.ofEpochMilli(entry.timestamp));
         String imageMark = entry.hasImage ? " [+image]" : "";
-        String prompt = entry.userPrompt == null || entry.userPrompt.isBlank() ? "(无提示词)" : entry.userPrompt.trim();
-        return time + "  触发: " + prompt + imageMark;
+        String cue = firstMessageText(entry, TaggedContextSourceType.AGENT, InteractionMessageKind.REACTION_CUE);
+        if (cue == null || cue.isBlank()) {
+            cue = firstMessageText(entry, TaggedContextSourceType.PLAYER, InteractionMessageKind.TEXT);
+        }
+        if (cue == null || cue.isBlank()) {
+            cue = "(" + (entry.triggerSource == null || entry.triggerSource.isBlank() ? "无消息" : entry.triggerSource.trim()) + ")";
+        }
+        return time + "  触发: " + cue.trim() + imageMark;
     }
 
     private static String buildSpeechLine(StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry) {
-        for (StudioRuntimeRecentInteractionsFile.RuntimeInteractionOutputEntry output : entry.outputs) {
-            if ("speech".equals(output.type) && output.text != null && !output.text.isBlank()) {
-                return "说话: " + output.text.trim();
-            }
+        String speech = firstMessageText(entry, TaggedContextSourceType.AGENT, InteractionMessageKind.TEXT);
+        if (speech != null && !speech.isBlank()) {
+            return "说话: " + speech.trim();
         }
         return "说话: (沉默)";
     }
 
     private static String buildActionLine(StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry) {
         List<String> shortTypes = new ArrayList<>();
-        for (String actionType : entry.actionTypes) {
-            String shortLabel = shortActionType(actionType);
+        for (StudioRuntimeRecentInteractionsFile.RuntimeInteractionMessageEntry message : entry.messages) {
+            String shortLabel = shortActionType(message.sourceType, message.kind);
             if (!shortTypes.contains(shortLabel)) {
                 shortTypes.add(shortLabel);
             }
@@ -103,16 +110,36 @@ public class AgentRecentInteractionScreen extends Screen {
         return "动作: " + String.join(" / ", shortTypes);
     }
 
-    private static String shortActionType(String actionType) {
-        if (actionType == null || actionType.isBlank()) {
+    private static String shortActionType(TaggedContextSourceType sourceType, InteractionMessageKind kind) {
+        if (sourceType == null) {
             return "未知";
         }
-        return switch (actionType.toLowerCase()) {
-            case "speech" -> "说话";
-            case "inner_monologue" -> "心声";
-            case "emotion_update" -> "情绪";
-            default -> abbreviate(actionType, 8);
+        if (kind == InteractionMessageKind.REACTION_CUE) {
+            return "反应线索";
+        }
+        return switch (sourceType) {
+            case PLAYER -> "玩家";
+            case AGENT -> kind == InteractionMessageKind.INNER_MONOLOGUE ? "心声" : "说话";
+            case ENVIRONMENT -> "环境";
         };
+    }
+
+    private static String firstMessageText(StudioRuntimeRecentInteractionsFile.RuntimeInteractionEntry entry,
+            TaggedContextSourceType sourceType,
+            InteractionMessageKind kind) {
+        if (entry == null || entry.messages == null || sourceType == null) {
+            return null;
+        }
+        for (StudioRuntimeRecentInteractionsFile.RuntimeInteractionMessageEntry message : entry.messages) {
+            if (message != null
+                    && message.sourceType == sourceType
+                    && (kind == null || message.kind == kind)
+                    && message.text != null
+                    && !message.text.isBlank()) {
+                return message.text;
+            }
+        }
+        return null;
     }
 
     private static String abbreviate(String text, int maxLen) {
@@ -131,7 +158,7 @@ public class AgentRecentInteractionScreen extends Screen {
         renderBackground(graphics);
         scrollList.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 10, TITLE_COLOR);
-        graphics.drawString(font, "§7这里按 user prompt、说话内容、动作类型极简显示最近回合。", (width - Math.min(width - 40, 520)) / 2,
+        graphics.drawString(font, "§7这里按回合内消息序列极简显示最近回合。", (width - Math.min(width - 40, 520)) / 2,
                 HEADER_HEIGHT - 12, LABEL_COLOR);
         super.render(graphics, mouseX, mouseY, partialTick);
     }

@@ -14,7 +14,6 @@ public record ReflectionStateSnapshot(
         Integer emotionIntensity,
         Integer familiarity,
         String playerAddress,
-        String currentDesireTag,
         String currentDesireDescription,
         Integer favorability,
         String playerProfile,
@@ -26,7 +25,6 @@ public record ReflectionStateSnapshot(
         rolePersonality = rolePersonality == null ? "" : rolePersonality;
         primaryEmotion = primaryEmotion == null ? "" : primaryEmotion;
         playerAddress = playerAddress == null ? "" : playerAddress;
-        currentDesireTag = currentDesireTag == null ? "" : currentDesireTag;
         currentDesireDescription = currentDesireDescription == null ? "" : currentDesireDescription;
         playerProfile = playerProfile == null ? "" : playerProfile;
         recap = recap == null ? "" : recap;

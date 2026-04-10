@@ -3,6 +3,7 @@ package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionTaskInput;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
 
@@ -10,6 +11,9 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
  * 低频情绪刷新模块。
  */
 public final class EmotionUpdateModule extends ReflectionModule {
+
+    private static final String INSTRUCTION_TEMPLATE = ReflectionPromptResources.loadRequired(
+            ReflectionPromptResources.MODULE_SHARED_EMOTION_UPDATE_INSTRUCTION).trim();
 
     public EmotionUpdateModule() {
         super(ReflectionModuleKey.EMOTION_UPDATE);
@@ -19,20 +23,9 @@ public final class EmotionUpdateModule extends ReflectionModule {
     public String buildInstructionPrompt(ReflectionTaskInput input) {
         String currentEmotion = input == null ? "" : input.state().primaryEmotion();
         Integer currentIntensity = input == null ? null : input.state().emotionIntensity();
-        String basePrompt = """
-                你负责 `emotion_update` 模块。
-                目标：
-                - 基于本次 reflection material 更新剑当前的主导情绪与强度
-                当前参考：
-                - current emotion = %s
-                - current intensity = %s
-                约束：
-                - `emotion` 必须使用系统支持的情绪枚举名
-                - `intensity` 使用 0 到 100 的整数
-                - `reason` 简短说明这次情绪判断的依据
-                """.formatted(
+        String basePrompt = INSTRUCTION_TEMPLATE.formatted(
                 currentEmotion == null || currentEmotion.isBlank() ? "unknown" : currentEmotion,
-                currentIntensity == null ? "unknown" : currentIntensity).trim();
+                currentIntensity == null ? "unknown" : currentIntensity);
         String emotionGuide = PromptRegistry.getInstance().getEmotionTypeDescription();
         if (emotionGuide == null || emotionGuide.isBlank()) {
             return basePrompt;

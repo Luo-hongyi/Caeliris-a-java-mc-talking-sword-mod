@@ -35,7 +35,7 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final String FILENAME = "studio_runtime_recall_trace.json";
     public static final String VERSION_KEY = "runtimeRecallTrace";
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
 
     private StudioRuntimeRecallTraceFile() {
     }
@@ -82,6 +82,11 @@ public final class StudioRuntimeRecallTraceFile {
                 contextEntry.finalScore = state != null
                         ? AttentionFilter.calculateFinalScore(entry, state.getConcentration())
                         : entry.getBaseImportance();
+                if (entry.getSource() != null) {
+                    contextEntry.sourceType = entry.getSource().getType().name();
+                    contextEntry.sourceId = entry.getSource().getSourceId();
+                    contextEntry.sourceDisplayName = entry.getSource().getDisplayName();
+                }
                 for (var focusTag : entry.getFocusTags()) {
                     contextEntry.focusTags.add(focusTag.name());
                 }
@@ -215,6 +220,12 @@ public final class StudioRuntimeRecallTraceFile {
             if (visibleContexts == null) {
                 visibleContexts = new ArrayList<>();
             }
+            for (VisibleContextEntry visibleContext : visibleContexts) {
+                if (visibleContext != null) {
+                    visibleContext.normalize();
+                }
+            }
+            visibleContexts.removeIf(visibleContext -> visibleContext == null);
             if (consciousMemories == null) {
                 consciousMemories = new ArrayList<>();
             }
@@ -250,10 +261,34 @@ public final class StudioRuntimeRecallTraceFile {
 
     public static final class VisibleContextEntry {
         public String description = "";
+        public String sourceType = "";
+        public String sourceId = "";
+        public String sourceDisplayName = "";
         public List<String> focusTags = new ArrayList<>();
         public List<String> detailTags = new ArrayList<>();
         public float baseImportance;
         public float finalScore;
+
+        private void normalize() {
+            if (description == null) {
+                description = "";
+            }
+            if (sourceType == null) {
+                sourceType = "";
+            }
+            if (sourceId == null) {
+                sourceId = "";
+            }
+            if (sourceDisplayName == null) {
+                sourceDisplayName = "";
+            }
+            if (focusTags == null) {
+                focusTags = new ArrayList<>();
+            }
+            if (detailTags == null) {
+                detailTags = new ArrayList<>();
+            }
+        }
     }
 
     public static final class RecalledMemoryEntry {

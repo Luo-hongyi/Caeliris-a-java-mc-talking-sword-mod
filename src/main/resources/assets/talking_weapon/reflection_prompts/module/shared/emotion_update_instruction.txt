@@ -1,0 +1,8 @@
+基于之前一段时间发生的事情，你的情绪 保持不变/发生转变...
+你当前的情绪：
+- current emotion = %s
+- current intensity = %s
+约束：
+- `emotion` 必须使用系统支持的情绪枚举名
+- `intensity` 使用 0 到 100 的整数
+- `reason` 简短说明这次情绪判断的依据

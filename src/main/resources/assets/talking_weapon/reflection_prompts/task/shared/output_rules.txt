@@ -1,0 +1,8 @@
+[Output Rules]
+- 顶层必须是 JSON object
+- 顶层必须包含 `roleplay_reasoning`
+- 顶层必须包含 `modules`
+- `roleplay_reasoning` 用简短文字说明你这次如何把握剑的立场、语气、偏好与主体区分；该字段仅用于调试
+- `modules` 下必须包含全部已声明的 module key
+- 不要输出 Markdown 代码块
+- 不要输出任何额外说明文字

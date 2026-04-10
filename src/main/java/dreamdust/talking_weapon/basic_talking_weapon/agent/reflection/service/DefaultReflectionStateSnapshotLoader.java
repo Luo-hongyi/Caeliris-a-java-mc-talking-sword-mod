@@ -34,9 +34,6 @@ public final class DefaultReflectionStateSnapshotLoader implements ReflectionSta
                 request.includeEmotion() ? state.getEmotionIntensity() : null,
                 request.includeFamiliarity() ? state.getFamiliarity() : null,
                 request.includePlayerAddress() ? state.getPlayerAddress() : "",
-                request.includeCurrentDesire() && state.getCurrentDesireTag() != null
-                        ? state.getCurrentDesireTag().name()
-                        : "",
                 request.includeCurrentDesire() ? state.getDesireDescription() : "",
                 request.includeFavorability() ? persona.getFavorability() : null,
                 request.includePlayerProfile() ? persona.getPlayerProfile() : "",

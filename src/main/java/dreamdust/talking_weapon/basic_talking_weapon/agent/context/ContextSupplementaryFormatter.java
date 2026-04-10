@@ -56,7 +56,7 @@ public final class ContextSupplementaryFormatter {
             lines.add("当前登记地点: " + registeredLocation);
         }
         if (playerPos != null) {
-            StringBuilder line = new StringBuilder("主人当前坐标: ").append(playerPos);
+            StringBuilder line = new StringBuilder("玩家当前坐标: ").append(playerPos);
             if (groundLevel != null) {
                 line.append("  地面高度Y=").append(groundLevel);
             }

@@ -22,6 +22,7 @@ import java.util.*;
  */
 public final class TaggedContextEntry {
 
+    private final TaggedContextSource source;
     private final EnumSet<FocusTag> focusTags;
     private final Set<DetailTag> detailTags;
     private final String description;
@@ -32,6 +33,7 @@ public final class TaggedContextEntry {
     private final boolean memoryEligible;
 
     private TaggedContextEntry(Builder builder) {
+        this.source = builder.source;
         this.focusTags = builder.focusTags.isEmpty()
                 ? EnumSet.noneOf(FocusTag.class)
                 : EnumSet.copyOf(builder.focusTags);
@@ -47,6 +49,11 @@ public final class TaggedContextEntry {
     // ═══════════════════════════════════════════════════════════════
     // Getters
     // ═══════════════════════════════════════════════════════════════
+
+    /** 获取条目的主体来源 */
+    public TaggedContextSource getSource() {
+        return source;
+    }
 
     /** 获取注意力元标签集合（不可变） */
     public Set<FocusTag> getFocusTags() {
@@ -122,7 +129,8 @@ public final class TaggedContextEntry {
 
     @Override
     public String toString() {
-        return "TaggedContextEntry{focus=" + focusTags
+        return "TaggedContextEntry{source=" + source
+                + ", focus=" + focusTags
                 + ", details=" + detailTags
                 + ", importance=" + baseImportance
                 + ", crosshairTarget=" + crosshairTarget
@@ -137,11 +145,12 @@ public final class TaggedContextEntry {
     // Builder
     // ═══════════════════════════════════════════════════════════════
 
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(TaggedContextSource source) {
+        return new Builder(source);
     }
 
     public static final class Builder {
+        private final TaggedContextSource source;
         private final EnumSet<FocusTag> focusTags = EnumSet.noneOf(FocusTag.class);
         private final Set<DetailTag> detailTags = new LinkedHashSet<>();
         private String description = "";
@@ -151,7 +160,8 @@ public final class TaggedContextEntry {
         private boolean crosshairTarget = false;
         private boolean memoryEligible = true;
 
-        private Builder() {
+        private Builder(TaggedContextSource source) {
+            this.source = Objects.requireNonNull(source, "source");
         }
 
         /** 添加一个或多个注意力元标签 */
@@ -214,7 +224,7 @@ public final class TaggedContextEntry {
     }
 
     public Builder toBuilder() {
-        Builder b = new Builder();
+        Builder b = new Builder(this.source);
         b.focusTags.addAll(this.focusTags);
         b.detailTags.addAll(this.detailTags);
         b.description(this.description);

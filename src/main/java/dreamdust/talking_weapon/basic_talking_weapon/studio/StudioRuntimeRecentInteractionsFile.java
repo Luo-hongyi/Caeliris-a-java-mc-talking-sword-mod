@@ -3,7 +3,10 @@ package dreamdust.talking_weapon.basic_talking_weapon.studio;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSourceType;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 
 import java.io.IOException;
@@ -17,7 +20,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -34,7 +36,7 @@ public final class StudioRuntimeRecentInteractionsFile {
 
     public static final String FILENAME = "studio_runtime_recent_interactions.json";
     public static final String VERSION_KEY = "runtimeInteractions";
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 6;
     private static final int MAX_ENTRIES = 96;
     private static RuntimeRecentInteractionsFileModel cachedFile;
 
@@ -58,6 +60,10 @@ public final class StudioRuntimeRecentInteractionsFile {
             RuntimeRecentInteractionsFileModel file = GSON.fromJson(reader, RuntimeRecentInteractionsFileModel.class);
             if (file == null) {
                 file = new RuntimeRecentInteractionsFileModel();
+            }
+            if (file.schemaVersion != SCHEMA_VERSION) {
+                cachedFile = new RuntimeRecentInteractionsFileModel();
+                return cachedFile;
             }
             file.normalize();
             cachedFile = file;
@@ -125,22 +131,31 @@ public final class StudioRuntimeRecentInteractionsFile {
     public static final class RuntimeInteractionEntry {
         public long timestamp;
         public String triggerSource = "";
-        public String userPrompt = "";
         public boolean hasImage;
-        public List<String> actionTypes = new ArrayList<>();
+        public List<RuntimeInteractionMessageEntry> messages = new ArrayList<>();
         public Map<String, String> contextExtras = new LinkedHashMap<>();
         public List<RuntimeInteractionVisibleContextEntry> visibleContexts = new ArrayList<>();
-        public List<RuntimeInteractionOutputEntry> outputs = new ArrayList<>();
 
         static RuntimeInteractionEntry fromTurn(InteractionTurn turn) {
             RuntimeInteractionEntry entry = new RuntimeInteractionEntry();
             entry.timestamp = turn.getTimestamp();
             entry.triggerSource = turn.getTriggerSource() != null ? turn.getTriggerSource() : "";
-            entry.userPrompt = turn.getUserPrompt() != null ? turn.getUserPrompt() : "";
             entry.hasImage = turn.hasImage();
-            entry.actionTypes = new ArrayList<>(turn.getActionTypes() != null ? turn.getActionTypes() : Collections.emptyList());
+            entry.messages = new ArrayList<>();
             entry.contextExtras = new LinkedHashMap<>(
                     turn.getContextExtras() != null ? turn.getContextExtras() : Collections.emptyMap());
+            for (InteractionMessage message : turn.getMessages()) {
+                if (message == null || message.getSource() == null || message.getKind() == null) {
+                    continue;
+                }
+                RuntimeInteractionMessageEntry messageEntry = new RuntimeInteractionMessageEntry();
+                messageEntry.sourceType = message.getSource().getType();
+                messageEntry.sourceId = message.getSource().getSourceId();
+                messageEntry.sourceDisplayName = message.getSource().getDisplayName();
+                messageEntry.kind = message.getKind();
+                messageEntry.text = message.getText() != null ? message.getText() : "";
+                entry.messages.add(messageEntry);
+            }
             for (TaggedContextEntry visibleContext : turn.getVisibleContexts()) {
                 if (visibleContext == null) {
                     continue;
@@ -148,19 +163,12 @@ public final class StudioRuntimeRecentInteractionsFile {
                 RuntimeInteractionVisibleContextEntry visibleEntry = new RuntimeInteractionVisibleContextEntry();
                 visibleEntry.description = visibleContext.getDescription() != null ? visibleContext.getDescription() : "";
                 visibleEntry.timestamp = visibleContext.getTimestamp();
-                entry.visibleContexts.add(visibleEntry);
-            }
-            for (AgentOutputRecord output : turn.getAgentActions()) {
-                if (output == null) {
-                    continue;
+                if (visibleContext.getSource() != null) {
+                    visibleEntry.sourceType = visibleContext.getSource().getType().name();
+                    visibleEntry.sourceId = visibleContext.getSource().getSourceId();
+                    visibleEntry.sourceDisplayName = visibleContext.getSource().getDisplayName();
                 }
-                RuntimeInteractionOutputEntry outputEntry = new RuntimeInteractionOutputEntry();
-                outputEntry.type = output.getType() != null
-                        ? output.getType().name().toLowerCase(Locale.ROOT)
-                        : "unknown";
-                outputEntry.text = output.getText() != null ? output.getText() : "";
-                outputEntry.timestamp = output.getTimestamp();
-                entry.outputs.add(outputEntry);
+                entry.visibleContexts.add(visibleEntry);
             }
             entry.normalize();
             return entry;
@@ -170,11 +178,8 @@ public final class StudioRuntimeRecentInteractionsFile {
             if (triggerSource == null) {
                 triggerSource = "";
             }
-            if (userPrompt == null) {
-                userPrompt = "";
-            }
-            if (actionTypes == null) {
-                actionTypes = new ArrayList<>();
+            if (messages == null) {
+                messages = new ArrayList<>();
             }
             if (contextExtras == null) {
                 contextExtras = new LinkedHashMap<>();
@@ -182,10 +187,12 @@ public final class StudioRuntimeRecentInteractionsFile {
             if (visibleContexts == null) {
                 visibleContexts = new ArrayList<>();
             }
-            if (outputs == null) {
-                outputs = new ArrayList<>();
+            for (RuntimeInteractionMessageEntry message : messages) {
+                if (message != null) {
+                    message.normalize();
+                }
             }
-            actionTypes.removeIf(type -> type == null || type.isBlank());
+            messages.removeIf(message -> message == null || message.sourceType == null || message.kind == null);
             contextExtras.entrySet().removeIf(entry ->
                     entry == null
                             || entry.getKey() == null
@@ -197,38 +204,63 @@ public final class StudioRuntimeRecentInteractionsFile {
                 }
             }
             visibleContexts.removeIf(visibleContext -> visibleContext == null);
-            for (RuntimeInteractionOutputEntry output : outputs) {
-                if (output != null) {
-                    output.normalize();
-                }
+        }
+    }
+
+    public static final class RuntimeInteractionMessageEntry {
+        public TaggedContextSourceType sourceType;
+        public String sourceId = "";
+        public String sourceDisplayName = "";
+        public InteractionMessageKind kind;
+        public String text = "";
+
+        private void normalize() {
+            if (sourceId == null) {
+                sourceId = "";
             }
-            outputs.removeIf(output -> output == null);
+            if (sourceDisplayName == null) {
+                sourceDisplayName = "";
+            }
+            if (text == null) {
+                text = "";
+            }
+        }
+
+        public TaggedContextSource toSource() {
+            if (sourceType == null) {
+                return null;
+            }
+            return switch (sourceType) {
+                case PLAYER -> TaggedContextSource.player(sourceId, sourceDisplayName);
+                case AGENT -> TaggedContextSource.agent(sourceId.isBlank() ? "self" : sourceId, sourceDisplayName);
+                case ENVIRONMENT -> TaggedContextSource.environment(
+                        sourceId.isBlank() ? "environment" : sourceId,
+                        sourceDisplayName);
+            };
         }
     }
 
     public static final class RuntimeInteractionVisibleContextEntry {
         public String description = "";
         public long timestamp;
+        public String sourceType = "";
+        public String sourceId = "";
+        public String sourceDisplayName = "";
 
         private void normalize() {
             if (description == null) {
                 description = "";
             }
-        }
-    }
-
-    public static final class RuntimeInteractionOutputEntry {
-        public String type = "";
-        public String text = "";
-        public long timestamp;
-
-        private void normalize() {
-            if (type == null) {
-                type = "";
+            if (sourceType == null) {
+                sourceType = "";
             }
-            if (text == null) {
-                text = "";
+            if (sourceId == null) {
+                sourceId = "";
+            }
+            if (sourceDisplayName == null) {
+                sourceDisplayName = "";
             }
         }
     }
+
 }

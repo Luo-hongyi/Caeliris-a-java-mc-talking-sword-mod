@@ -15,7 +15,7 @@ import java.util.EnumSet;
  * <ul>
  * <li>{@link #THINKING} — 推理草稿，LLM 的"草稿纸"，不进记忆，仅日志可见</li>
  * <li>{@link #INNER_MONOLOGUE} — 剑灵内心独白，对玩家不可见，将来用于记忆沉淀</li>
- * <li>{@link #SPEECH} — 对持有者说出口的话，可为空表示沉默</li>
+ * <li>{@link #SPEECH} — 对玩家说出口的话，可为空表示沉默</li>
  * <li>{@link #EMOTION_UPDATE} — 情绪更新指令
  * {@code { "emotion": "FEARFUL", "intensity": 80 }}，
  * 仅特定触发器启用（如受伤、BOSS击杀等情绪化事件）</li>

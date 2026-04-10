@@ -12,6 +12,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.SubconsciousB
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.VisibleContextSelector;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.DetailTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.LocationRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.PromptRegistry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.dictionary.TagDescriptionDictionary;
@@ -21,7 +22,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMAgentS
 import dreamdust.talking_weapon.basic_talking_weapon.agent.llm_service.LLMMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.logging.AgentLogger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentOutputRecord;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessageKind;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionTurn;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.LTMRecallEngine;
@@ -52,9 +54,11 @@ import java.util.Set;
  *
  * <pre>
  * {
- *   "thinking":        "推理草稿，LLM 草稿纸，不进记忆",
- *   "inner_monologue": "剑灵的内心独白，对持有者不可见",
- *   "speech":          "对持有者说出口的话"
+ *   "thinking": "推理草稿，LLM 草稿纸，不进记忆",
+ *   "actions": [
+ *     { "type": "inner_monologue", "content": "剑灵的内心独白，对玩家不可见" },
+ *     { "type": "speech", "content": "对玩家说出口的话" }
+ *   ]
  * }
  * </pre>
  */
@@ -198,8 +202,10 @@ public class LLMInteractionTask extends AgentTask {
             // 7 & 8. 执行 actions 并存入 STM 记忆池
             STMPool stmPool = AgentRuntime.getInstance().getMemory().getSTMPool();
             String triggerSrc = ctx.getTriggerSource() != null ? ctx.getTriggerSource() : "unknown";
-            List<AgentOutputRecord> records = new java.util.ArrayList<>();
-            java.util.LinkedHashSet<String> actionTypes = new java.util.LinkedHashSet<>();
+            List<InteractionMessage> interactionMessages = new ArrayList<>();
+            if (eventInstruction != null && !eventInstruction.isBlank()) {
+                interactionMessages.add(InteractionMessage.agentReactionCue(eventInstruction));
+            }
 
             boolean spoke = false;
             if (agentResponse.hasActions()) {
@@ -210,17 +216,15 @@ public class LLMInteractionTask extends AgentTask {
 
                     if ("speech".equals(t)) {
                         if (req.content != null) {
-                            actionTypes.add(t);
                             new SpeechAction("剑：" + req.content).perform();
                             AgentLogger.logAction("speech", req.content);
-                            records.add(new AgentOutputRecord(AgentOutputRecord.Type.SPEECH, req.content));
+                            interactionMessages.add(InteractionMessage.agentSpeech(req.content));
                             spoke = true;
                         }
                     } else if ("inner_monologue".equals(t)) {
                         if (req.content != null) {
-                            actionTypes.add(t);
                             AgentLogger.logThinking("[inner_monologue]\n" + req.content);
-                            records.add(new AgentOutputRecord(AgentOutputRecord.Type.INNER_MONOLOGUE, req.content));
+                            interactionMessages.add(InteractionMessage.agentInnerMonologue(req.content));
                         }
                     } else {
                         AgentLogger.logAction(t,
@@ -237,10 +241,8 @@ public class LLMInteractionTask extends AgentTask {
 
             InteractionTurn turn = new InteractionTurn(
                     triggerSrc,
-                    eventInstruction,
                     screenshotBase64,
-                    records,
-                    new java.util.ArrayList<>(actionTypes),
+                    interactionMessages,
                     new java.util.ArrayList<>(this.visibleContexts),
                     new java.util.LinkedHashMap<>(ctx.getExtras()));
             stmPool.pushInteractionTurn(turn);
@@ -317,27 +319,22 @@ public class LLMInteractionTask extends AgentTask {
                 String src = t.getTriggerSource() != null ? t.getTriggerSource() : "unknown";
                 boolean chat = "player_chat".equals(src);
 
-                String p = t.getUserPrompt();
-                if (p != null && p.length() > 180) {
-                    p = p.substring(0, 180) + "...";
-                }
-
                 sb.append("- (").append(chat ? "PLAYER_CHAT" : "EVENT").append(") ")
                         .append(src);
-                if (p != null && !p.isBlank()) {
-                    sb.append(" | instruction: ").append(p.replace("\n", " "));
-                }
                 if (t.hasImage()) {
                     sb.append(" [+image]");
                 }
                 sb.append("\n");
 
-                for (AgentOutputRecord rec : t.getAgentActions()) {
+                for (InteractionMessage rec : t.getMessages()) {
+                    if (rec == null || rec.getText() == null || rec.getText().isBlank()) {
+                        continue;
+                    }
                     String text = rec.getText();
                     if (text != null && text.length() > 200) {
                         text = text.substring(0, 200) + "...";
                     }
-                    sb.append("    -> ").append(rec.getType()).append(": ")
+                    sb.append("    -> ").append(describeInteractionMessage(rec)).append(": ")
                             .append(text != null ? text.replace("\n", " ") : "").append("\n");
                 }
             }
@@ -481,7 +478,8 @@ public class LLMInteractionTask extends AgentTask {
             for (TaggedContextEntry entry : mergedVisible) {
                 float finalScore = AttentionFilter.calculateFinalScore(entry, state.getConcentration());
 
-                sb.append("- [").append(entry.getFocusTags()).append("] ");
+                sb.append("- [source=").append(describeContextSource(entry)).append("] ");
+                sb.append("[focus=").append(entry.getFocusTags()).append("] ");
                 sb.append(entry.getDescription());
                 sb.append(String.format(" (客观重要度: %.2f -> 主观得分: %.2f)", entry.getBaseImportance(), finalScore));
 
@@ -507,6 +505,18 @@ public class LLMInteractionTask extends AgentTask {
         sb.append(buildOutputFormatInstruction(outputSchema, ctx));
 
         return sb.toString();
+    }
+
+    private static String describeContextSource(TaggedContextEntry entry) {
+        if (entry == null || entry.getSource() == null) {
+            return "unknown";
+        }
+        TaggedContextSource source = entry.getSource();
+        return switch (source.getType()) {
+            case PLAYER -> "player:" + firstNonBlank(source.getDisplayName(), source.getSourceId());
+            case AGENT -> "agent:" + firstNonBlank(source.getDisplayName(), source.getSourceId(), "self");
+            case ENVIRONMENT -> "environment";
+        };
     }
 
     private static List<String> describePromptVisibleDetails(Collection<DetailTag> detailTags,
@@ -575,6 +585,23 @@ public class LLMInteractionTask extends AgentTask {
             parts.add("群系:" + ltm.getBiomeId());
         }
         return String.join(" / ", parts);
+    }
+
+    private static String describeInteractionMessage(InteractionMessage message) {
+        if (message == null || message.getSource() == null || message.getKind() == null) {
+            return "unknown";
+        }
+        TaggedContextSource source = message.getSource();
+        if (message.getKind() == InteractionMessageKind.REACTION_CUE) {
+            return "agent_reaction_cue";
+        }
+        return switch (source.getType()) {
+            case PLAYER -> "player_msg";
+            case AGENT -> message.getKind() == InteractionMessageKind.INNER_MONOLOGUE
+                    ? "agent_inner_monologue"
+                    : "agent_speech";
+            case ENVIRONMENT -> "environment_msg";
+        };
     }
 
     private static List<LTMEntry> resolveAssociationSandboxMemories(AgentMemory memory,

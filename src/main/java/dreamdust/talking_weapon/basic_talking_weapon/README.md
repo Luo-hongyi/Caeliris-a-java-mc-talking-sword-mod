@@ -63,8 +63,9 @@ agent/
 ├── state/                          ← 显式状态
 │   └── AgentState.java              — 情绪 Mood 枚举 + 熟悉度 + 当前目标
 ├── memory/                         ← 记忆系统
-│   ├── AgentOutputRecord.java       — Agent 自身输出的行为记录 (语音/内心独白)
-│   ├── InteractionTurn.java         — 完整的单轮回合（含 TriggerSource、User Prompt 与产生的 Output 列表）
+│   ├── InteractionMessage.java      — 单轮 interaction 中的极简消息单元（type + text）
+│   ├── InteractionMessageKind.java  — interaction 消息形态（TEXT / INNER_MONOLOGUE）
+│   ├── InteractionTurn.java         — 完整的单轮回合（含 TriggerSource、messages、visibleContexts）
 │   ├── STMPool.java                 — 短期记忆聚合池：收集本纪元的全局 Context Entries + Interaction回合
 │   ├── ActionType.java              — 动作类型枚举（带主/跨域 FocusTag 映射）
 │   ├── ActionRecord.java            — 极轻量动作记录
@@ -130,12 +131,15 @@ TalkingSword.use()
               ↓ worker 线程 (PriorityBlockingQueue)
          LLMInteractionTask.execute()
               ├─ buildSystemPrompt(memory + state + context + extras)
-              ├─ userPrompt = ctx.extras["user_prompt"]   ← 触发器专属 prompt
+              ├─ eventInstruction = ctx.extras["event_instruction"/"user_prompt"]
               ├─ LLMAgentService.buildModel()
               ├─ model.generate(systemMsg, userMsg)
+              ├─ 解析 actions[] → speech / inner_monologue
               ├─ SpeechAction("剑：" + reply).perform()
               │    └─ 逐行提交到主线程 ActionBar
-              ├─ STMPool.pushInteractionTurn() ← 将这一个回合的操作收录至短期记忆池
+              ├─ 将 eventInstruction 记为 `source=AGENT, kind=REACTION_CUE`
+              ├─ 将输出记为 `InteractionMessage`
+              ├─ STMPool.pushInteractionTurn() ← 将这一个回合的 message timeline 收录至短期记忆池
               └─ STMPool自动淘汰逻辑触发
 ```
 
@@ -161,7 +165,9 @@ AgentSensor → builder.extra("user_prompt", ...)
        ↓
 AgentContext.extras["user_prompt"]      ← 随 context 传递
        ↓
-LLMInteractionTask → 作为 UserMessage 发送给 LLM
+LLMInteractionTask → 转为 event instruction / reaction cue
+       ↓
+InteractionTurn.messages 中记录为 `source=AGENT, kind=REACTION_CUE`
 ```
 
 - **RightClickTrigger** → 读取 `RIGHT_CLICK_PROMPT` 配置
@@ -265,7 +271,7 @@ LLMInteractionTask → 作为 UserMessage 发送给 LLM
 [text]
   weaponName = "塞了瑞思"
   rightClickPrompt = "请根据你看到的画面和当前状态，以武器灵魂的身份发表一到两句话的简短评论。"
-  biomeChangePrompt = "你发现主人刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。"
+  biomeChangePrompt = "你发现玩家刚从{old_biome}走入了{new_biome}。以武器灵魂的身份对这个新环境发表一到两句话的简短评论。"
   triggerSpeech = "你感受到一丝灵魂的悸动……"
   cancelSpeech = "剑：沉默不语……"
   systemIdentity = "你是一把会说话的剑中的灵魂..."
