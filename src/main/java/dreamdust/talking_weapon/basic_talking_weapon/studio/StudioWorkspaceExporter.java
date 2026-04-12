@@ -75,6 +75,9 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(PromptRegistry.getConfigPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecentInteractionsFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecentInteractionsFile.getPath().getFileName()), exportedFiles);
+            StudioRuntimeSynthesizedMemoriesFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
+            copyFile(StudioRuntimeSynthesizedMemoriesFile.getPath(),
+                    workspaceRoot.resolve(StudioRuntimeSynthesizedMemoriesFile.getPath().getFileName()), exportedFiles);
             StudioRuntimeActionTimelineFile.writeCurrentSnapshot(AgentRuntime.getInstance().getMemory());
             copyFile(StudioRuntimeActionTimelineFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeActionTimelineFile.getPath().getFileName()), exportedFiles);
@@ -83,6 +86,8 @@ public final class StudioWorkspaceExporter {
                     workspaceRoot.resolve(StudioRuntimeEpisodeTimelineFile.getPath().getFileName()), exportedFiles);
             copyFile(StudioRuntimeRecallTraceFile.getPath(),
                     workspaceRoot.resolve(StudioRuntimeRecallTraceFile.getPath().getFileName()), exportedFiles);
+            StudioRuntimeReflectionPromptPreviewFile.writeLatest();
+            exportedFiles.add(StudioRuntimeReflectionPromptPreviewFile.FILENAME);
             StudioActionTimelineTuningFile.ensureWorkspaceFileExists();
             exportedFiles.add(StudioActionTimelineTuningFile.FILENAME);
             StudioMemoryRecallTuningFile.ensureWorkspaceFileExists();
@@ -182,11 +187,15 @@ public final class StudioWorkspaceExporter {
         versions.put("snapshot", lastModifiedToken(getWorkspaceRoot().resolve("native_catalog.snapshot.json")));
         versions.put("runtimeTagView", lastModifiedToken(getWorkspaceRoot().resolve("studio_runtime_tag_view.json")));
         versions.put("runtimeInteractions", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecentInteractionsFile.FILENAME)));
+        versions.put("runtimeSynthesizedMemories",
+                lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeSynthesizedMemoriesFile.FILENAME)));
         versions.put("runtimeActionTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionTimelineFile.FILENAME)));
         versions.put("runtimeActionSegmentStore", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionSegmentStoreFile.FILENAME)));
         versions.put("runtimeActionDiscardLog", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeActionDiscardLogFile.FILENAME)));
         versions.put("runtimeEpisodeTimeline", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeEpisodeTimelineFile.FILENAME)));
         versions.put("runtimeRecallTrace", lastModifiedToken(getWorkspaceRoot().resolve(StudioRuntimeRecallTraceFile.FILENAME)));
+        versions.put("runtimeReflectionPromptPreview", lastModifiedToken(getWorkspaceRoot().resolve(
+                StudioRuntimeReflectionPromptPreviewFile.FILENAME)));
         versions.put("actionTimelineTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioActionTimelineTuningFile.FILENAME)));
         versions.put("memoryRecallTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioMemoryRecallTuningFile.FILENAME)));
         versions.put("episodeTuning", lastModifiedToken(getWorkspaceRoot().resolve(StudioEpisodeTuningFile.FILENAME)));

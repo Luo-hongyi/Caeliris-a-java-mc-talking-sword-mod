@@ -23,16 +23,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.R
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.prompt.ReflectionPromptResources;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateModule;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.EmotionUpdateResult;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.FavorabilityUpdateModule;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.FavorabilityUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.MemorySynthesisModule;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.MemorySynthesisResult;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.PlayerProfileUpdateModule;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.PlayerProfileUpdateResult;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.RecapUpdateModule;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.RecapUpdateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModule;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModuleKey;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.module.ReflectionModuleResult;
@@ -47,9 +39,6 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.Re
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.ReflectionPromptFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.ReflectionStateSnapshotLoader;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentState;
-import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentStateStorage;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaEntry;
 
 import java.util.LinkedHashSet;
@@ -101,11 +90,7 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
     private static final Pattern JSON_BLOCK = Pattern.compile("\\{[\\s\\S]*}", Pattern.DOTALL);
 
     private static final List<ReflectionModule> FIXED_MODULES = List.of(
-            new MemorySynthesisModule(),
-            new PlayerProfileUpdateModule(),
-            new RecapUpdateModule(),
-            new FavorabilityUpdateModule(),
-            new EmotionUpdateModule());
+            new MemorySynthesisModule());
 
     private final EpisodeSynthesisTriggerSignal signal;
 
@@ -176,13 +161,13 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
                 true,
                 true,
                 true,
-                true,
-                true,
-                true,
-                true,
-                true,
-                true,
-                true);
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false);
     }
 
     @Override
@@ -227,7 +212,6 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
                 throw new IllegalStateException(
                         "Episode synthesis finalize failed for regionId=" + signal.regionId());
             }
-            AgentStateStorage.requestSaveRuntimeState(runtime.getState(), runtime.getPersona());
         } catch (InterruptedException interrupted) {
             if (!taskOwnedCommitApplied) {
                 rollbackPendingRegion(runtime.getMemory());
@@ -261,7 +245,6 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
         }
 
         joiner.add(buildIdentitySection(input.state()));
-        joiner.add(buildStateSection(input.state()));
         joiner.add(buildRelevantPersonaSection(input.relevantPersonaEntries()));
 
         if (promptDraft != null && !promptDraft.draftText().isBlank()) {
@@ -420,34 +403,9 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
                 parsedResults,
                 ReflectionModuleKey.MEMORY_SYNTHESIS,
                 MemorySynthesisResult.class);
-        PlayerProfileUpdateResult playerProfile = requireTypedResult(
-                parsedResults,
-                ReflectionModuleKey.PLAYER_PROFILE_UPDATE,
-                PlayerProfileUpdateResult.class);
-        RecapUpdateResult recap = requireTypedResult(
-                parsedResults,
-                ReflectionModuleKey.RECAP_UPDATE,
-                RecapUpdateResult.class);
-        FavorabilityUpdateResult favorability = requireTypedResult(
-                parsedResults,
-                ReflectionModuleKey.FAVORABILITY_UPDATE,
-                FavorabilityUpdateResult.class);
-        EmotionUpdateResult emotion = requireTypedResult(
-                parsedResults,
-                ReflectionModuleKey.EMOTION_UPDATE,
-                EmotionUpdateResult.class);
 
         LTMEntry synthesizedMemory = buildSynthesizedMemoryEntry(input, memorySynthesis);
         runtime.getMemory().addLTMRecord(synthesizedMemory);
-
-        AgentPersona persona = runtime.getPersona();
-        persona.setPlayerProfile(playerProfile.profileText());
-        persona.adjustFavorability(favorability.delta());
-
-        AgentState state = runtime.getState();
-        state.setPrimaryEmotionByName(emotion.emotion());
-        state.setEmotionIntensity(emotion.intensity());
-        state.setRecap(recap.recapText());
     }
 
     private boolean finalizeConsumedCleanupAndResolution(AgentMemory memory) {
@@ -553,8 +511,10 @@ public final class EpisodeSynthesisReflectionTask extends AbstractReflectionTask
             ReflectionTaskInput input,
             MemorySynthesisResult memorySynthesis) {
         List<ReflectionSegmentMaterial> allSegments = input.material().segments();
+        java.util.ArrayList<Integer> orderedIndices = new java.util.ArrayList<>(memorySynthesis.selectedSegmentIndices());
+        orderedIndices.sort(Integer::compareTo);
         java.util.ArrayList<ReflectionSegmentMaterial> selected = new java.util.ArrayList<>();
-        for (Integer index : memorySynthesis.selectedSegmentIndices()) {
+        for (Integer index : orderedIndices) {
             if (index == null || index < 0 || index >= allSegments.size()) {
                 continue;
             }

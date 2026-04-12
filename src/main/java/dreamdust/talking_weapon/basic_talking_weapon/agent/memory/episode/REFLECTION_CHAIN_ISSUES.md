@@ -64,7 +64,49 @@
 
 ### 2.2 当前剩余问题
 
-当前这一轮冻结的问题已全部收口，暂时没有新的底层 blocker。
+当前还存在一个高优先级语义问题：
+
+1. `player_profile_update / recap_update / favorability_update / emotion_update`
+   被绑定在 `episode_synthesis` 这条高延迟消费型 task 上
+
+- 当前这四个更新和 `memory_synthesis` 一起由 `EpisodeSynthesisReflectionTask` 提交
+- 而 `episode_synthesis` 本身要经过：
+  - region closed
+  - gate
+  - holdback
+  - internal trigger 后台排队
+  - 单次 LLM 执行
+- 这意味着：
+  - `player_profile` 的变化会比玩家近期行为晚很多才反映出来
+  - `AgentState.recap` 往往不是“最近发生了什么”，而是“多个 segment 之前的一段阶段性旧摘要”
+  - `emotion` 刷新会明显滞后于近期体验
+  - `favorability` 刷新也会滞后于关系变化真正发生的时刻
+
+这不是单纯的 prompt 问题，而是 task 粒度问题：
+
+- `memory_synthesis` 是消费型、可高延迟的 owner-side 结算任务
+- `player_profile / recap / emotion / favorability` 更接近只读型、状态刷新型 reflection 任务
+- 把两类职责绑在一起，会导致“状态类输出继承记忆结算的延迟”
+
+当前更合理的方向应是：
+
+- `episode_synthesis` 保留为正式 LTM 结算任务
+- 新增 `agent_recent_state_update`
+  - 在一个 episode / region 封口时立即触发
+  - 只读，不消耗材料
+  - 固定承载：
+    - `player_profile_update`
+    - `recap_update`
+    - `favorability_update`
+    - `emotion_update`
+
+如果继续维持当前结构，则至少需要明确：
+
+- `player_profile` 不是“对玩家最近表现的及时印象”，而是落后若干 segment 的旧判断
+- `recap` 不是“最近前情提要”，而是“落后若干 segment 的阶段性旧 recap”
+- `emotion / favorability` 也不应被误解为及时状态
+
+但从当前语义目标看，这种解释并不理想，因此更推荐正式拆 task，而不是只改文案。
 
 ### 2.3 暂缓项
 
@@ -77,7 +119,13 @@
 
 推荐先按下面顺序处理：
 
-1. 继续搭 episode synthesis 的更高层 module / prompt 组合
+1. 优先拆开“消费型结算 task”和“状态刷新型 task”
+
+- 先引入 `AgentRecentStateUpdateReflectionTask`
+- 把 `player_profile_update / recap_update / favorability_update / emotion_update`
+  从 `episode_synthesis` 延迟中解耦
+
+2. 再继续搭 episode synthesis 的更高层 module / prompt 组合
 
 - 这时底层 material 边界会更稳定
 - 可以减少后面反复返工 exporter 和 task input 的次数

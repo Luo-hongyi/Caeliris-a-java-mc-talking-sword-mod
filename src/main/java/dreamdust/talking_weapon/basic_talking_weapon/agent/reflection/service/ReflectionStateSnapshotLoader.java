@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionHistoricalStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionStateRequest;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.ReflectionStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.AgentPersona;
@@ -15,5 +16,6 @@ public interface ReflectionStateSnapshotLoader {
             ReflectionStateRequest request,
             AgentMemory memory,
             AgentState state,
-            AgentPersona persona);
+            AgentPersona persona,
+            ReflectionHistoricalStateSnapshot historicalStateSnapshot);
 }

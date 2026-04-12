@@ -27,7 +27,9 @@ public record EpisodeRegion(
         double secondaryScore,
         long regionId,
         EpisodeRegionGateDecision gateDecision,
-        EpisodeRegionLifecycleState lifecycleState) {
+        EpisodeRegionLifecycleState lifecycleState,
+        EpisodeRecentStateUpdateState recentStateUpdateState,
+        EpisodeRegionStateSnapshot closeStateSnapshot) {
 
     public EpisodeRegion(
             long startTimestamp,
@@ -71,31 +73,9 @@ public record EpisodeRegion(
                 secondaryScore,
                 deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp),
                 EpisodeRegionGateDecision.UNSET,
-                EpisodeRegionLifecycleState.ACTIVE);
-    }
-
-    public EpisodeRegion(
-            long startTimestamp,
-            long endTimestamp,
-            Map<PlayerIntent, Double> aggregateIntentScores,
-            PlayerIntent primaryIntent,
-            double primaryScore,
-            PlayerIntent secondaryIntent,
-            double secondaryScore,
-            EpisodeRegionGateDecision gateDecision,
-            EpisodeRegionLifecycleState lifecycleState) {
-        this(
-                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
-                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
-                startTimestamp,
-                endTimestamp,
-                aggregateIntentScores,
-                primaryIntent,
-                primaryScore,
-                secondaryIntent,
-                secondaryScore,
-                gateDecision,
-                lifecycleState);
+                EpisodeRegionLifecycleState.ACTIVE,
+                EpisodeRecentStateUpdateState.UNSET,
+                EpisodeRegionStateSnapshot.empty());
     }
 
     public EpisodeRegion(
@@ -120,9 +100,67 @@ public record EpisodeRegion(
                 primaryScore,
                 secondaryIntent,
                 secondaryScore,
+                gateDecision,
+                lifecycleState,
+                EpisodeRecentStateUpdateState.UNSET,
+                EpisodeRegionStateSnapshot.empty());
+    }
+
+    public EpisodeRegion(
+            long startTimestamp,
+            long endTimestamp,
+            Map<PlayerIntent, Double> aggregateIntentScores,
+            PlayerIntent primaryIntent,
+            double primaryScore,
+            PlayerIntent secondaryIntent,
+            double secondaryScore,
+            EpisodeRegionGateDecision gateDecision,
+            EpisodeRegionLifecycleState lifecycleState) {
+        this(
+                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                EpisodeTimeline.UNASSIGNED_SEGMENT_ID,
+                startTimestamp,
+                endTimestamp,
+                aggregateIntentScores,
+                primaryIntent,
+                primaryScore,
+                secondaryIntent,
+                secondaryScore,
+                gateDecision,
+                lifecycleState,
+                EpisodeRecentStateUpdateState.UNSET,
+                EpisodeRegionStateSnapshot.empty());
+    }
+
+    public EpisodeRegion(
+            long startSegmentId,
+            long endSegmentId,
+            long startTimestamp,
+            long endTimestamp,
+            Map<PlayerIntent, Double> aggregateIntentScores,
+            PlayerIntent primaryIntent,
+            double primaryScore,
+            PlayerIntent secondaryIntent,
+            double secondaryScore,
+            EpisodeRegionGateDecision gateDecision,
+            EpisodeRegionLifecycleState lifecycleState,
+            EpisodeRecentStateUpdateState recentStateUpdateState,
+            EpisodeRegionStateSnapshot closeStateSnapshot) {
+        this(
+                startSegmentId,
+                endSegmentId,
+                startTimestamp,
+                endTimestamp,
+                aggregateIntentScores,
+                primaryIntent,
+                primaryScore,
+                secondaryIntent,
+                secondaryScore,
                 deriveRegionId(startSegmentId, endSegmentId, startTimestamp, endTimestamp),
                 gateDecision,
-                lifecycleState);
+                lifecycleState,
+                recentStateUpdateState,
+                closeStateSnapshot);
     }
 
     public EpisodeRegion {
@@ -140,6 +178,12 @@ public record EpisodeRegion(
         }
         if (lifecycleState == null) {
             lifecycleState = EpisodeRegionLifecycleState.ACTIVE;
+        }
+        if (recentStateUpdateState == null) {
+            recentStateUpdateState = EpisodeRecentStateUpdateState.UNSET;
+        }
+        if (closeStateSnapshot == null) {
+            closeStateSnapshot = EpisodeRegionStateSnapshot.empty();
         }
     }
 
@@ -180,7 +224,45 @@ public record EpisodeRegion(
                 secondaryScore,
                 regionId,
                 nextGateDecision,
-                nextLifecycleState);
+                nextLifecycleState,
+                recentStateUpdateState,
+                closeStateSnapshot);
+    }
+
+    public EpisodeRegion withRecentStateUpdateState(EpisodeRecentStateUpdateState nextRecentStateUpdateState) {
+        return new EpisodeRegion(
+                startSegmentId,
+                endSegmentId,
+                startTimestamp,
+                endTimestamp,
+                aggregateIntentScores,
+                primaryIntent,
+                primaryScore,
+                secondaryIntent,
+                secondaryScore,
+                regionId,
+                gateDecision,
+                lifecycleState,
+                nextRecentStateUpdateState,
+                closeStateSnapshot);
+    }
+
+    public EpisodeRegion withCloseStateSnapshot(EpisodeRegionStateSnapshot nextCloseStateSnapshot) {
+        return new EpisodeRegion(
+                startSegmentId,
+                endSegmentId,
+                startTimestamp,
+                endTimestamp,
+                aggregateIntentScores,
+                primaryIntent,
+                primaryScore,
+                secondaryIntent,
+                secondaryScore,
+                regionId,
+                gateDecision,
+                lifecycleState,
+                recentStateUpdateState,
+                nextCloseStateSnapshot);
     }
 
     private static long deriveRegionId(

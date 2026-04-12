@@ -53,6 +53,9 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
                 .append(" -> ")
                 .append(material.stmSliceExclusiveTimestamp())
                 .append("\n");
+        draft.append("episode close state: ")
+                .append(describeEpisodeCloseState(material.episodeCloseStateSnapshot()))
+                .append("\n");
         draft.append("segment count: ").append(material.segments().size()).append("\n\n");
 
         for (ReflectionSegmentMaterial segment : material.segments()) {
@@ -69,6 +72,9 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             draft.append("[Segment ").append(segment.localSegmentIndex()).append("]\n");
             draft.append("segment id: ").append(segment.segmentId()).append("\n");
             draft.append("range: ").append(segment.startTimestamp()).append(" -> ").append(segment.endTimestamp()).append("\n");
+            draft.append("segment close state: ")
+                    .append(describeSegmentCloseState(segment.segmentCloseStateSnapshot()))
+                    .append("\n");
             appendSnapshot(draft, "segment snapshot", segment.segmentSnapshot());
             draft.append("timeline:\n");
             for (ReflectionSegmentEvent event : segment.timelineEvents()) {
@@ -142,6 +148,39 @@ public final class DefaultReflectionPromptFormatter implements ReflectionPromptF
             sb.append(" [tags=").append(action.detailTags()).append(']');
         }
         return sb.toString();
+    }
+
+    private String describeSegmentCloseState(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentStateSnapshot snapshot) {
+        if (snapshot == null) {
+            return "(none)";
+        }
+        List<String> fields = new ArrayList<>();
+        if (snapshot.primaryEmotion() != null && !snapshot.primaryEmotion().isBlank()) {
+            fields.add("emotion=" + snapshot.primaryEmotion());
+        }
+        if (snapshot.emotionIntensity() != null) {
+            fields.add("intensity=" + snapshot.emotionIntensity());
+        }
+        if (snapshot.favorability() != null) {
+            fields.add("favorability=" + snapshot.favorability());
+        }
+        return fields.isEmpty() ? "(none)" : String.join(", ", fields);
+    }
+
+    private String describeEpisodeCloseState(
+            dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionEpisodeStateSnapshot snapshot) {
+        if (snapshot == null) {
+            return "(none)";
+        }
+        List<String> fields = new ArrayList<>();
+        if (snapshot.playerProfile() != null && !snapshot.playerProfile().isBlank()) {
+            fields.add("player_profile=" + cleanLine(snapshot.playerProfile()));
+        }
+        if (snapshot.recap() != null && !snapshot.recap().isBlank()) {
+            fields.add("recap=" + cleanLine(snapshot.recap()));
+        }
+        return fields.isEmpty() ? "(none)" : String.join(" | ", fields);
     }
 
     private String describeContextEntry(TaggedContextEntry entry) {

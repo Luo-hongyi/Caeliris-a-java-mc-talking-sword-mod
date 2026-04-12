@@ -5,15 +5,18 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.FocusTag;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextEntry;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.context.tag.TaggedContextSource;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.InteractionMessage;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.AgentRecentStateUpdateTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.ActionType;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionEpisodeStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionRawMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionRawSegmentMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionScope;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionPlayerAction;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.DefaultReflectionMaterialMerger;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.service.DefaultReflectionPromptFormatter;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.state.PersonaEntry;
@@ -22,6 +25,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +59,16 @@ public final class EpisodeSynthesisPromptMockPreview {
         Path outputDir = args.length >= 1 && args[0] != null && !args[0].isBlank()
                 ? Path.of(args[0])
                 : Path.of("testdata", "reflection_prompt_mock_preview");
-        PreviewScenario scenario = resolveScenario(args.length >= 2 ? args[1] : DEFAULT_SCENARIO_KEY);
-        Files.createDirectories(outputDir);
+        String scenarioKey = args.length >= 2 ? args[1] : DEFAULT_SCENARIO_KEY;
+        PreviewOutput output = generatePreviewOutput(scenarioKey);
+        writePreviewFiles(outputDir, output);
 
-        ReflectionRawMaterial rawMaterial = buildRawMaterial();
+        System.out.println("[EpisodeSynthesisPromptMockPreview] generated files under " + outputDir.toAbsolutePath());
+    }
+
+    public static PreviewOutput generatePreviewOutput(String scenarioKey) {
+        MockScenarioData scenario = loadScenarioData(scenarioKey);
+        ReflectionRawMaterial rawMaterial = buildRawMaterial(scenario);
         ReflectionMaterial material = new DefaultReflectionMaterialMerger().merge(rawMaterial);
         ReflectionPromptDraft promptDraft = new DefaultReflectionPromptFormatter().format(material);
         ReflectionTaskInput taskInput = new ReflectionTaskInput(
@@ -66,21 +76,81 @@ public final class EpisodeSynthesisPromptMockPreview {
                 scenario.stateSnapshot(),
                 scenario.relevantPersonaEntries());
         EpisodeSynthesisReflectionTask task = new EpisodeSynthesisReflectionTask(
-                buildSignal(),
+                buildEpisodeSynthesisSignalForScenario(scenario.key()),
                 96_000L,
                 4L,
                 12_000L);
 
-        String systemPrompt = task.buildSystemPrompt(taskInput, promptDraft);
-        String userPrompt = task.buildUserPrompt();
+        return new PreviewOutput(
+                scenario.key(),
+                scenario.description(),
+                task.buildSystemPrompt(taskInput, promptDraft),
+                task.buildUserPrompt(),
+                promptDraft.draftText(),
+                promptDraft.segmentReferenceMap(),
+                buildSummary(material, scenario));
+    }
 
-        write(outputDir.resolve("system_prompt.txt"), systemPrompt);
-        write(outputDir.resolve("user_prompt.txt"), userPrompt);
-        write(outputDir.resolve("prompt_draft.txt"), promptDraft.draftText());
-        write(outputDir.resolve("segment_reference_map.txt"), promptDraft.segmentReferenceMap());
-        write(outputDir.resolve("preview_summary.txt"), buildSummary(material, scenario));
+    public static List<PreviewOutput> generateAllPreviewOutputs() {
+        List<PreviewOutput> outputs = new ArrayList<>();
+        outputs.add(generatePreviewOutput(DEFAULT_SCENARIO_KEY));
+        outputs.add(generatePreviewOutput(HOSTILE_MURDERER_SCENARIO_KEY));
+        return List.copyOf(outputs);
+    }
 
-        System.out.println("[EpisodeSynthesisPromptMockPreview] generated files under " + outputDir.toAbsolutePath());
+    public static MockScenarioData loadScenarioData(String scenarioKey) {
+        PreviewScenario scenario = resolveScenario(scenarioKey);
+        return new MockScenarioData(
+                scenario.key(),
+                scenario.description(),
+                scenario.stateSnapshot(),
+                scenario.relevantPersonaEntries());
+    }
+
+    public static ReflectionRawMaterial buildRawMaterialForScenario(String scenarioKey) {
+        return buildRawMaterial(loadScenarioData(scenarioKey));
+    }
+
+    public static EpisodeSynthesisTriggerSignal buildEpisodeSynthesisSignalForScenario(String scenarioKey) {
+        MockScenarioData scenario = loadScenarioData(scenarioKey);
+        return new EpisodeSynthesisTriggerSignal(
+                1001L,
+                40L,
+                41L,
+                41L,
+                42L,
+                42L,
+                43L,
+                SEGMENT_0_START,
+                SEGMENT_1_END,
+                SEGMENT_0_START,
+                SEGMENT_1_END,
+                scenario.stateSnapshot().primaryEmotion(),
+                scenario.stateSnapshot().emotionIntensity(),
+                scenario.stateSnapshot().favorability(),
+                scenario.stateSnapshot().playerProfile(),
+                scenario.stateSnapshot().recap());
+    }
+
+    public static AgentRecentStateUpdateTriggerSignal buildRecentStateUpdateSignalForScenario(String scenarioKey) {
+        MockScenarioData scenario = loadScenarioData(scenarioKey);
+        return new AgentRecentStateUpdateTriggerSignal(
+                1001L,
+                40L,
+                41L,
+                41L,
+                42L,
+                42L,
+                43L,
+                SEGMENT_0_START,
+                SEGMENT_1_END,
+                SEGMENT_0_START,
+                SEGMENT_1_END,
+                scenario.stateSnapshot().primaryEmotion(),
+                scenario.stateSnapshot().emotionIntensity(),
+                scenario.stateSnapshot().favorability(),
+                scenario.stateSnapshot().playerProfile(),
+                scenario.stateSnapshot().recap());
     }
 
     private static PreviewScenario resolveScenario(String scenarioKey) {
@@ -102,7 +172,16 @@ public final class EpisodeSynthesisPromptMockPreview {
         };
     }
 
-    private static ReflectionRawMaterial buildRawMaterial() {
+    private static ReflectionRawMaterial buildRawMaterial(MockScenarioData scenario) {
+        ReflectionSegmentStateSnapshot segment0CloseState = new ReflectionSegmentStateSnapshot(
+                scenario.stateSnapshot().primaryEmotion(),
+                Math.max(0, (scenario.stateSnapshot().emotionIntensity() == null ? 0 : scenario.stateSnapshot().emotionIntensity()) - 8),
+                scenario.stateSnapshot().favorability());
+        ReflectionSegmentStateSnapshot segment1CloseState = new ReflectionSegmentStateSnapshot(
+                scenario.stateSnapshot().primaryEmotion(),
+                scenario.stateSnapshot().emotionIntensity(),
+                scenario.stateSnapshot().favorability());
+
         ReflectionRawSegmentMaterial segment0 = new ReflectionRawSegmentMaterial(
                 0,
                 41L,
@@ -122,6 +201,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                                 "dimension", "minecraft:overworld",
                                 "biome", "minecraft:dripstone_caves",
                                 "time_desc", "午后，洞穴入口仍有些亮")),
+                segment0CloseState,
                 List.of(
                         contextEntry(
                                 MOCK_ENVIRONMENT_SOURCE,
@@ -209,6 +289,7 @@ public final class EpisodeSynthesisPromptMockPreview {
                                 "dimension", "minecraft:overworld",
                                 "biome", "minecraft:dripstone_caves",
                                 "time_desc", "洞穴深处已几乎没有自然光")),
+                segment1CloseState,
                 List.of(
                         contextEntry(
                                 MOCK_ENVIRONMENT_SOURCE,
@@ -286,6 +367,9 @@ public final class EpisodeSynthesisPromptMockPreview {
                 SEGMENT_1_END,
                 SEGMENT_0_START,
                 SEGMENT_1_END,
+                new ReflectionEpisodeStateSnapshot(
+                        scenario.stateSnapshot().playerProfile(),
+                        scenario.stateSnapshot().recap()),
                 List.of(segment0, segment1));
     }
 
@@ -361,21 +445,6 @@ public final class EpisodeSynthesisPromptMockPreview {
         return new RelevantPersonaEntries(List.of(bloodshedEntry, manipulationEntry));
     }
 
-    private static EpisodeSynthesisTriggerSignal buildSignal() {
-        return new EpisodeSynthesisTriggerSignal(
-                1001L,
-                40L,
-                41L,
-                41L,
-                42L,
-                42L,
-                43L,
-                SEGMENT_0_START,
-                SEGMENT_1_END,
-                SEGMENT_0_START,
-                SEGMENT_1_END);
-    }
-
     private static TaggedContextEntry contextEntry(
             TaggedContextSource source,
             long timestamp,
@@ -418,7 +487,7 @@ public final class EpisodeSynthesisPromptMockPreview {
         return extras;
     }
 
-    private static String buildSummary(ReflectionMaterial material, PreviewScenario scenario) {
+    private static String buildSummary(ReflectionMaterial material, MockScenarioData scenario) {
         return """
                 episode_synthesis prompt mock preview
 
@@ -448,11 +517,47 @@ public final class EpisodeSynthesisPromptMockPreview {
                 material.segments().size()).trim();
     }
 
+    private static void writePreviewFiles(Path outputDir, PreviewOutput output) throws IOException {
+        Files.createDirectories(outputDir);
+        write(outputDir.resolve("system_prompt.txt"), output.systemPrompt());
+        write(outputDir.resolve("user_prompt.txt"), output.userPrompt());
+        write(outputDir.resolve("prompt_draft.txt"), output.promptDraft());
+        write(outputDir.resolve("segment_reference_map.txt"), output.segmentReferenceMap());
+        write(outputDir.resolve("preview_summary.txt"), output.previewSummary());
+    }
+
     private static void write(Path path, String content) throws IOException {
         Files.writeString(path, content == null ? "" : content, StandardCharsets.UTF_8);
     }
 
+    public record PreviewOutput(
+            String scenarioKey,
+            String scenarioDescription,
+            String systemPrompt,
+            String userPrompt,
+            String promptDraft,
+            String segmentReferenceMap,
+            String previewSummary) {
+
+        public PreviewOutput {
+            scenarioKey = scenarioKey == null ? "" : scenarioKey;
+            scenarioDescription = scenarioDescription == null ? "" : scenarioDescription;
+            systemPrompt = systemPrompt == null ? "" : systemPrompt;
+            userPrompt = userPrompt == null ? "" : userPrompt;
+            promptDraft = promptDraft == null ? "" : promptDraft;
+            segmentReferenceMap = segmentReferenceMap == null ? "" : segmentReferenceMap;
+            previewSummary = previewSummary == null ? "" : previewSummary;
+        }
+    }
+
     private record PreviewScenario(
+            String key,
+            String description,
+            ReflectionStateSnapshot stateSnapshot,
+            RelevantPersonaEntries relevantPersonaEntries) {
+    }
+
+    public record MockScenarioData(
             String key,
             String description,
             ReflectionStateSnapshot stateSnapshot,

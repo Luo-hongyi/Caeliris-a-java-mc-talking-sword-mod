@@ -1,6 +1,7 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.MemorySourceMaterialWindow;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.AgentRecentStateUpdateTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
 
 /**
@@ -50,6 +51,25 @@ public record ReflectionMaterialRequest(
     }
 
     public static ReflectionMaterialRequest forEpisodeSynthesisSignal(EpisodeSynthesisTriggerSignal signal) {
+        if (signal == null) {
+            throw new IllegalArgumentException("signal must not be null");
+        }
+        return new ReflectionMaterialRequest(
+                ReflectionScope.REGION,
+                signal.regionId(),
+                signal.regionStartSegmentId(),
+                signal.regionEndSegmentId(),
+                signal.leftBoundaryLeftSegmentId(),
+                signal.leftBoundaryRightSegmentId(),
+                signal.rightBoundaryLeftSegmentId(),
+                signal.rightBoundaryRightSegmentId(),
+                signal.regionStartTimestamp(),
+                signal.regionEndTimestamp(),
+                signal.stmSliceStartTimestamp(),
+                signal.stmSliceExclusiveTimestamp());
+    }
+
+    public static ReflectionMaterialRequest forRecentStateUpdateSignal(AgentRecentStateUpdateTriggerSignal signal) {
         if (signal == null) {
             throw new IllegalArgumentException("signal must not be null");
         }

@@ -20,6 +20,10 @@ public final class ReflectionPromptResources {
             ROOT + "task/episode_synthesis/system_header.txt";
     public static final String TASK_EPISODE_SYNTHESIS_USER_PROMPT =
             ROOT + "task/episode_synthesis/user_prompt.txt";
+    public static final String TASK_AGENT_RECENT_STATE_UPDATE_SYSTEM_HEADER =
+            ROOT + "task/recent_state_update/system_header.txt";
+    public static final String TASK_AGENT_RECENT_STATE_UPDATE_USER_PROMPT =
+            ROOT + "task/recent_state_update/user_prompt.txt";
 
     public static final String TASK_SHARED_IDENTITY_SECTION =
             ROOT + "task/shared/identity_section.txt";

@@ -1,7 +1,9 @@
 package dreamdust.talking_weapon.basic_talking_weapon.agent.context.trigger.internal;
 
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.AgentRecentStateUpdateTriggerSignal;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSynthesisTriggerSignal;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.AgentRecentStateUpdateReflectionTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.EpisodeSynthesisReflectionTask;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.runtime.AgentRuntime;
 
@@ -25,14 +27,29 @@ public final class EpisodeSynthesisInternalTrigger {
             return false;
         }
 
-        List<EpisodeSynthesisTriggerSignal> signals =
-                memory.getEpisodeTimelineStore().collectEpisodeSynthesisTriggerSignals();
-        if (signals.isEmpty()) {
-            return false;
+        boolean submittedAny = false;
+
+        List<AgentRecentStateUpdateTriggerSignal> recentStateSignals =
+                memory.getEpisodeTimelineStore().collectRecentStateUpdateTriggerSignals();
+        for (AgentRecentStateUpdateTriggerSignal signal : recentStateSignals) {
+            if (signal == null) {
+                continue;
+            }
+            boolean accepted = runtime.submitBackground(new AgentRecentStateUpdateReflectionTask(
+                    signal,
+                    currentGameTime,
+                    currentDayIndex,
+                    currentTimeOfDayTick));
+            if (!accepted) {
+                memory.getEpisodeTimelineStore().rollbackRecentStateUpdateToReady(signal.regionId());
+                continue;
+            }
+            submittedAny = true;
         }
 
-        boolean submittedAny = false;
-        for (EpisodeSynthesisTriggerSignal signal : signals) {
+        List<EpisodeSynthesisTriggerSignal> synthesisSignals =
+                memory.getEpisodeTimelineStore().collectEpisodeSynthesisTriggerSignals();
+        for (EpisodeSynthesisTriggerSignal signal : synthesisSignals) {
             if (signal == null) {
                 continue;
             }

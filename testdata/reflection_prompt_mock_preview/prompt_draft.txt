@@ -4,11 +4,13 @@ region id: 1001
 segment id range: 41 -> 42
 time range: 120000 -> 180000
 stm slice: 120000 -> 180000
+episode close state: player_profile=玩家最近在地下探索时表现出谨慎推进、先清威胁后搜刮的倾向。 | recap=前一段时间里，玩家持续向地下推进，并开始主动询问你对风险和路线的判断。
 segment count: 2
 
 [Segment 0]
 segment id: 41
 range: 120000 -> 150000
+segment close state: emotion=CURIOUS, intensity=49, favorability=18
 segment snapshot visible: [player:测试玩家] 玩家刚进入潮湿洞穴入口，脚边有浅水和碎石。
 segment snapshot extras: dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=午后，洞穴入口仍有些亮
 timeline:
@@ -23,6 +25,7 @@ timeline:
 [Segment 1]
 segment id: 42
 range: 150000 -> 180000
+segment close state: emotion=CURIOUS, intensity=57, favorability=18
 segment snapshot visible: [player:测试玩家] 战斗后洞穴安静下来，玩家继续向深处推进。
 segment snapshot extras: dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=洞穴深处已几乎没有自然光
 timeline:

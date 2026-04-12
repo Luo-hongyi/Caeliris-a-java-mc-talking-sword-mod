@@ -14,6 +14,8 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.F
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.MovingActionBuffer;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeActionTimelineFile;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeSynthesizedMemoryJournalFile;
+import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeSynthesizedMemoriesFile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -121,6 +123,14 @@ public class AgentMemory {
         } catch (Exception e) {
             System.err.println("[TalkingWeapon] Failed to load implanted LTM records: " + e.getMessage());
         }
+        try {
+            List<LTMEntry> synthesized = StudioRuntimeSynthesizedMemoryJournalFile.readSynthesizedMemories();
+            this.ltmRecords.addAll(synthesized);
+        } catch (Exception e) {
+            System.err.println("[TalkingWeapon] Failed to load synthesized LTM records: " + e.getMessage());
+        }
+        StudioRuntimeSynthesizedMemoryJournalFile.appendRemoves(trimLtmRecordsToCapacity());
+        StudioRuntimeSynthesizedMemoriesFile.writeCurrentSnapshot(this);
     }
 
     // ── Identity ─────────────────────────────────────────────────
@@ -331,9 +341,11 @@ public class AgentMemory {
      */
     public void addLTMRecord(LTMEntry record) {
         ltmRecords.add(record);
-        while (ltmRecords.size() > ltmRecordsCapacity) {
-            ltmRecords.remove(0);
+        if (record != null && record.getSourceType() == LTMEntry.SourceType.SYNTHESIZED) {
+            StudioRuntimeSynthesizedMemoryJournalFile.appendPut(record);
         }
+        StudioRuntimeSynthesizedMemoryJournalFile.appendRemoves(trimLtmRecordsToCapacity());
+        StudioRuntimeSynthesizedMemoriesFile.writeCurrentSnapshot(this);
     }
 
     /**
@@ -347,6 +359,8 @@ public class AgentMemory {
         } catch (Exception e) {
             System.err.println("[TalkingWeapon] Failed to reload implanted LTM records: " + e.getMessage());
         }
+        StudioRuntimeSynthesizedMemoryJournalFile.appendRemoves(trimLtmRecordsToCapacity());
+        StudioRuntimeSynthesizedMemoriesFile.writeCurrentSnapshot(this);
     }
 
     public List<LTMEntry> getLtmRecords() {
@@ -359,6 +373,21 @@ public class AgentMemory {
 
     public void setLtmRecordsCapacity(int capacity) {
         this.ltmRecordsCapacity = capacity;
+        StudioRuntimeSynthesizedMemoryJournalFile.appendRemoves(trimLtmRecordsToCapacity());
+        StudioRuntimeSynthesizedMemoriesFile.writeCurrentSnapshot(this);
+    }
+
+    private List<UUID> trimLtmRecordsToCapacity() {
+        List<UUID> removedSynthesizedIds = new ArrayList<>();
+        while (ltmRecords.size() > ltmRecordsCapacity) {
+            LTMEntry removed = ltmRecords.remove(0);
+            if (removed != null
+                    && removed.getSourceType() == LTMEntry.SourceType.SYNTHESIZED
+                    && removed.getId() != null) {
+                removedSynthesizedIds.add(removed.getId());
+            }
+        }
+        return removedSynthesizedIds;
     }
 
     public synchronized void setRecentRecallWindow(int window) {

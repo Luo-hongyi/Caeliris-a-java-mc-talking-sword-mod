@@ -5,10 +5,12 @@ import com.google.gson.GsonBuilder;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.AgentMemory;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.PlayerIntent;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodePendingMark;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRecentStateUpdateState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionGateDecision;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionLifecycleState;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeReasonRuntimeConfig;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegionStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRuntimeSettings;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeSplitPoint;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeTimeline;
@@ -48,7 +50,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
     public static final String FILENAME = "studio_runtime_episode_timeline.json";
     public static final String VERSION_KEY = "runtimeEpisodeTimeline";
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
     private static final long MIN_WRITE_INTERVAL_MS = 750L;
 
     private static long lastWriteAt = 0L;
@@ -248,7 +250,10 @@ public final class StudioRuntimeEpisodeTimelineFile {
                 + ":" + region.startSegmentId()
                 + ":" + region.endSegmentId()
                 + ":" + region.gateDecision()
-                + ":" + region.lifecycleState();
+                + ":" + region.lifecycleState()
+                + ":" + region.recentStateUpdateState()
+                + ":" + region.closeStateSnapshot().playerProfile()
+                + ":" + region.closeStateSnapshot().recap();
     }
 
     private static LinkedHashMap<String, RuntimeEpisodeReasonConfigModel> createReasonConfigModels(
@@ -367,6 +372,17 @@ public final class StudioRuntimeEpisodeTimelineFile {
             return EpisodeRegionLifecycleState.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ignored) {
             return fallback;
+        }
+    }
+
+    private static EpisodeRecentStateUpdateState parseRecentStateUpdateState(String value) {
+        if (value == null || value.isBlank()) {
+            return EpisodeRecentStateUpdateState.UNSET;
+        }
+        try {
+            return EpisodeRecentStateUpdateState.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return EpisodeRecentStateUpdateState.UNSET;
         }
     }
 
@@ -559,10 +575,13 @@ public final class StudioRuntimeEpisodeTimelineFile {
         public int segmentCount;
         public String gateDecision = "";
         public String lifecycleState = "";
+        public String recentStateUpdateState = "";
         public String primaryIntent = "";
         public double primaryScore;
         public String secondaryIntent = "";
         public double secondaryScore;
+        public String closePlayerProfile = "";
+        public String closeRecap = "";
         public Map<String, Double> aggregateIntentScores = new LinkedHashMap<>();
 
         public static RuntimeEpisodeRegionModel from(EpisodeRegion region, int segmentCount) {
@@ -575,10 +594,13 @@ public final class StudioRuntimeEpisodeTimelineFile {
             model.segmentCount = Math.max(0, segmentCount);
             model.gateDecision = nameOf(region.gateDecision());
             model.lifecycleState = nameOf(region.lifecycleState());
+            model.recentStateUpdateState = region.recentStateUpdateState().name();
             model.primaryIntent = nameOf(region.primaryIntent());
             model.primaryScore = region.primaryScore();
             model.secondaryIntent = nameOf(region.secondaryIntent());
             model.secondaryScore = region.secondaryScore();
+            model.closePlayerProfile = region.closeStateSnapshot().playerProfile();
+            model.closeRecap = region.closeStateSnapshot().recap();
             for (PlayerIntent intent : PlayerIntent.values()) {
                 double score = region.getScore(intent);
                 if (score > 0.0) {
@@ -589,7 +611,14 @@ public final class StudioRuntimeEpisodeTimelineFile {
         }
 
         String signature() {
-            return regionId + "|" + startSegmentId + "|" + endSegmentId + "|" + gateDecision + "|" + lifecycleState;
+            return regionId
+                    + "|" + startSegmentId
+                    + "|" + endSegmentId
+                    + "|" + gateDecision
+                    + "|" + lifecycleState
+                    + "|" + recentStateUpdateState
+                    + "|" + closePlayerProfile
+                    + "|" + closeRecap;
         }
 
         String summary() {
@@ -597,6 +626,7 @@ public final class StudioRuntimeEpisodeTimelineFile {
                     + " [" + startSegmentId + ".." + endSegmentId + "]"
                     + " state=" + lifecycleState
                     + " gate=" + gateDecision
+                    + " recent=" + recentStateUpdateState
                     + " primary=" + primaryIntent
                     + " " + String.format(Locale.ROOT, "%.2f", primaryScore);
         }
@@ -613,6 +643,15 @@ public final class StudioRuntimeEpisodeTimelineFile {
             }
             if (secondaryIntent == null) {
                 secondaryIntent = "";
+            }
+            if (recentStateUpdateState == null) {
+                recentStateUpdateState = "";
+            }
+            if (closePlayerProfile == null) {
+                closePlayerProfile = "";
+            }
+            if (closeRecap == null) {
+                closeRecap = "";
             }
             if (aggregateIntentScores == null) {
                 aggregateIntentScores = new LinkedHashMap<>();
@@ -636,6 +675,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
 
             gateDecision = normalizedGateDecision.name();
             lifecycleState = normalizedLifecycleState.name();
+            recentStateUpdateState = (tailRegion
+                    ? EpisodeRecentStateUpdateState.UNSET
+                    : parseRecentStateUpdateState(recentStateUpdateState)).name();
         }
 
         EpisodeRegion toEpisodeRegion() {
@@ -662,7 +704,9 @@ public final class StudioRuntimeEpisodeTimelineFile {
                     secondaryScore,
                     regionId,
                     parseGateDecision(gateDecision),
-                    parseLifecycleState(lifecycleState, EpisodeRegionLifecycleState.HOLDING));
+                    parseLifecycleState(lifecycleState, EpisodeRegionLifecycleState.HOLDING),
+                    parseRecentStateUpdateState(recentStateUpdateState),
+                    new EpisodeRegionStateSnapshot(closePlayerProfile, closeRecap));
         }
     }
 

@@ -22,7 +22,12 @@ public record EpisodeSynthesisTriggerSignal(
         long regionStartTimestamp,
         long regionEndTimestamp,
         long stmSliceStartTimestamp,
-        long stmSliceExclusiveTimestamp) {
+        long stmSliceExclusiveTimestamp,
+        String segmentClosePrimaryEmotion,
+        Integer segmentCloseEmotionIntensity,
+        Integer segmentCloseFavorability,
+        String episodeClosePlayerProfile,
+        String episodeCloseRecap) {
 
     public EpisodeSynthesisTriggerSignal {
         if (regionId <= 0L) {
@@ -46,5 +51,8 @@ public record EpisodeSynthesisTriggerSignal(
         if (stmSliceExclusiveTimestamp < stmSliceStartTimestamp) {
             throw new IllegalArgumentException("stmSliceExclusiveTimestamp must be >= stmSliceStartTimestamp");
         }
+        segmentClosePrimaryEmotion = segmentClosePrimaryEmotion == null ? "" : segmentClosePrimaryEmotion.trim();
+        episodeClosePlayerProfile = episodeClosePlayerProfile == null ? "" : episodeClosePlayerProfile.trim();
+        episodeCloseRecap = episodeCloseRecap == null ? "" : episodeCloseRecap.trim();
     }
 }

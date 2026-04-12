@@ -26,16 +26,19 @@ public final class FixedActionSegmentContext {
             new FixedActionSegmentContext(
                     CollectedContextSnapshot.empty(),
                     CollectedContextSnapshot.empty(),
-                    List.of());
+                    List.of(),
+                    FixedSegmentStateSnapshot.empty());
 
     private final CollectedContextSnapshot defaultContextSnapshot;
     private final CollectedContextSnapshot mergedContextSnapshot;
     private final List<InteractionTurn> interactionTurns;
+    private final FixedSegmentStateSnapshot segmentCloseStateSnapshot;
 
     public FixedActionSegmentContext(
             CollectedContextSnapshot defaultContextSnapshot,
             CollectedContextSnapshot mergedContextSnapshot,
-            List<InteractionTurn> interactionTurns) {
+            List<InteractionTurn> interactionTurns,
+            FixedSegmentStateSnapshot segmentCloseStateSnapshot) {
         this.defaultContextSnapshot = defaultContextSnapshot == null
                 ? CollectedContextSnapshot.empty()
                 : defaultContextSnapshot;
@@ -43,6 +46,9 @@ public final class FixedActionSegmentContext {
                 ? CollectedContextSnapshot.empty()
                 : mergedContextSnapshot;
         this.interactionTurns = immutableCopy(interactionTurns);
+        this.segmentCloseStateSnapshot = segmentCloseStateSnapshot == null
+                ? FixedSegmentStateSnapshot.empty()
+                : segmentCloseStateSnapshot;
     }
 
     public static FixedActionSegmentContext empty() {
@@ -53,7 +59,11 @@ public final class FixedActionSegmentContext {
         if (defaultContextSnapshot == null || defaultContextSnapshot.isEmpty()) {
             return EMPTY;
         }
-        return new FixedActionSegmentContext(defaultContextSnapshot, CollectedContextSnapshot.empty(), List.of());
+        return new FixedActionSegmentContext(
+                defaultContextSnapshot,
+                CollectedContextSnapshot.empty(),
+                List.of(),
+                FixedSegmentStateSnapshot.empty());
     }
 
     public CollectedContextSnapshot getDefaultContextSnapshot() {
@@ -125,6 +135,10 @@ public final class FixedActionSegmentContext {
         return interactionTurns;
     }
 
+    public FixedSegmentStateSnapshot getSegmentCloseStateSnapshot() {
+        return segmentCloseStateSnapshot;
+    }
+
     public boolean usesDefaultContext() {
         return mergedContextSnapshot.isEmpty();
     }
@@ -136,7 +150,20 @@ public final class FixedActionSegmentContext {
     public FixedActionSegmentContext withMergedSnapshot(
             CollectedContextSnapshot mergedContextSnapshot,
             List<InteractionTurn> mergedInteractionTurns) {
-        return new FixedActionSegmentContext(defaultContextSnapshot, mergedContextSnapshot, mergedInteractionTurns);
+        return new FixedActionSegmentContext(
+                defaultContextSnapshot,
+                mergedContextSnapshot,
+                mergedInteractionTurns,
+                segmentCloseStateSnapshot);
+    }
+
+    public FixedActionSegmentContext withSegmentCloseStateSnapshot(
+            FixedSegmentStateSnapshot nextSegmentCloseStateSnapshot) {
+        return new FixedActionSegmentContext(
+                defaultContextSnapshot,
+                mergedContextSnapshot,
+                interactionTurns,
+                nextSegmentCloseStateSnapshot);
     }
 
     private static <T> List<T> immutableCopy(List<T> values) {

@@ -1,0 +1,1 @@
+完成本次 recent state update reflection，并只返回单个 JSON 对象。

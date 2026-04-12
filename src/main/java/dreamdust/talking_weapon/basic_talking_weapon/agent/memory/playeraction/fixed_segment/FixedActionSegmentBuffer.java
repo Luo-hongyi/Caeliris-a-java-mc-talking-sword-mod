@@ -250,7 +250,9 @@ public final class FixedActionSegmentBuffer {
         if (openSegment == null) {
             return null;
         }
-        FixedActionSegment sealed = openSegment.freeze(allocateSegmentId());
+        FixedActionSegmentContext sealedContext = openSegment.context.withSegmentCloseStateSnapshot(
+                FixedSegmentStateSnapshotCollector.captureCurrent());
+        FixedActionSegment sealed = openSegment.freeze(allocateSegmentId(), sealedContext);
         sealedSegments.add(sealed);
         openSegment = null;
         return sealed;
@@ -277,12 +279,15 @@ public final class FixedActionSegmentBuffer {
         }
 
         Map<SegmentWindowKey, Long> existingIds = new LinkedHashMap<>();
+        Map<SegmentWindowKey, FixedActionSegmentContext> existingContexts = new LinkedHashMap<>();
         if (previousState != null && previousState.getSealedSegments() != null) {
             for (FixedActionSegment segment : previousState.getSealedSegments()) {
                 if (segment == null || !segment.hasAssignedSegmentId()) {
                     continue;
                 }
-                existingIds.put(SegmentWindowKey.of(segment), segment.getSegmentId());
+                SegmentWindowKey key = SegmentWindowKey.of(segment);
+                existingIds.put(key, segment.getSegmentId());
+                existingContexts.put(key, segment.getContext());
             }
         }
 
@@ -293,7 +298,12 @@ public final class FixedActionSegmentBuffer {
             }
             Long existingId = existingIds.get(SegmentWindowKey.of(segment));
             if (existingId != null && existingId > 0L) {
-                assigned.add(segment.withSegmentId(existingId));
+                FixedActionSegment reused = segment.withSegmentId(existingId);
+                FixedActionSegmentContext existingContext = existingContexts.get(SegmentWindowKey.of(segment));
+                if (existingContext != null) {
+                    reused = reused.withContext(existingContext);
+                }
+                assigned.add(reused);
                 continue;
             }
             assigned.add(segment.withSegmentId(allocateSegmentId()));
@@ -489,6 +499,10 @@ public final class FixedActionSegmentBuffer {
         }
 
         private FixedActionSegment freeze(long segmentId) {
+            return freeze(segmentId, context);
+        }
+
+        private FixedActionSegment freeze(long segmentId, FixedActionSegmentContext effectiveContext) {
             return new FixedActionSegment(
                     segmentId,
                     startTimestamp,
@@ -497,7 +511,7 @@ public final class FixedActionSegmentBuffer {
                     rawEndIndex,
                     entries,
                     null,
-                    context);
+                    effectiveContext);
         }
 
         private FixedActionSegmentEntry mergeEntry(FixedActionSegmentEntry entry, ActionRecord record, int rawIndex) {

@@ -74,6 +74,7 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
                     rawSegment.startTimestamp(),
                     rawSegment.endTimestamp(),
                     rawSegment.segmentSnapshot(),
+                    rawSegment.segmentCloseStateSnapshot(),
                     rawSegment.localContextEntries(),
                     rawSegment.playerActions(),
                     rawSegment.interactions(),
@@ -93,6 +94,7 @@ public final class DefaultReflectionMaterialMerger implements ReflectionMaterial
                 rawMaterial.endTimestamp(),
                 rawMaterial.stmSliceStartTimestamp(),
                 rawMaterial.stmSliceExclusiveTimestamp(),
+                rawMaterial.episodeCloseStateSnapshot(),
                 mergedSegments);
     }
 }

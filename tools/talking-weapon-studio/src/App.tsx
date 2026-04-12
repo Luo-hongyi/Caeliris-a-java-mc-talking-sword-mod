@@ -40,8 +40,11 @@ import {
   PromptRegistryFile,
   RuntimeActionSegmentStoreFile,
   RuntimeActionTimelineFile,
+  RuntimeInteractionMessageEntry,
   RuntimeRecallTraceFile,
   RuntimeRecentInteractionsFile,
+  RuntimeSynthesizedMemoriesFile,
+  RuntimeSynthesizedMemoryEntry,
   TagRecord
 } from "./types";
 
@@ -152,13 +155,13 @@ type RelationMode =
 type RuntimeThoughtEntry = {
   id: string;
   interactionTimestamp: number;
-  outputTimestamp: number;
+  messageIndex: number;
   triggerSource: string;
-  userPrompt: string;
+  triggerText: string;
   hasImage: boolean;
   text: string;
   speechText: string;
-  actionTypes: string[];
+  messageCount: number;
 };
 
 type CustomTagRow = {
@@ -245,6 +248,7 @@ type WorkspaceDebugInfo = {
 type ImportedWorkspaceData = {
   nativeCatalogSnapshot?: NativeCatalogSnapshotFile | null;
   runtimeInteractions?: RuntimeRecentInteractionsFile | null;
+  runtimeSynthesizedMemories?: RuntimeSynthesizedMemoriesFile | null;
   runtimeActionTimeline?: RuntimeActionTimelineFile | null;
   runtimeActionSegmentStore?: RuntimeActionSegmentStoreFile | null;
   runtimeRecallTrace?: RuntimeRecallTraceFile | null;
@@ -267,6 +271,7 @@ type WorkspaceManifestVersions = {
   snapshot: string;
   runtimeTagView: string;
   runtimeInteractions: string;
+  runtimeSynthesizedMemories: string;
   runtimeActionTimeline: string;
   runtimeActionSegmentStore: string;
   runtimeRecallTrace: string;
@@ -558,6 +563,14 @@ function createSeedNativeCatalogSnapshot(): NativeCatalogSnapshotFile {
 }
 
 function createEmptyRuntimeRecentInteractionsFile(): RuntimeRecentInteractionsFile {
+  return {
+    schemaVersion: 6,
+    generatedAt: "",
+    entries: []
+  };
+}
+
+function createEmptyRuntimeSynthesizedMemoriesFile(): RuntimeSynthesizedMemoriesFile {
   return {
     schemaVersion: 1,
     generatedAt: "",
@@ -1320,26 +1333,129 @@ function normalizeRuntimeRecentInteractionsFile(value: unknown): RuntimeRecentIn
   }
 
   return {
-    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 6,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
     entries: value.entries
       .filter(isRecord)
       .map((entry) => ({
         timestamp: typeof entry.timestamp === "number" ? entry.timestamp : 0,
         triggerSource: typeof entry.triggerSource === "string" ? entry.triggerSource : "",
-        userPrompt: typeof entry.userPrompt === "string" ? entry.userPrompt : "",
         hasImage: entry.hasImage === true,
-        actionTypes: stringArrayOf(entry.actionTypes),
-        outputs: Array.isArray(entry.outputs)
-          ? entry.outputs
+        messages: Array.isArray(entry.messages)
+          ? entry.messages
               .filter(isRecord)
-              .map((output) => ({
-                type: typeof output.type === "string" ? output.type : "",
-                text: typeof output.text === "string" ? output.text : "",
-                timestamp: typeof output.timestamp === "number" ? output.timestamp : 0
-              }))
+              .map((message) => normalizeRuntimeInteractionMessageEntry(message))
+              .filter((message): message is RuntimeInteractionMessageEntry => message !== null)
+          : [],
+        contextExtras: isRecord(entry.contextExtras)
+          ? Object.fromEntries(
+              Object.entries(entry.contextExtras).filter(
+                (contextEntry): contextEntry is [string, string] =>
+                  typeof contextEntry[0] === "string" && typeof contextEntry[1] === "string"
+              )
+            )
+          : {},
+        visibleContexts: Array.isArray(entry.visibleContexts)
+          ? entry.visibleContexts
+              .filter(isRecord)
+              .map((visibleContext) => normalizeRuntimeInteractionVisibleContextEntry(visibleContext))
           : []
       }))
+  };
+}
+
+function normalizeRuntimeInteractionMessageEntry(value: unknown): RuntimeInteractionMessageEntry | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const sourceType = value.sourceType;
+  const kind = value.kind;
+  if (
+    sourceType !== "PLAYER" &&
+    sourceType !== "AGENT" &&
+    sourceType !== "ENVIRONMENT"
+  ) {
+    return null;
+  }
+  if (kind !== "TEXT" && kind !== "INNER_MONOLOGUE" && kind !== "REACTION_CUE") {
+    return null;
+  }
+  return {
+    sourceType,
+    sourceId: typeof value.sourceId === "string" ? value.sourceId : "",
+    sourceDisplayName: typeof value.sourceDisplayName === "string" ? value.sourceDisplayName : "",
+    kind,
+    text: typeof value.text === "string" ? value.text : ""
+  };
+}
+
+function normalizeRuntimeInteractionVisibleContextEntry(value: unknown): RuntimeRecentInteractionsFile["entries"][number]["visibleContexts"][number] {
+  if (!isRecord(value)) {
+    return {
+      description: "",
+      timestamp: 0,
+      sourceType: "",
+      sourceId: "",
+      sourceDisplayName: ""
+    };
+  }
+  return {
+    description: typeof value.description === "string" ? value.description : "",
+    timestamp: typeof value.timestamp === "number" ? value.timestamp : 0,
+    sourceType: typeof value.sourceType === "string" ? value.sourceType : "",
+    sourceId: typeof value.sourceId === "string" ? value.sourceId : "",
+    sourceDisplayName: typeof value.sourceDisplayName === "string" ? value.sourceDisplayName : ""
+  };
+}
+
+function normalizeRuntimeSynthesizedMemoriesFile(value: unknown): RuntimeSynthesizedMemoriesFile | null {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    return null;
+  }
+  return {
+    schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : 1,
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : "",
+    entries: value.entries
+      .filter(isRecord)
+      .map((entry) => normalizeRuntimeSynthesizedMemoryEntry(entry))
+      .filter((entry) => entry.id.trim().length > 0)
+  };
+}
+
+function normalizeRuntimeSynthesizedMemoryEntry(value: unknown): RuntimeSynthesizedMemoryEntry {
+  if (!isRecord(value)) {
+    return {
+      id: "",
+      description: "",
+      focusTags: [],
+      detailTags: [],
+      semanticTimeTag: "",
+      semanticTimeLabel: "",
+      importance: 0,
+      timestamp: -1,
+      occurredGameTime: -1,
+      occurredDayIndex: -1,
+      occurredTimeOfDayTick: -1,
+      dimensionId: "",
+      biomeId: "",
+      raining: null
+    };
+  }
+  return {
+    id: typeof value.id === "string" ? value.id : "",
+    description: typeof value.description === "string" ? value.description : "",
+    focusTags: stringArrayOf(value.focusTags),
+    detailTags: stringArrayOf(value.detailTags),
+    semanticTimeTag: typeof value.semanticTimeTag === "string" ? value.semanticTimeTag : "",
+    semanticTimeLabel: typeof value.semanticTimeLabel === "string" ? value.semanticTimeLabel : "",
+    importance: typeof value.importance === "number" ? value.importance : 0,
+    timestamp: typeof value.timestamp === "number" ? value.timestamp : -1,
+    occurredGameTime: typeof value.occurredGameTime === "number" ? value.occurredGameTime : -1,
+    occurredDayIndex: typeof value.occurredDayIndex === "number" ? value.occurredDayIndex : -1,
+    occurredTimeOfDayTick: typeof value.occurredTimeOfDayTick === "number" ? value.occurredTimeOfDayTick : -1,
+    dimensionId: typeof value.dimensionId === "string" ? value.dimensionId : "",
+    biomeId: typeof value.biomeId === "string" ? value.biomeId : "",
+    raining: typeof value.raining === "boolean" ? value.raining : null
   };
 }
 
@@ -1643,6 +1759,7 @@ function createEmptyWorkspaceManifestVersions(): WorkspaceManifestVersions {
     snapshot: "missing",
     runtimeTagView: "missing",
     runtimeInteractions: "missing",
+    runtimeSynthesizedMemories: "missing",
     runtimeActionTimeline: "missing",
     runtimeActionSegmentStore: "missing",
     runtimeRecallTrace: "missing",
@@ -1680,6 +1797,10 @@ function normalizeWorkspaceManifest(value: unknown): StudioWorkspaceManifest | n
       runtimeTagView: typeof rawVersions.runtimeTagView === "string" ? rawVersions.runtimeTagView : "missing",
       runtimeInteractions:
         typeof rawVersions.runtimeInteractions === "string" ? rawVersions.runtimeInteractions : "missing",
+      runtimeSynthesizedMemories:
+        typeof rawVersions.runtimeSynthesizedMemories === "string"
+          ? rawVersions.runtimeSynthesizedMemories
+          : "missing",
       runtimeActionTimeline:
         typeof rawVersions.runtimeActionTimeline === "string" ? rawVersions.runtimeActionTimeline : "missing",
       runtimeActionSegmentStore:
@@ -1722,6 +1843,15 @@ const WORKSPACE_IMPORT_DESCRIPTORS: WorkspaceImportDescriptor[] = [
       importedData.runtimeInteractions = value as RuntimeRecentInteractionsFile;
     },
     describe: (value) => `turns ${(value as RuntimeRecentInteractionsFile).entries.length} 条`
+  },
+  {
+    filename: "studio_runtime_synthesized_memories.json",
+    versionKey: "runtimeSynthesizedMemories",
+    normalize: normalizeRuntimeSynthesizedMemoriesFile,
+    assign: (importedData, value) => {
+      importedData.runtimeSynthesizedMemories = value as RuntimeSynthesizedMemoriesFile;
+    },
+    describe: (value) => `synthesized memories ${(value as RuntimeSynthesizedMemoriesFile).entries.length} 条`
   },
   {
     filename: "studio_runtime_action_timeline.json",
@@ -2504,84 +2634,117 @@ function formatShortRuntimeTimestamp(timestamp: number): string {
   });
 }
 
-function shortActionType(actionType: string): string {
-  switch ((actionType ?? "").trim().toLowerCase()) {
-    case "speech":
-      return "说话";
-    case "inner_monologue":
-      return "心声";
-    case "attack":
-      return "攻击";
-    case "kill":
-      return "击杀";
-    case "hurt_by":
-      return "受伤";
-    case "death":
-      return "死亡";
-    case "mine_block":
-      return "挖掘";
-    case "place_block":
-      return "放置";
-    case "eat":
-      return "进食";
-    case "use_item":
-      return "使用物品";
-    case "travel":
-      return "移动";
-    case "biome_change":
-      return "群系变化";
-    case "dim_change":
-      return "维度变化";
-    case "trade":
-      return "交易";
-    case "interact":
-      return "交互";
-    case "favorability_update":
-      return "好感变化";
-    case "emotion_update":
-      return "情绪变化";
-    default:
-      return abbreviateText(
-        actionType
-          .toLowerCase()
-          .replace(/_/g, " ")
-          .trim() || "未知",
-        12,
-        "未知"
-      );
-  }
-}
-
 function formatOutputTypeLabel(type: string): string {
-  switch ((type ?? "").trim().toLowerCase()) {
-    case "speech":
-      return "说话";
-    case "inner_monologue":
+  switch ((type ?? "").trim().toUpperCase()) {
+    case "TEXT":
+      return "文本";
+    case "INNER_MONOLOGUE":
       return "内心";
+    case "REACTION_CUE":
+      return "反应指令";
     default:
       return type || "输出";
   }
 }
 
-function getSpeechOutputText(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
-  const speechOutput = entry.outputs.find((output) => output.type === "speech" && output.text.trim());
-  return speechOutput?.text.trim() ?? "";
+function formatInteractionSourceLabel(message: RuntimeInteractionMessageEntry): string {
+  const displayName = message.sourceDisplayName.trim();
+  switch (message.sourceType) {
+    case "PLAYER":
+      return displayName ? `玩家:${displayName}` : "玩家";
+    case "AGENT":
+      return displayName ? `剑灵:${displayName}` : "剑灵";
+    case "ENVIRONMENT":
+      return displayName ? `环境:${displayName}` : "环境";
+    default:
+      return displayName || "未知来源";
+  }
+}
+
+function getInteractionTriggerText(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const reactionCue = entry.messages.find((message) => message.kind === "REACTION_CUE" && message.text.trim());
+  if (reactionCue) {
+    return reactionCue.text.trim();
+  }
+  const playerText = entry.messages.find(
+    (message) => message.sourceType === "PLAYER" && message.kind === "TEXT" && message.text.trim()
+  );
+  if (playerText) {
+    return playerText.text.trim();
+  }
+  const fallback = entry.messages.find((message) => message.text.trim());
+  return fallback?.text.trim() ?? "";
+}
+
+function getAgentSpeechMessageText(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  const speechMessage = entry.messages.find(
+    (message) => message.sourceType === "AGENT" && message.kind === "TEXT" && message.text.trim()
+  );
+  return speechMessage?.text.trim() ?? "";
 }
 
 function buildInteractionTriggerLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
   const imageMark = entry.hasImage ? " [+image]" : "";
-  const prompt = entry.userPrompt.trim() ? entry.userPrompt.trim() : "(无提示词)";
+  const prompt = getInteractionTriggerText(entry) || "(无触发消息)";
   return `${formatShortRuntimeTimestamp(entry.timestamp)}  触发: ${prompt}${imageMark}`;
 }
 
 function buildInteractionSpeechLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
-  const speechText = getSpeechOutputText(entry);
-  return `说话: ${speechText || "(沉默)"}`;
+  const speechText = getAgentSpeechMessageText(entry);
+  return `说话: ${speechText || "(无 agent 发言)"}`;
 }
 
-function buildInteractionActionLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
-  const shortTypes = Array.from(new Set(entry.actionTypes.map((actionType) => shortActionType(actionType))));
-  return `动作: ${shortTypes.length ? shortTypes.join(" / ") : "无"}`;
+function buildInteractionMessageLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  if (!entry.messages.length) {
+    return "消息: 无";
+  }
+  const counts = new Map<string, number>();
+  for (const message of entry.messages) {
+    const key = formatOutputTypeLabel(message.kind);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const summary = Array.from(counts.entries()).map(([label, count]) => `${label} ${count}`);
+  return `消息: ${entry.messages.length} 条（${summary.join(" / ")}）`;
+}
+
+function buildInteractionVisibleContextLine(entry: RuntimeRecentInteractionsFile["entries"][number]): string {
+  return `可见上下文: ${entry.visibleContexts.length} 条`;
+}
+
+function buildInteractionMessageBadge(message: RuntimeInteractionMessageEntry): string {
+  return `${formatInteractionSourceLabel(message)} / ${formatOutputTypeLabel(message.kind)}`;
+}
+
+function formatInteractionVisibleContextSource(
+  visibleContext: RuntimeRecentInteractionsFile["entries"][number]["visibleContexts"][number]
+): string {
+  if (visibleContext.sourceDisplayName.trim()) {
+    return visibleContext.sourceDisplayName.trim();
+  }
+  if (visibleContext.sourceId.trim()) {
+    return visibleContext.sourceId.trim();
+  }
+  if (visibleContext.sourceType.trim()) {
+    return visibleContext.sourceType.trim();
+  }
+  return "未标注来源";
+}
+
+function buildRuntimeMemoryAnchor(memory: RuntimeSynthesizedMemoryEntry): string {
+  const parts: string[] = [];
+  if (memory.semanticTimeLabel.trim()) {
+    parts.push(memory.semanticTimeLabel.trim());
+  }
+  if (memory.dimensionId.trim()) {
+    parts.push(memory.dimensionId.trim());
+  }
+  if (memory.biomeId.trim()) {
+    parts.push(memory.biomeId.trim());
+  }
+  if (memory.raining === true) {
+    parts.push("雨中");
+  }
+  return parts.join(" / ");
 }
 
 function primaryRegistryTypeOf(record: TagRecord): string | undefined {
@@ -2724,6 +2887,9 @@ function App() {
   const [runtimeInteractions, setRuntimeInteractions] = useState<RuntimeRecentInteractionsFile>(
     createEmptyRuntimeRecentInteractionsFile()
   );
+  const [runtimeSynthesizedMemories, setRuntimeSynthesizedMemories] = useState<RuntimeSynthesizedMemoriesFile>(
+    createEmptyRuntimeSynthesizedMemoriesFile()
+  );
   const [runtimeActionTimeline, setRuntimeActionTimeline] = useState<RuntimeActionTimelineFile>(
     createEmptyRuntimeActionTimelineFile()
   );
@@ -2813,27 +2979,28 @@ function App() {
   const runtimeThoughtEntries = useMemo<RuntimeThoughtEntry[]>(() => {
     const thoughts: RuntimeThoughtEntry[] = [];
     for (const entry of runtimeInteractionEntries) {
-      const speechText = getSpeechOutputText(entry);
-      [...entry.outputs]
-        .sort((left, right) => right.timestamp - left.timestamp)
-        .forEach((output, index) => {
-          if (output.type !== "inner_monologue" || !output.text.trim()) {
+      const speechText = getAgentSpeechMessageText(entry);
+      entry.messages.forEach((message, index) => {
+          if (message.kind !== "INNER_MONOLOGUE" || !message.text.trim()) {
             return;
           }
           thoughts.push({
-            id: `${entry.timestamp}-${output.timestamp}-${index}`,
+            id: `${entry.timestamp}-${index}`,
             interactionTimestamp: entry.timestamp,
-            outputTimestamp: output.timestamp,
+            messageIndex: index,
             triggerSource: entry.triggerSource,
-            userPrompt: entry.userPrompt,
+            triggerText: getInteractionTriggerText(entry),
             hasImage: entry.hasImage,
-            text: output.text.trim(),
+            text: message.text.trim(),
             speechText,
-            actionTypes: entry.actionTypes
+            messageCount: entry.messages.length
           });
         });
     }
-    return thoughts.sort((left, right) => right.outputTimestamp - left.outputTimestamp);
+    return thoughts.sort(
+      (left, right) =>
+        right.interactionTimestamp - left.interactionTimestamp || right.messageIndex - left.messageIndex
+    );
   }, [runtimeInteractionEntries]);
 
   const customTagRows = useMemo(() => {
@@ -2932,6 +3099,30 @@ function App() {
         .includes(normalizedQuery)
     );
   }, [memoryQuery, memories]);
+
+  const filteredRuntimeSynthesizedMemories = useMemo(() => {
+    const normalizedQuery = memoryQuery.trim().toLowerCase();
+    const base = runtimeSynthesizedMemories.entries;
+
+    if (!normalizedQuery) {
+      return base;
+    }
+
+    return base.filter((memory) =>
+      [
+        memory.description,
+        ...memory.focusTags,
+        ...memory.detailTags,
+        memory.semanticTimeTag,
+        memory.semanticTimeLabel,
+        memory.dimensionId,
+        memory.biomeId
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [memoryQuery, runtimeSynthesizedMemories.entries]);
 
   const filteredLocations = useMemo(() => {
     const normalizedQuery = locationQuery.trim().toLowerCase();
@@ -3951,6 +4142,9 @@ function App() {
     if (importedData.runtimeInteractions) {
       setRuntimeInteractions(importedData.runtimeInteractions);
     }
+    if (importedData.runtimeSynthesizedMemories) {
+      setRuntimeSynthesizedMemories(importedData.runtimeSynthesizedMemories);
+    }
     if (importedData.runtimeActionTimeline || importedData.runtimeActionSegmentStore) {
       const baseTimeline = importedData.runtimeActionTimeline ?? runtimeActionTimeline;
       setRuntimeActionTimeline(
@@ -4700,6 +4894,8 @@ function App() {
         {page === "memory" ? (
           <MemoryPage
             memories={filteredMemories}
+            runtimeSynthesizedMemories={filteredRuntimeSynthesizedMemories}
+            runtimeGeneratedAt={runtimeSynthesizedMemories.generatedAt}
             query={memoryQuery}
             mode={memoryMode}
             tags={tagRecords}
@@ -6248,6 +6444,8 @@ function LocationRegistryEditor({
 
 function MemoryPage({
   memories,
+  runtimeSynthesizedMemories,
+  runtimeGeneratedAt,
   query,
   mode,
   tags,
@@ -6265,6 +6463,8 @@ function MemoryPage({
   onSave
 }: {
   memories: Array<{ memory: ImplantedMemoryEntry; index: number }>;
+  runtimeSynthesizedMemories: RuntimeSynthesizedMemoryEntry[];
+  runtimeGeneratedAt: string;
   query: string;
   mode: MemoryMode;
   tags: TagRecord[];
@@ -6302,9 +6502,9 @@ function MemoryPage({
     <div className="panel page-panel">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Implanted Memories</p>
-          <h2>植入记忆管理</h2>
-          <p className="muted-copy">先在列表里浏览和检索记忆，再进入单独编辑页修改完整内容。</p>
+          <p className="eyebrow">Memory</p>
+          <h2>记忆视图</h2>
+          <p className="muted-copy">上半部分是 authored implanted memories，下半部分是 runtime synthesized memories。</p>
         </div>
       </div>
 
@@ -6322,38 +6522,85 @@ function MemoryPage({
         </button>
       </div>
 
-      <div className="custom-tag-list">
-        {memories.map(({ memory, index }) => (
-          <article className="custom-tag-row memory-row" key={memory.id ?? `memory-${index}`}>
-            <div className="custom-tag-main">
-              <div className="custom-tag-meta">
-                <span className="badge">Memory</span>
-                {memory.importance !== undefined ? (
-                  <span className="badge">{`重要度 ${memory.importance}`}</span>
-                ) : null}
-                {memory.time_label ? <span className="badge muted">{memory.time_label}</span> : null}
-              </div>
-              <strong className="memory-title">{memory.label ?? `Memory ${index + 1}`}</strong>
-              <p className="custom-tag-description">{memory.description}</p>
-              <ChipList items={formatFocusTagItems(memory.focus_tags)} emptyLabel="无 focus tags" compact />
-            </div>
-            <div className="row-actions">
-              <button className="action-button quiet" onClick={() => onEdit(index)} type="button">
-                编辑
-              </button>
-              <button className="action-button danger" onClick={() => onDelete(index)} type="button">
-                删除
-              </button>
-            </div>
-          </article>
-        ))}
-        {!memories.length ? (
-          <div className="empty-state">
-            <strong>没有匹配结果</strong>
-            <p>当前检索条件下没有 implanted memory。</p>
+      <section className="info-block">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Implanted Memories</p>
+            <h3>植入记忆管理</h3>
           </div>
-        ) : null}
-      </div>
+        </div>
+        <div className="custom-tag-list">
+          {memories.map(({ memory, index }) => (
+            <article className="custom-tag-row memory-row" key={memory.id ?? `memory-${index}`}>
+              <div className="custom-tag-main">
+                <div className="custom-tag-meta">
+                  <span className="badge">Implanted</span>
+                  {memory.importance !== undefined ? (
+                    <span className="badge">{`重要度 ${memory.importance}`}</span>
+                  ) : null}
+                  {memory.time_label ? <span className="badge muted">{memory.time_label}</span> : null}
+                </div>
+                <strong className="memory-title">{memory.label ?? `Memory ${index + 1}`}</strong>
+                <p className="custom-tag-description">{memory.description}</p>
+                <ChipList items={formatFocusTagItems(memory.focus_tags)} emptyLabel="无 focus tags" compact />
+              </div>
+              <div className="row-actions">
+                <button className="action-button quiet" onClick={() => onEdit(index)} type="button">
+                  编辑
+                </button>
+                <button className="action-button danger" onClick={() => onDelete(index)} type="button">
+                  删除
+                </button>
+              </div>
+            </article>
+          ))}
+          {!memories.length ? (
+            <div className="empty-state">
+              <strong>没有匹配结果</strong>
+              <p>当前检索条件下没有 implanted memory。</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="info-block">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Runtime Synthesized Memories</p>
+            <h3>合成记忆</h3>
+            <p className="muted-copy">
+              {runtimeGeneratedAt
+                ? `最近同步 ${formatRuntimeTimestamp(Date.parse(runtimeGeneratedAt))}`
+                : "尚未读到 runtime synthesized memories 文件"}
+            </p>
+          </div>
+        </div>
+        <div className="custom-tag-list">
+          {runtimeSynthesizedMemories.map((memory) => (
+            <article className="custom-tag-row memory-row" key={memory.id}>
+              <div className="custom-tag-main">
+                <div className="custom-tag-meta">
+                  <span className="badge warn">Synthesized</span>
+                  <span className="badge">{`重要度 ${memory.importance.toFixed(2)}`}</span>
+                  {buildRuntimeMemoryAnchor(memory) ? (
+                    <span className="badge muted">{buildRuntimeMemoryAnchor(memory)}</span>
+                  ) : null}
+                </div>
+                <strong className="memory-title">{memory.id}</strong>
+                <p className="custom-tag-description">{memory.description}</p>
+                <ChipList items={memory.focusTags} emptyLabel="无 focus tags" compact />
+                <ChipList items={memory.detailTags} emptyLabel="无 detail tags" compact />
+              </div>
+            </article>
+          ))}
+          {!runtimeSynthesizedMemories.length ? (
+            <div className="empty-state">
+              <strong>还没有合成记忆</strong>
+              <p>需要先让 reflection 任务成功提交 synthesized LTM。</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }
@@ -7377,24 +7624,17 @@ function RuntimeThoughtsPage({
                     {thought.triggerSource ? <span className="badge muted">{thought.triggerSource}</span> : null}
                     {thought.hasImage ? <span className="badge muted">+image</span> : null}
                   </div>
-                  <h3>{formatRuntimeTimestamp(thought.outputTimestamp || thought.interactionTimestamp)}</h3>
+                  <h3>{formatRuntimeTimestamp(thought.interactionTimestamp)}</h3>
                 </div>
-                <span className="badge">{buildInteractionActionLine({
-                  timestamp: thought.interactionTimestamp,
-                  triggerSource: thought.triggerSource,
-                  userPrompt: thought.userPrompt,
-                  hasImage: thought.hasImage,
-                  actionTypes: thought.actionTypes,
-                  outputs: []
-                }).replace(/^动作: /, "")}</span>
+                <span className="badge">{`${thought.messageCount} 条消息`}</span>
               </div>
 
-              <p className="runtime-entry-trigger">{`触发: ${abbreviateText(thought.userPrompt, 120, "(无提示词)")}`}</p>
+              <p className="runtime-entry-trigger">{`触发: ${abbreviateText(thought.triggerText, 120, "(无触发消息)")}`}</p>
               <div className="runtime-thought-body">{thought.text}</div>
 
               <div className="runtime-entry-footer">
                 <p className="muted-copy">
-                  对外说话：{thought.speechText ? abbreviateText(thought.speechText, 120) : "(沉默)"}
+                  对外说话：{thought.speechText ? abbreviateText(thought.speechText, 120) : "(无 agent 发言)"}
                 </p>
               </div>
             </article>
@@ -7434,7 +7674,7 @@ function RuntimeInteractionsPage({
           <p className="eyebrow">Runtime Turns</p>
           <h2>触发记录列表</h2>
           <p className="muted-copy">
-            封面沿用游戏内的极简摘要，只显示触发、说话和动作概览；展开后可以查看完整输出与 action 列表。
+            这里直接展示单轮 interaction 的消息时间线；展开后可以查看完整消息、上下文快照和 extra。
           </p>
         </div>
         <div className="stacked-badges">
@@ -7450,8 +7690,6 @@ function RuntimeInteractionsPage({
           {entries.map((entry, index) => {
             const entryId = `${entry.timestamp}-${index}`;
             const expanded = expandedEntryId === entryId;
-            const uniqueActionTypes = Array.from(new Set(entry.actionTypes));
-            const sortedOutputs = [...entry.outputs].sort((left, right) => left.timestamp - right.timestamp);
 
             return (
               <article className={expanded ? "runtime-entry-card expanded" : "runtime-entry-card"} key={entryId}>
@@ -7473,44 +7711,67 @@ function RuntimeInteractionsPage({
                   </div>
                   <div className="runtime-summary-lines">
                     <p>{buildInteractionSpeechLine(entry)}</p>
-                    <p>{buildInteractionActionLine(entry)}</p>
+                    <p>{buildInteractionMessageLine(entry)}</p>
+                    <p>{buildInteractionVisibleContextLine(entry)}</p>
                   </div>
                 </button>
 
                 {expanded ? (
                   <div className="runtime-entry-details">
                     <section className="info-block">
-                      <h3>Action 列表</h3>
-                      <div className="chip-row compact">
-                        {uniqueActionTypes.length ? (
-                          uniqueActionTypes.map((actionType) => (
-                            <span className="chip" key={actionType}>
-                              {shortActionType(actionType)}
-                            </span>
+                      <h3>消息列表</h3>
+                      <div className="runtime-output-list">
+                        {entry.messages.length ? (
+                          entry.messages.map((message, messageIndex) => (
+                            <article className="runtime-output-card" key={`${entryId}-message-${messageIndex}`}>
+                              <div className="runtime-output-head">
+                                <div className="custom-tag-meta">
+                                  <span className="badge warn">{buildInteractionMessageBadge(message)}</span>
+                                </div>
+                              </div>
+                              <div className="runtime-output-body">{message.text.trim() || "(空消息)"}</div>
+                            </article>
                           ))
                         ) : (
-                          <span className="chip">无</span>
+                          <p className="muted-copy">这一回合没有记录到消息。</p>
                         )}
                       </div>
                     </section>
 
                     <section className="info-block">
-                      <h3>输出明细</h3>
+                      <h3>可见上下文</h3>
                       <div className="runtime-output-list">
-                        {sortedOutputs.length ? (
-                          sortedOutputs.map((output, outputIndex) => (
-                            <article className="runtime-output-card" key={`${entryId}-${output.timestamp}-${outputIndex}`}>
+                        {entry.visibleContexts.length ? (
+                          entry.visibleContexts.map((visibleContext, visibleIndex) => (
+                            <article className="runtime-output-card" key={`${entryId}-visible-${visibleIndex}`}>
                               <div className="runtime-output-head">
                                 <div className="custom-tag-meta">
-                                  <span className="badge warn">{formatOutputTypeLabel(output.type)}</span>
-                                  <span className="badge muted">{formatShortRuntimeTimestamp(output.timestamp)}</span>
+                                  <span className="badge warn">{formatInteractionVisibleContextSource(visibleContext)}</span>
+                                  <span className="badge muted">{formatShortRuntimeTimestamp(visibleContext.timestamp)}</span>
                                 </div>
                               </div>
-                              <div className="runtime-output-body">{output.text.trim() || "(空输出)"}</div>
+                              <div className="runtime-output-body">
+                                {visibleContext.description.trim() || "(空上下文)"}
+                              </div>
                             </article>
                           ))
                         ) : (
-                          <p className="muted-copy">这一回合没有记录到输出文本。</p>
+                          <p className="muted-copy">这一回合没有记录到 visible contexts。</p>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="info-block">
+                      <h3>Extras</h3>
+                      <div className="chip-row compact">
+                        {Object.entries(entry.contextExtras).length ? (
+                          Object.entries(entry.contextExtras).map(([key, value]) => (
+                            <span className="chip" key={`${entryId}-extra-${key}`}>
+                              {`${key}: ${value}`}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="chip">无</span>
                         )}
                       </div>
                     </section>

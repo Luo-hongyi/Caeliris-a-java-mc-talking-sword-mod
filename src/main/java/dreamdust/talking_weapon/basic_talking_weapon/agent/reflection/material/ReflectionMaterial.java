@@ -20,6 +20,7 @@ public record ReflectionMaterial(
         long endTimestamp,
         long stmSliceStartTimestamp,
         long stmSliceExclusiveTimestamp,
+        ReflectionEpisodeStateSnapshot episodeCloseStateSnapshot,
         List<ReflectionSegmentMaterial> segments) {
 
     public ReflectionMaterial {
@@ -46,6 +47,9 @@ public record ReflectionMaterial(
         }
         if (stmSliceExclusiveTimestamp < stmSliceStartTimestamp) {
             throw new IllegalArgumentException("stmSliceExclusiveTimestamp must be >= stmSliceStartTimestamp");
+        }
+        if (episodeCloseStateSnapshot == null) {
+            throw new IllegalArgumentException("episodeCloseStateSnapshot must not be null");
         }
         segments = segments == null
                 ? List.of()

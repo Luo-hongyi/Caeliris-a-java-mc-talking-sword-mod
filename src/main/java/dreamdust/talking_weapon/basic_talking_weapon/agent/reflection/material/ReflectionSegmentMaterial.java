@@ -15,6 +15,7 @@ public record ReflectionSegmentMaterial(
         long startTimestamp,
         long endTimestamp,
         ReflectionContextSnapshot segmentSnapshot,
+        ReflectionSegmentStateSnapshot segmentCloseStateSnapshot,
         List<TaggedContextEntry> localContextEntries,
         List<ReflectionPlayerAction> playerActions,
         List<ReflectionInteraction> interactions,
@@ -35,6 +36,9 @@ public record ReflectionSegmentMaterial(
         }
         if (segmentSnapshot == null) {
             throw new IllegalArgumentException("segmentSnapshot must not be null");
+        }
+        if (segmentCloseStateSnapshot == null) {
+            throw new IllegalArgumentException("segmentCloseStateSnapshot must not be null");
         }
         localContextEntries = localContextEntries == null
                 ? List.of()

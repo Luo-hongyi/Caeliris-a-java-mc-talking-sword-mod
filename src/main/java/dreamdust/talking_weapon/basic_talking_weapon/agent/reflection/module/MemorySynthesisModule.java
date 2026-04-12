@@ -74,6 +74,9 @@ public final class MemorySynthesisModule extends ReflectionModule {
         if (typed.selectedSegmentIndices().isEmpty()) {
             return ReflectionValidationResult.failure("memory_synthesis.selected_segment_indices must not be empty");
         }
+        if (typed.selectedSegmentIndices().size() > 2) {
+            return ReflectionValidationResult.failure("memory_synthesis.selected_segment_indices must contain at most 2 segments");
+        }
         if (typed.ltmText().isBlank()) {
             return ReflectionValidationResult.failure("memory_synthesis.ltm_text must not be blank");
         }

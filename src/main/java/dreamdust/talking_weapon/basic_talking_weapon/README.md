@@ -17,7 +17,7 @@
 - `associativeOnly` 的最新语义已经落地：隐藏条目只能由 `SubconsciousBooster` 直通解锁，后续 Persona / Memory 阶段不会再次反向显露未见上下文。
 - 全局植入记忆 (`implanted memories`) 的读写链路可用。
 - 植入记忆支持独立的 `semantic_time_tag`：它会参与记忆之间的联想边，并在 Prompt 中以独立时间语义输出，但不会并入普通 `detail_tags` 的 cue 列表。
-- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。旧版 `ReflectionTask` / `ReflectionTrigger` 已经从代码中移除；当前新的 reflection 主线已经落到 `AbstractReflectionTask + EpisodeSynthesisReflectionTask + fixed modules`，并已接起 episode gate、后台入队、单次 LLM 调用与第一版 task-owned commit。`recap_update` 现在已经写回 `AgentState.recap`，语义上作为“阶段性前情提要”存在；当前主要剩余工作转为 synthesized LTM 的 tag / 时间锚点质量继续收紧。
+- 当前仍未完成的关键组件，是与这套新 tag / recall 架构完全一致的 **LTM 生成闭环**。旧版 `ReflectionTask` / `ReflectionTrigger` 已经从代码中移除；当前新的 reflection 主线已经落到 `AbstractReflectionTask + EpisodeSynthesisReflectionTask + fixed modules`，并已接起 episode gate、后台入队、单次 LLM 调用与第一版 task-owned commit。但最新设计已经确认：`player_profile_update / recap_update / favorability_update / emotion_update` 不应继续绑在这条高延迟消费型任务上，而应拆成独立的 `agent_recent_state_update` 只读任务。
 
 ## ✨ 核心特性
 
@@ -207,9 +207,9 @@ InteractionTurn.messages 中记录为 `source=AGENT, kind=REACTION_CUE`
 
 - 旧版 `ReflectionTask` / `ReflectionTrigger` 路线已经删除，不再作为过渡实现保留。
 - 旧 `EpisodeSynthesisTask` / `DebugEpisodeSynthesisTask` / 内部 trigger 接线也已经清除，不再作为当前入口保留。
-- 当前 reflection 已经按 `REFLECTION_MAINLINE_REFACTOR_PLAN.md` 落下第一版骨架：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 已存在，`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`recap_update`、`favorability_update`、`emotion_update` 五个 modules。
+- 当前 reflection 主线已经拆成两条正式任务：`EpisodeSynthesisReflectionTask` 现在只承载 `memory_synthesis`；`AgentRecentStateUpdateReflectionTask` 则在 episode 封口时立即触发，负责 `player_profile_update`、`recap_update`、`favorability_update`、`emotion_update` 四个只读 state modules。
 - action 侧旧的高频 `favorability_update` 动作已经拆除；当前好感度更新只保留 reflection 侧的低频主线。
-- 这条链路现在已经接回 `EpisodeTimelineStore` gate、internal trigger 和共享后台队列；`executePreparedTask(...)` 也已经能完成单次 LLM 调用、module parse / validate、第一版 owner-side commit 以及 consumed cleanup / resolved。`recap_update` 现在会写回 `AgentState.recap`，作为低频“前情提要”而非即时状态；当前仍不能视为“LTM 生成系统已完成”，主要是因为 synthesized LTM 的 tag / 时间锚点质量仍需继续打磨。
+- 这条链路现在已经接回 `EpisodeTimelineStore` gate、internal trigger 和共享后台队列；`executePreparedTask(...)` 已能完成单次 LLM 调用、module parse / validate、owner-side commit，以及 synthesis 侧的 consumed cleanup / resolved。当前新接入的关键修正是：segment 封口会冻结高频 state snapshot（情绪、好感度），episode 封口会冻结低频 state snapshot（前情提要、玩家画像），避免延迟任务误读当前态。
 - 当前开发的关键缺口是：构建一个与新召回方案对齐的 LTM 生成闭环，包括何时结算、如何从 episode / STM 提炼 detail tags / focus tags、如何控制植入与生成记忆的质量边界，以及如何与 persona / favorability 的低频更新协同。
 
 ### 显示机制
@@ -248,7 +248,7 @@ InteractionTurn.messages 中记录为 `source=AGENT, kind=REACTION_CUE`
    - 导出全量 `native_catalog_icons/` 图标包
    - 刷新 `studio_workspace/` 中的 snapshot / runtime view / icon 参考文件，供 Talking Weapon Studio 直接按文件夹导入
    - `studio_workspace/` 现在同时承载 authored data 真源：`custom_tags.json`、`tag_descriptions.json`、`tag_relations.json`、`personas.json`、`implanted_memories.json`、`memory_recall_tuning.json` 由游戏与 Studio 直接共用
-   - `studio_workspace/` 也承载只读 runtime 参考：最近交互回合、最近一次记忆召回轨迹等，供游戏内调试页与未来 Studio 详细页共读
+   - `studio_workspace/` 也承载只读 runtime 参考：最近交互回合、最近一次记忆召回轨迹、reflection prompt mock preview 等，供游戏内调试页与未来 Studio 详细页共读
    - `studio_workspace.manifest.json` 现在承载双向实时连接：Studio 前端轮询它感知游戏导出变化；游戏客户端也轮询它，并在 `updatedBy=studio` 时热重载这批 authored 文件
    - 直接打开这些运行时导出文件 / 图标目录进行检查
 

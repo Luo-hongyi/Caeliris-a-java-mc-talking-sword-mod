@@ -212,19 +212,62 @@ export interface RuntimeInteractionOutputEntry {
   timestamp: number;
 }
 
+export type RuntimeInteractionSourceType = "PLAYER" | "AGENT" | "ENVIRONMENT";
+
+export type RuntimeInteractionMessageKind = "TEXT" | "INNER_MONOLOGUE" | "REACTION_CUE";
+
+export interface RuntimeInteractionMessageEntry {
+  sourceType: RuntimeInteractionSourceType;
+  sourceId: string;
+  sourceDisplayName: string;
+  kind: RuntimeInteractionMessageKind;
+  text: string;
+}
+
+export interface RuntimeInteractionVisibleContextEntry {
+  description: string;
+  timestamp: number;
+  sourceType: string;
+  sourceId: string;
+  sourceDisplayName: string;
+}
+
 export interface RuntimeInteractionEntry {
   timestamp: number;
   triggerSource: string;
-  userPrompt: string;
   hasImage: boolean;
-  actionTypes: string[];
-  outputs: RuntimeInteractionOutputEntry[];
+  messages: RuntimeInteractionMessageEntry[];
+  contextExtras: Record<string, string>;
+  visibleContexts: RuntimeInteractionVisibleContextEntry[];
 }
 
 export interface RuntimeRecentInteractionsFile {
   schemaVersion: number;
   generatedAt: string;
   entries: RuntimeInteractionEntry[];
+}
+
+export interface RuntimeSynthesizedMemoryEntry {
+  id: string;
+  description: string;
+  focusTags: string[];
+  detailTags: string[];
+  semanticTimeTag: string;
+  semanticTimeLabel: string;
+  importance: number;
+  timestamp: number;
+  occurredGameTime: number;
+  occurredDayIndex: number;
+  occurredTimeOfDayTick: number;
+  dimensionId: string;
+  biomeId: string;
+  raining: boolean | null;
+}
+
+export interface RuntimeSynthesizedMemoriesFile {
+  schemaVersion: number;
+  generatedAt: string;
+  entries: RuntimeSynthesizedMemoryEntry[];
 }
 
 export interface RuntimeRecallVisibleContextEntry {

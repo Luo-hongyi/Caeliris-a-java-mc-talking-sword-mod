@@ -8,6 +8,7 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.E
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateInput;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.gate.EpisodeSynthesisGateResult;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.studio.StudioRuntimeEpisodeTimelineFile;
 
 import java.util.ArrayList;
@@ -80,6 +81,32 @@ public final class EpisodeTimelineStore {
                     region.regionId(),
                     null,
                     EpisodeRegionLifecycleState.PENDING);
+        }
+        return List.copyOf(signals);
+    }
+
+    /**
+     * recent state update 的正式 signal 输出接口。
+     * <p>
+     * 它不依赖 gate，也不消费材料；
+     * 只要 region 已经封口，就会在第一次收集时进入 `PENDING`，避免重复派发。
+     */
+    public synchronized List<AgentRecentStateUpdateTriggerSignal> collectRecentStateUpdateTriggerSignals() {
+        if (timeline.regions().isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<AgentRecentStateUpdateTriggerSignal> signals = new ArrayList<>();
+        for (EpisodeRegion region : timeline.regions()) {
+            if (!isReadyForRecentStateUpdateSignal(region)) {
+                continue;
+            }
+            AgentRecentStateUpdateTriggerSignal signal = buildRecentStateUpdateTriggerSignal(region);
+            if (signal == null) {
+                continue;
+            }
+            signals.add(signal);
+            updateRegionRecentStateUpdateState(region.regionId(), EpisodeRecentStateUpdateState.PENDING);
         }
         return List.copyOf(signals);
     }
@@ -165,6 +192,14 @@ public final class EpisodeTimelineStore {
         return findRegion(regionId) != null;
     }
 
+    public synchronized boolean markRecentStateUpdateResolved(long regionId) {
+        return updateRegionRecentStateUpdateState(regionId, EpisodeRecentStateUpdateState.RESOLVED);
+    }
+
+    public synchronized boolean rollbackRecentStateUpdateToReady(long regionId) {
+        return updateRegionRecentStateUpdateState(regionId, EpisodeRecentStateUpdateState.UNSET);
+    }
+
     public synchronized boolean canApplySourceMaterialCleanupPlan(MemorySourceMaterialCleanupPlan plan) {
         if (plan == null || plan.window() == null) {
             return false;
@@ -190,7 +225,10 @@ public final class EpisodeTimelineStore {
             timeline = EpisodeTimeline.empty();
             return timeline;
         }
-        timeline = tracker.replaceSegments(segments, collectRegionStateSeeds());
+        EpisodeTimeline previous = timeline;
+        timeline = attachClosedRegionStateSnapshots(
+                tracker.replaceSegments(segments, collectRegionStateSeeds()),
+                previous);
         return timeline;
     }
 
@@ -222,9 +260,11 @@ public final class EpisodeTimelineStore {
             return timeline;
         }
 
+        EpisodeTimeline previous = timeline;
         timeline = timeline.segments().isEmpty()
                 ? tracker.replaceSegments(merged, collectRegionStateSeeds())
                 : tracker.appendSegments(appended);
+        timeline = attachClosedRegionStateSnapshots(timeline, previous);
         return timeline;
     }
 
@@ -257,6 +297,16 @@ public final class EpisodeTimelineStore {
         return region.lifecycleState() == EpisodeRegionLifecycleState.HOLDING;
     }
 
+    private boolean isReadyForRecentStateUpdateSignal(EpisodeRegion region) {
+        if (region == null) {
+            return false;
+        }
+        if (region.lifecycleState() == EpisodeRegionLifecycleState.ACTIVE) {
+            return false;
+        }
+        return region.recentStateUpdateState() == EpisodeRecentStateUpdateState.UNSET;
+    }
+
     private EpisodeSynthesisTriggerSignal buildSynthesisTriggerSignal(EpisodeRegion region) {
         if (region == null) {
             return null;
@@ -281,6 +331,7 @@ public final class EpisodeTimelineStore {
         long stmSliceExclusiveTimestamp = Math.max(
                 stmSliceStartTimestamp,
                 rightBoundary.splitTimestamp());
+        HistoricalStateCarrier historicalState = resolveHistoricalStateCarrier(region);
         return new EpisodeSynthesisTriggerSignal(
                 region.regionId(),
                 leftBoundary.leftSegmentId(),
@@ -292,7 +343,55 @@ public final class EpisodeTimelineStore {
                 region.startTimestamp(),
                 region.endTimestamp(),
                 stmSliceStartTimestamp,
-                stmSliceExclusiveTimestamp);
+                stmSliceExclusiveTimestamp,
+                historicalState.segmentClosePrimaryEmotion(),
+                historicalState.segmentCloseEmotionIntensity(),
+                historicalState.segmentCloseFavorability(),
+                historicalState.episodeClosePlayerProfile(),
+                historicalState.episodeCloseRecap());
+    }
+
+    private AgentRecentStateUpdateTriggerSignal buildRecentStateUpdateTriggerSignal(EpisodeRegion region) {
+        if (region == null) {
+            return null;
+        }
+        if (timeline.indexOfSegmentId(region.startSegmentId()) < 0
+                || timeline.indexOfSegmentId(region.endSegmentId()) < 0) {
+            return null;
+        }
+
+        BoundaryAnchor leftBoundary = resolveBoundaryAt(
+                timeline.boundaryBeforeSegment(region.startSegmentId()),
+                Math.max(0L, region.startTimestamp()));
+        BoundaryAnchor rightBoundary = resolveBoundaryAt(
+                timeline.boundaryAfterSegment(region.endSegmentId()),
+                Math.max(0L, region.endTimestamp()));
+        if (leftBoundary == null || rightBoundary == null) {
+            return null;
+        }
+
+        long stmSliceStartTimestamp = Math.max(0L, region.startTimestamp());
+        long stmSliceExclusiveTimestamp = Math.max(
+                stmSliceStartTimestamp,
+                rightBoundary.splitTimestamp());
+        HistoricalStateCarrier historicalState = resolveHistoricalStateCarrier(region);
+        return new AgentRecentStateUpdateTriggerSignal(
+                region.regionId(),
+                leftBoundary.leftSegmentId(),
+                leftBoundary.rightSegmentId(),
+                region.startSegmentId(),
+                region.endSegmentId(),
+                rightBoundary.leftSegmentId(),
+                rightBoundary.rightSegmentId(),
+                region.startTimestamp(),
+                region.endTimestamp(),
+                stmSliceStartTimestamp,
+                stmSliceExclusiveTimestamp,
+                historicalState.segmentClosePrimaryEmotion(),
+                historicalState.segmentCloseEmotionIntensity(),
+                historicalState.segmentCloseFavorability(),
+                historicalState.episodeClosePlayerProfile(),
+                historicalState.episodeCloseRecap());
     }
 
     private BoundaryAnchor resolveBoundaryAt(
@@ -390,6 +489,92 @@ public final class EpisodeTimelineStore {
             long splitTimestamp) {
     }
 
+    private EpisodeTimeline attachClosedRegionStateSnapshots(
+            EpisodeTimeline nextTimeline,
+            EpisodeTimeline previousTimeline) {
+        if (nextTimeline == null || nextTimeline.regions().isEmpty()) {
+            return nextTimeline == null ? EpisodeTimeline.empty() : nextTimeline;
+        }
+
+        ArrayList<EpisodeRegion> nextRegions = new ArrayList<>(nextTimeline.regions().size());
+        boolean changed = false;
+        for (EpisodeRegion region : nextTimeline.regions()) {
+            if (region == null) {
+                nextRegions.add(null);
+                continue;
+            }
+            EpisodeRegion resolved = region;
+            if (shouldCaptureClosedRegionStateSnapshot(region, previousTimeline)) {
+                EpisodeRegionStateSnapshot snapshot = EpisodeRegionStateSnapshotCollector.captureCurrent();
+                if (!snapshot.isEmpty()) {
+                    resolved = region.withCloseStateSnapshot(snapshot);
+                    changed = true;
+                }
+            }
+            nextRegions.add(resolved);
+        }
+
+        if (!changed) {
+            return nextTimeline;
+        }
+        return new EpisodeTimeline(
+                nextTimeline.segments(),
+                nextRegions,
+                nextTimeline.pendingMarks(),
+                nextTimeline.splitPoints());
+    }
+
+    private boolean shouldCaptureClosedRegionStateSnapshot(
+            EpisodeRegion region,
+            EpisodeTimeline previousTimeline) {
+        if (region == null) {
+            return false;
+        }
+        if (region.lifecycleState() == EpisodeRegionLifecycleState.ACTIVE) {
+            return false;
+        }
+        if (region.closeStateSnapshot() != null && !region.closeStateSnapshot().isEmpty()) {
+            return false;
+        }
+        EpisodeRegion previous = findRegionById(previousTimeline, region.regionId());
+        return previous == null
+                || previous.lifecycleState() == EpisodeRegionLifecycleState.ACTIVE
+                || previous.closeStateSnapshot() == null
+                || previous.closeStateSnapshot().isEmpty();
+    }
+
+    private EpisodeRegion findRegionById(EpisodeTimeline sourceTimeline, long regionId) {
+        if (sourceTimeline == null || regionId <= 0L) {
+            return null;
+        }
+        for (EpisodeRegion region : sourceTimeline.regions()) {
+            if (region != null && region.regionId() == regionId) {
+                return region;
+            }
+        }
+        return null;
+    }
+
+    private HistoricalStateCarrier resolveHistoricalStateCarrier(EpisodeRegion region) {
+        EpisodeRegionStateSnapshot regionSnapshot = region == null || region.closeStateSnapshot() == null
+                ? EpisodeRegionStateSnapshot.empty()
+                : region.closeStateSnapshot();
+        FixedActionSegment endSegment = region == null
+                ? null
+                : timeline.getSegmentById(region.endSegmentId());
+        FixedSegmentStateSnapshot segmentSnapshot = endSegment == null
+                || endSegment.getContext() == null
+                || endSegment.getContext().getSegmentCloseStateSnapshot() == null
+                ? FixedSegmentStateSnapshot.empty()
+                : endSegment.getContext().getSegmentCloseStateSnapshot();
+        return new HistoricalStateCarrier(
+                segmentSnapshot.primaryEmotion(),
+                segmentSnapshot.emotionIntensity(),
+                segmentSnapshot.favorability(),
+                regionSnapshot.playerProfile(),
+                regionSnapshot.recap());
+    }
+
     private boolean updateRegionRuntimeState(
             long regionId,
             EpisodeRegionGateDecision nextGateDecision,
@@ -431,5 +616,43 @@ public final class EpisodeTimelineStore {
                 timeline.pendingMarks(),
                 timeline.splitPoints());
         return true;
+    }
+
+    private boolean updateRegionRecentStateUpdateState(
+            long regionId,
+            EpisodeRecentStateUpdateState nextRecentStateUpdateState) {
+        if (regionId <= 0L || timeline.regions().isEmpty() || nextRecentStateUpdateState == null) {
+            return false;
+        }
+
+        ArrayList<EpisodeRegion> nextRegions = new ArrayList<>(timeline.regions().size());
+        boolean updated = false;
+        for (EpisodeRegion region : timeline.regions()) {
+            if (region == null || region.regionId() != regionId) {
+                nextRegions.add(region);
+                continue;
+            }
+            nextRegions.add(region.withRecentStateUpdateState(nextRecentStateUpdateState));
+            updated = true;
+        }
+
+        if (!updated) {
+            return false;
+        }
+
+        timeline = new EpisodeTimeline(
+                timeline.segments(),
+                nextRegions,
+                timeline.pendingMarks(),
+                timeline.splitPoints());
+        return true;
+    }
+
+    private record HistoricalStateCarrier(
+            String segmentClosePrimaryEmotion,
+            Integer segmentCloseEmotionIntensity,
+            Integer segmentCloseFavorability,
+            String episodeClosePlayerProfile,
+            String episodeCloseRecap) {
     }
 }

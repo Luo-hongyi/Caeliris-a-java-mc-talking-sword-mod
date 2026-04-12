@@ -226,3 +226,23 @@ tasks.register('previewEpisodeSynthesisPromptHostileMurderer', JavaExec) {
     workingDir = project.projectDir
     args project.file('testdata/reflection_prompt_mock_preview_hostile_murderer').absolutePath, 'hostile_murderer'
 }
+
+tasks.register('previewRecentStateUpdatePrompt', JavaExec) {
+    group = 'verification'
+    description = 'Generates a mock recent state update reflection prompt preview under testdata/recent_state_update_prompt_mock_preview.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.RecentStateUpdatePromptMockPreview'
+    workingDir = project.projectDir
+    args project.file('testdata/recent_state_update_prompt_mock_preview').absolutePath
+}
+
+tasks.register('previewRecentStateUpdatePromptHostileMurderer', JavaExec) {
+    group = 'verification'
+    description = 'Generates a hostile murderer variant of the mock recent state update reflection prompt preview.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.task.RecentStateUpdatePromptMockPreview'
+    workingDir = project.projectDir
+    args project.file('testdata/recent_state_update_prompt_mock_preview_hostile_murderer').absolutePath, 'hostile_murderer'
+}

@@ -8,12 +8,16 @@ import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.STMPool;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegment;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentContext;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedActionSegmentEntry;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.playeraction.FixedSegmentStateSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.memory.episode.EpisodeRegion;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionContextSnapshot;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionEpisodeStateSnapshot;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionInteraction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionMaterialRequest;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionPlayerAction;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionRawMaterial;
 import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionRawSegmentMaterial;
+import dreamdust.talking_weapon.basic_talking_weapon.agent.reflection.material.ReflectionSegmentStateSnapshot;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -70,6 +74,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
                 request.endTimestamp(),
                 request.stmSliceStartTimestamp(),
                 request.stmSliceExclusiveTimestamp(),
+                resolveEpisodeCloseStateSnapshot(memory, request.regionId()),
                 rawSegments);
     }
 
@@ -81,6 +86,7 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
         ReflectionContextSnapshot segmentSnapshot = new ReflectionContextSnapshot(
                 context.getEffectiveVisibleContextEntries(),
                 context.getEffectiveContextExtras());
+        FixedSegmentStateSnapshot closeStateSnapshot = context.getSegmentCloseStateSnapshot();
         List<TaggedContextEntry> localContextEntries = bucketByTimestamp(
                 stmSlice == null ? List.of() : stmSlice.getContextEntries(),
                 segment,
@@ -120,9 +126,28 @@ public final class DefaultReflectionMaterialExporter implements ReflectionMateri
                 segment.getStartTimestamp(),
                 segment.getEndTimestamp(),
                 segmentSnapshot,
+                new ReflectionSegmentStateSnapshot(
+                        closeStateSnapshot.primaryEmotion(),
+                        closeStateSnapshot.emotionIntensity(),
+                        closeStateSnapshot.favorability()),
                 localContextEntries,
                 playerActions,
                 interactions);
+    }
+
+    private ReflectionEpisodeStateSnapshot resolveEpisodeCloseStateSnapshot(AgentMemory memory, long regionId) {
+        if (memory == null || regionId <= 0L) {
+            return ReflectionEpisodeStateSnapshot.empty();
+        }
+        for (EpisodeRegion region : memory.getEpisodeTimelineStore().snapshot().regions()) {
+            if (region == null || region.regionId() != regionId) {
+                continue;
+            }
+            return new ReflectionEpisodeStateSnapshot(
+                    region.closeStateSnapshot().playerProfile(),
+                    region.closeStateSnapshot().recap());
+        }
+        return ReflectionEpisodeStateSnapshot.empty();
     }
 
     private <T> List<T> bucketByTimestamp(

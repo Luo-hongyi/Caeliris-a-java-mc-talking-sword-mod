@@ -28,10 +28,11 @@
 - `LTMEntry` 已补入可持久化的正式游戏内时间坐标；持久层优先保存 `occurredDayIndex + occurredTimeOfDayTick`，运行时再重建内部绝对 `occurredGameTime` 用于衰退计算。
 - `semantic_time_tag` 已作为独立时间语义层接入：它会参与记忆之间的联想，但不会混入普通 `detail_tags` 的 Prompt cue；对于 synthesized LTM，它现在只是可选增强层，不再作为默认时间文案或结构性必填字段。
 - 当前仍未完成的关键环节，是和这套新 recall 架构一致的 **LTM 生成闭环**。
-- 新 reflection 主线骨架已经存在：`AbstractReflectionTask`、`EpisodeSynthesisReflectionTask`、`ReflectionMaterialExporter / Merger`、`ReflectionStateSnapshotLoader`、`ReflectionPersonaLoader` 都已落地；`EpisodeSynthesisReflectionTask` 当前固定装载 `memory_synthesis`、`player_profile_update`、`recap_update`、`favorability_update`、`emotion_update` 五个 modules，这五个也就是当前 reflection 包里全部现有的 modules。当前设计上，episode synthesis 先作为“全量总任务”承载这一整组输出。
+- 新 reflection 主线已经完成第一轮拆分：`EpisodeSynthesisReflectionTask` 现在只保留 `memory_synthesis`；`AgentRecentStateUpdateReflectionTask` 作为新的只读任务，在 episode 封口时立即触发，并承载 `player_profile_update`、`recap_update`、`favorability_update`、`emotion_update`。
 - `emotion_update` 现在已经接上 `PromptRegistry.getEmotionTypeDescription()`，因此情绪类型说明文本可以热更新；但真正允许的情绪类型集合仍然是 `AgentState.PrimaryEmotion` 这组静态枚举，当前不能由玩家动态修改。
 - action 侧旧的高频 `favorability_update` 链已经拆除：`LLMInteractionTask` 不再暴露也不再执行这类动作，`STMPool` 也不再维护对应账本；当前好感度更新只保留 reflection 侧模块语义。
 - 这条 reflection 主线已经正式接回 episode gate，并进入 `AgentRuntime` 的共享后台队列执行闭环。
+- 为了避免延迟较高的 task 误读“当前态”，fixed segment 封口时现在会冻结高频 state snapshot（情绪、好感度），episode region 封口时会冻结低频 state snapshot（前情提要、玩家画像），供后续 reflection task 读取。
 - 继续推进这条主线前，当前先插入一个更底层的前置议题：fixed segment 持久化坐标。原因是 episode / reflection 现在仍把当前数组位置当作正式引用坐标，这会阻塞中间 region 物理删除和 targeted cleanup。
 - action runtime 持久化这一轮已经做过一次性能收尾：sealed fixed segment payload 已拆出高频 timeline snapshot 主路径，当前先不继续围绕写盘做大改，主线重新回到 segment / episode / reflection 的结构调整。
 - fixed segment discard window 也已经从 `studio_runtime_action_timeline.json` 拔出，改为独立的 `studio_runtime_action_segment_discards.jsonl` sidecar log。
@@ -130,7 +131,8 @@
   - task-owned commit
   - consumed cleanup + region resolved / rollback
 - 当前剩余缺口主要是：
-  - `recap_update` 已写回 `AgentState.recap`，语义上作为低频“前情提要”
+  - `player_profile_update / recap_update / favorability_update / emotion_update`
+    仍错误地继承了 `episode_synthesis` 的高延迟，这是当前最高优先级 bug
   - 失败后的 LLM 重试链路还没接
   - synthesized LTM 的 tag / 时间锚点质量还只是第一版
 
@@ -239,7 +241,7 @@
 - `EpisodeTimelineStore.collectEpisodeSynthesisTriggerSignals()` 已经能产出 `PASS + HOLDING` 且越过 holdback 的多 signal，并在发出时将 region 推进到 `PENDING`。
 - `EpisodeSynthesisInternalTrigger` 已经会正式调用 `AgentRuntime.submitBackground(new EpisodeSynthesisReflectionTask(signal))`，所以 reflection task 已经开始进入共享后台队列。
 - `EpisodeSynthesisReflectionTask.executePreparedTask(...)` 现在已经能完成单次 LLM 调用、root output 解析、module validate、task-owned commit，以及 consumed cleanup + region resolved。
-- `recap_update` 现在已经写回 `AgentState.recap`；这里的语义不是“即时当前状态”，而是基于最近一段 episode 产出的阶段性前情提要。
+- `recap_update` 现在已经写回 `AgentState.recap`；但当前它和 `player_profile / favorability / emotion` 一样，仍被绑在高延迟的 `episode_synthesis` 上，这一任务划分已经被判定为错误，后续要拆成独立的 `agent_recent_state_update`。
 - 它还没有和最新的 `specific` / `generic` 语义完全统一。
 - 它还没有和当前的 `visibleContexts`、`associativeOnly`、`native_generic hidden` 策略形成闭环。
 - 它还没有明确的新一代结算时机和筛选规则。

@@ -1,0 +1,38 @@
+[Reflection Material]
+scope: REGION
+region id: 1001
+segment id range: 41 -> 42
+time range: 120000 -> 180000
+stm slice: 120000 -> 180000
+episode close state: player_profile=在我眼里，这个玩家只是暂时还算有用的持剑者。她会谨慎推进，但骨子里仍会被地下的猎物和战利品勾住。 | recap=前一段时间里，玩家持续向地下推进，也会向你征询风险判断，但你并不在意她是否安全，只在意她还能把局面推进到多危险的地步。
+segment count: 2
+
+[Segment 0]
+segment id: 41
+range: 120000 -> 150000
+segment close state: emotion=ANGRY, intensity=64, favorability=-86
+segment snapshot visible: [player:测试玩家] 玩家刚进入潮湿洞穴入口，脚边有浅水和碎石。
+segment snapshot extras: dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=午后，洞穴入口仍有些亮
+timeline:
+- segment snapshot baseline
+- local stm context: [environment] 洞穴深处传来骷髅的零散脚步声。 [tags=[native_specific:minecraft:skeleton]]
+- player action: ENTER_MAJOR_STRUCTURE dripstone cave entrance [tags=[custom_generic:explore_cautious]]
+- player action: MINE_BLOCK minecraft:iron_ore x3 [tags=[native_specific:minecraft:iron_ore, custom_generic:resource_collection]]
+- local stm context: [environment] 附近岩壁上可见成片铁矿脉。 [tags=[native_specific:minecraft:iron_ore]]
+- local stm context: [agent:塞勒瑞思] 我本能地警惕起前方可能存在的远程威胁。 [tags=[custom_generic:combat_caution]]
+- agent interaction: trigger=player_action_window, messages=agent_reaction_cue:先判断眼前威胁，再决定是否继续采矿。 ; player_msg:前面有骷髅和矿，我先挖还是先打？ ; agent_speech:先处理威胁，再慢慢采矿。你现在的位置不适合被远程牵制。, bound_visible=[player:测试玩家] 玩家正站在狭窄洞口，前方视野被钟乳石和阴影切碎。 | [agent:塞勒瑞思] 我判断这个地形不适合被远程牵制。, bound_extras=dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=午后 | combat_readiness=有潜在远程威胁
+
+[Segment 1]
+segment id: 42
+range: 150000 -> 180000
+segment close state: emotion=ANGRY, intensity=72, favorability=-86
+segment snapshot visible: [player:测试玩家] 战斗后洞穴安静下来，玩家继续向深处推进。
+segment snapshot extras: dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=洞穴深处已几乎没有自然光
+timeline:
+- segment snapshot baseline
+- local stm context: [environment] 一只蝙蝠从头顶掠过，前方有废弃矿道的木板结构。 [tags=[native_specific:minecraft:bat, custom_specific:abandoned_mineshaft]]
+- player action: KILL minecraft:skeleton [tags=[native_specific:minecraft:skeleton, custom_generic:threat_removed]]
+- local stm context: [environment] 地上掉落着骨头和箭，说明刚才的战斗已经结束。 [tags=[custom_generic:combat_cleanup]]
+- player action: OPEN_LOOT_CONTAINER abandoned_mineshaft_chest [tags=[custom_specific:abandoned_mineshaft]]
+- local stm context: [agent:塞勒瑞思] 我对矿道更深处可能藏着的第二波敌人仍有戒心。 [tags=[custom_generic:combat_caution]]
+- agent interaction: trigger=loot_pause, messages=agent_reaction_cue:对废弃矿道深处的潜在风险做出反应。 ; player_msg:这里像废弃矿道。你觉得值得继续深入吗？ ; agent_inner_monologue:她已经把威胁清掉了，接下来更像是一次有目的的试探。 ; agent_speech:可以继续，但别太贪。这里很可能还有第二波敌人。, bound_visible=[player:测试玩家] 玩家停在矿道木梁边，脚边有刚打开的旧箱子。, bound_extras=dimension=minecraft:overworld | biome=minecraft:dripstone_caves | time_desc=洞穴深处 | loot_state=刚开启废弃矿道箱子

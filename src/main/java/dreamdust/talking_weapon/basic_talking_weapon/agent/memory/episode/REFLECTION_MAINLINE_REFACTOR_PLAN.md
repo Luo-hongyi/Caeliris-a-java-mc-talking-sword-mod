@@ -697,28 +697,64 @@ module 明确不负责：
 
 当前设计结论是：
 
-- `EpisodeSynthesisReflectionTask` 应装载当前 reflection 包里全部现有 modules
-- 也就是说，它现在不是“局部子任务”，而是第一条正式的“全量总任务”
-- module 仍然保持可复用，但在这条 task 上先整体启用
+- 第一版实现里，它曾暂时装载当前 reflection 包里全部现有 modules
+- 但这已经不再是推荐方向
+- 最新设计口径改为：将“消费型长期记忆结算”和“只读型近期状态刷新”正式拆成两条 task
 
-当前固定 modules 为：
+新的 task 划分应为：
 
-- `memory_synthesis`
-- `player_profile_update`
-- `recap_update`
-- `favorability_update`
-- `emotion_update`
+1. `EpisodeSynthesisReflectionTask`
+
+- 定位：
+  - 消费型 LTM 结算任务
+- 触发时机：
+  - 仍然走 region close 后的 gate / holdback / ready signal
+- 是否消耗材料：
+  - 是
+- 是否推进 lifecycle / cleanup：
+  - 是
+- 固定 modules：
+  - `memory_synthesis`
+
+2. `AgentRecentStateUpdateReflectionTask`
+
+- 定位：
+  - 只读型近期状态刷新任务
+- 触发时机：
+  - 一个 episode / region 一旦封口就立即触发
+- 是否消耗材料：
+  - 否
+- 是否推进 lifecycle / cleanup：
+  - 否
+- 固定 modules：
+  - `player_profile_update`
+  - `recap_update`
+  - `favorability_update`
+  - `emotion_update`
+
+这么拆的原因是：
+
+- `memory_synthesis` 本身允许高延迟
+- 但 `player_profile / recap / favorability / emotion` 都不应继承 LTM 结算的延迟
+- 它们更接近“近期状态刷新”，而不是“消费源材料后的最终结算”
 
 ### 6.3 成功后的业务后果
 
 成功完成后，业务后果由 task 决定并提交给 owner：
 
+1. `EpisodeSynthesisReflectionTask`
+
 - 写入 LTM
-- 更新玩家画像 / 对玩家的看法
-- 更新 `AgentState.recap`
-- 如果该 task 启用了关系模块，则更新好感度
 - 发出“消费并截断 STM 已消费部分”的信号
 - 发出“推出并移除 episode 已消费部分”的信号
+
+2. `AgentRecentStateUpdateReflectionTask`
+
+- 更新玩家画像 / 对玩家的看法
+- 更新 `AgentState.recap`
+- 更新好感度
+- 更新情绪
+- 不发 cleanup / consume / resolve 信号
 
 这里的关键约束是：
 
@@ -740,7 +776,7 @@ module 明确不负责：
   - 已内建按 module 分发的 parse / validate 骨架
 - `EpisodeSynthesisReflectionTask`
   - 已冻结固定 modules
-  - 当前固定 modules 已经等于 reflection 包里全部现有 modules
+  - 当前代码里固定 modules 仍然等于 reflection 包里全部现有 modules
   - 已冻结 material / state / persona 请求边界
   - `executePreparedTask(...)` 第一版已经能跑通：
     - task-owned prompt 拼装
@@ -753,6 +789,14 @@ module 明确不负责：
     - `recap_update` 已写回 `AgentState.recap`
     - validate 失败后的 LLM 重试链路还没接
     - synthesized LTM 的 tag / 时间锚点仍只是第一版
+    - 任务粒度仍然过大：`player_profile_update / recap_update / favorability_update / emotion_update`
+      仍被绑在这条高延迟消费型 task 上
+- `AgentRecentStateUpdateReflectionTask`
+  - 当前还不存在
+  - 但已确定为接下来最高优先级的主线修正：
+    - 在 episode 封口时立即触发
+    - 只读，不消耗材料
+    - 承载 4 个近期状态刷新 modules
 - `ReflectionModule`
   - 当前职责已经和实现对齐为：
     - module instruction prompt

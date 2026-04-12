@@ -112,7 +112,12 @@ public abstract class AbstractReflectionTask extends AgentTask {
                 materialMerger.merge(rawMaterial),
                 "materialMerger.merge returned null");
         ReflectionStateSnapshot stateSnapshot = Objects.requireNonNull(
-                stateSnapshotLoader.load(buildStateRequest(), runtime.getMemory(), runtime.getState(), runtime.getPersona()),
+                stateSnapshotLoader.load(
+                        buildStateRequest(),
+                        runtime.getMemory(),
+                        runtime.getState(),
+                        runtime.getPersona(),
+                        buildHistoricalStateSnapshot()),
                 "stateSnapshotLoader.load returned null");
         RelevantPersonaEntries personaEntries = Objects.requireNonNull(
                 personaLoader.load(buildPersonaRequest(), material, runtime.getPersona()),
@@ -182,6 +187,10 @@ public abstract class AbstractReflectionTask extends AgentTask {
     protected abstract ReflectionStateRequest buildStateRequest();
 
     protected abstract ReflectionPersonaRequest buildPersonaRequest();
+
+    protected ReflectionHistoricalStateSnapshot buildHistoricalStateSnapshot() {
+        return ReflectionHistoricalStateSnapshot.empty();
+    }
 
     protected abstract void executePreparedTask(
             ReflectionTaskInput input,
